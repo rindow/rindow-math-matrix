@@ -418,7 +418,7 @@ class Test extends TestCase
                 [[[1,2],[3,4],[5,6]],
                  [[7,8],[9,10],[11,12]],
                  [[13,14],[15,16],[17,18]],
-                 [[19,20],[21,22],[23,24]]],
+                 [[19,20],[21,22],[23,24]]]
             ))->toArray());
 
         // With Offset
@@ -434,8 +434,6 @@ class Test extends TestCase
         $this->assertEquals(
             [[1,4],[2,5],[3,6]],
             $mo->transpose($A)->toArray());
-
-
     }
 
 
@@ -1397,7 +1395,7 @@ class Test extends TestCase
 
         // Update By Multi indexing Matrix
         $X = $mo->array(
-            [[100,101,102],[103,104,105],[106,107,108],[109,110,111]],
+            [[100,101,102],[103,104,105],[106,107,108],[109,110,111]]
         );
         $MASK0 = $mo->array(
             [2, 0, 3],$dtype=NDArray::int32);
@@ -1425,7 +1423,7 @@ class Test extends TestCase
 
         // Update 2D Matrix By Multi 2D indexing Matrix
         $X = $mo->array(
-            [[100,101,102],[103,104,105],[106,107,108],[109,110,111]],
+            [[100,101,102],[103,104,105],[106,107,108],[109,110,111]]
         );
         $MASK0 = $mo->array(
             [[0, 1],[2, 3]],$dtype=NDArray::int32);
@@ -1455,7 +1453,7 @@ class Test extends TestCase
         // Not compatible to numpy
         // ************************
         $X = $mo->array(
-            [[100,101,102],[103,104,105]],
+            [[100,101,102],[103,104,105]]
         );
         $MASK0 = $mo->array(
             [0, 0, 0],$dtype=NDArray::int32);
