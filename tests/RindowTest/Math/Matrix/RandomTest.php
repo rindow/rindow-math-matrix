@@ -6,6 +6,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use ArrayObject;
 use SplFixedArray;
+use InvalidArgumentException;
 
 class Test extends TestCase
 {
@@ -59,13 +60,11 @@ class Test extends TestCase
         $this->assertEquals([10,10],$choice->toArray());
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage The total number is smaller than the number of samples
-     */
     public function testChoiceSmallBaseTotal()
     {
         $mo = $this->newMatrixOperator();
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The total number is smaller than the number of samples');
         $choice = $mo->random()->choice($total=4, $sampling=10,$replace=false);
     }
 }

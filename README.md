@@ -8,3 +8,11 @@ Rindow Math Matrix is the fundamental package for scientific matrix operation
 - Sophisticated (broadcasting) functions
 - Tools for integrating C/C++ through the "rindow_openblas" extension
 - Useful linear algebra and random number capabilities
+
+
+### Download the rindow_openblas extension
+
+You can do very fast N-dimensional array operations in conjunction
+
+- [Pre-build binaries](https://github.com/rindow/rindow-openblas-binaries)
+- [Build from source](https://github.com/rindow/rindow-openblas)

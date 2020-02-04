@@ -7,6 +7,7 @@ use Interop\Polite\Math\Matrix\BLAS;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Matrix\PhpBlas;
 use InvalidArgumentException;
+use RuntimeException;
 
 class Test extends TestCase
 {
@@ -356,10 +357,6 @@ class Test extends TestCase
         ],$C->toArray());
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferA
-     */
     public function testGemmMatrixAOverFlowTransposeRectangleA32()
     {
         $mo = new MatrixOperator();
@@ -377,6 +374,8 @@ class Test extends TestCase
             $this->translate_gemm($A,$B,$alpha,$beta,$C,$transA,$transB);
 
         $AA = $mo->array([1,2,3,4,5])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferA');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -385,17 +384,8 @@ class Test extends TestCase
             $BB,$offB,$ldb,
             $beta,
             $CC,$offC,$ldc);
-
-        $this->assertEquals([
-            [1,3,5],
-            [2,4,6],
-        ],$C->toArray());
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferB
-     */
     public function testGemmMatrixBOverFlowTransposeRectangleA32()
     {
         $mo = new MatrixOperator();
@@ -413,6 +403,8 @@ class Test extends TestCase
             $this->translate_gemm($A,$B,$alpha,$beta,$C,$transA,$transB);
 
         $BB = $mo->array([1,0,0, 0,1,0, 0,0])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferB');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -421,17 +413,8 @@ class Test extends TestCase
             $BB,$offB,$ldb,
             $beta,
             $CC,$offC,$ldc);
-
-        $this->assertEquals([
-            [1,3,5],
-            [2,4,6],
-        ],$C->toArray());
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferC
-     */
     public function testGemmOutputOverFlowTransposeRectangleA32()
     {
         $mo = new MatrixOperator();
@@ -450,6 +433,8 @@ class Test extends TestCase
 
 
         $CC = $mo->zeros([5])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferC');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -458,17 +443,8 @@ class Test extends TestCase
             $BB,$offB,$ldb,
             $beta,
             $CC,$offC,$ldc);
-
-        $this->assertEquals([
-            [1,3,5],
-            [2,4,6],
-        ],$C->toArray());
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferA
-     */
     public function testGemmMatrixAOverFlowTransposeRectangleB23()
     {
         $mo = new MatrixOperator();
@@ -486,6 +462,8 @@ class Test extends TestCase
             $this->translate_gemm($A,$B,$alpha,$beta,$C,$transA,$transB);
 
         $AA = $mo->array([1,0,0, 0,1,0, 0,0])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferA');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -494,18 +472,8 @@ class Test extends TestCase
             $BB,$offB,$ldb,
             $beta,
             $CC,$offC,$ldc);
-
-        $this->assertEquals([
-            [1,4],
-            [2,5],
-            [3,6],
-        ],$C->toArray());
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferB
-     */
     public function testGemmMatrixBOverFlowTransposeRectangleB23()
     {
         $mo = new MatrixOperator();
@@ -523,6 +491,8 @@ class Test extends TestCase
             $this->translate_gemm($A,$B,$alpha,$beta,$C,$transA,$transB);
 
         $BB = $mo->array([1,2,3,4,5])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferB');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -531,18 +501,8 @@ class Test extends TestCase
             $BB,$offB,$ldb,
             $beta,
             $CC,$offC,$ldc);
-
-        $this->assertEquals([
-            [1,4],
-            [2,5],
-            [3,6],
-        ],$C->toArray());
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferC
-     */
     public function testGemmOutputOverFlowTransposeRectangleB23()
     {
         $mo = new MatrixOperator();
@@ -560,6 +520,8 @@ class Test extends TestCase
             $this->translate_gemm($A,$B,$alpha,$beta,$C,$transA,$transB);
 
         $CC = $mo->zeros([5])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferC');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -568,12 +530,6 @@ class Test extends TestCase
             $BB,$offB,$ldb,
             $beta,
             $CC,$offC,$ldc);
-
-        $this->assertEquals([
-            [1,4],
-            [2,5],
-            [3,6],
-        ],$C->toArray());
     }
 
     public function testGemvNormal()
@@ -630,10 +586,6 @@ class Test extends TestCase
         ,$Y->toArray());
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferA
-     */
     public function testGemvMatrixOverFlowNormal()
     {
         $mo = new MatrixOperator();
@@ -648,6 +600,8 @@ class Test extends TestCase
             $this->translate_gemv($A,$X,null,null,$Y);
 
         $AA = $mo->array([1,2,3,4,5])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferA');
         $blas->gemv(
             BLAS::RowMajor,$trans,
             $m,$n,
@@ -658,10 +612,6 @@ class Test extends TestCase
             $YY,$offY,$incY);
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferX
-     */
     public function testGemvVectorXOverFlowNormal()
     {
         $mo = new MatrixOperator();
@@ -676,6 +626,8 @@ class Test extends TestCase
             $this->translate_gemv($A,$X,null,null,$Y);
 
         $XX = $mo->array([10,1])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferX');
         $blas->gemv(
             BLAS::RowMajor,$trans,
             $m,$n,
@@ -686,10 +638,6 @@ class Test extends TestCase
             $YY,$offY,$incY);
     }
 
-    /**
-     * @expectedException        RuntimeException
-     * @expectedExceptionMessage Vector specification too large for bufferY
-     */
     public function testGemvVectorYOverFlowNormal()
     {
         $mo = new MatrixOperator();
@@ -704,6 +652,8 @@ class Test extends TestCase
             $this->translate_gemv($A,$X,null,null,$Y);
 
         $YY = $mo->array([0])->buffer();
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Vector specification too large for bufferY');
         $blas->gemv(
             BLAS::RowMajor,$trans,
             $m,$n,

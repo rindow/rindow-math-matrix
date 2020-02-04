@@ -8,6 +8,7 @@ use Rindow\Math\Matrix\PhpBlas;
 use Rindow\Math\Matrix\PhpMath;
 use ArrayObject;
 use SplFixedArray;
+use InvalidArgumentException;
 
 class Test extends TestCase
 {
@@ -318,58 +319,46 @@ class Test extends TestCase
         ],$C->toArray());
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage The number of columns in "A" and the number of rows in "B" must be the same
-     */
     public function testGemmUnmatchShapeNoTransRectangleA32()
     {
         $mo = $this->newMatrixOperator();
         $A = $mo->array([[1,2],[3,4],[5,6]]);
         $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
         $C = $mo->la()->gemm($A,$B);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage The number of columns in "A" and the number of rows in "B" must be the same
-     */
     public function testGemmUnmatchShapeTransposeRectangleA23()
     {
         $mo = $this->newMatrixOperator();
         $A = $mo->array([[1,2,3],[4,5,6]]);
         $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
         $C = $mo->la()->gemm($A,$B,null,null,null,$transA=true);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage The number of columns in "A" and the number of rows in "B" must be the same
-     */
     public function testGemmUnmatchShapeNoTransRectangleB23()
     {
         $mo = $this->newMatrixOperator();
         $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
         $B = $mo->array([[1,2,3],[4,5,6]]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
         $C = $mo->la()->gemm($A,$B);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage The number of columns in "A" and the number of rows in "B" must be the same
-     */
     public function testGemmUnmatchShapeTransposeRectangleB32()
     {
         $mo = $this->newMatrixOperator();
         $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
         $B = $mo->array([[1,2],[3,4],[5,6]]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
         $C = $mo->la()->gemm($A,$B,null,null,null,null,$transB=true);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage "A" and "C" must have the same number of rows."B" and "C" must have the same number of columns
-     */
     public function testGemmUnmatchOutputShapeNoTransA()
     {
         $mo = $this->newMatrixOperator();
@@ -377,13 +366,11 @@ class Test extends TestCase
         $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
 
         $C = $mo->zeros([3,3]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
         $mo->la()->gemm($A,$B,null,null,$C);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage "A" and "C" must have the same number of rows."B" and "C" must have the same number of columns
-     */
     public function testGemmUnmatchOutputShapeNoTransB()
     {
         $mo = $this->newMatrixOperator();
@@ -391,13 +378,11 @@ class Test extends TestCase
         $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
 
         $C = $mo->zeros([2,2]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
         $mo->la()->gemm($A,$B,null,null,$C);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage "A" and "C" must have the same number of rows."B" and "C" must have the same number of columns
-     */
     public function testGemmUnmatchOutputShapeTransposeA()
     {
         $mo = $this->newMatrixOperator();
@@ -405,13 +390,11 @@ class Test extends TestCase
         $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
 
         $C = $mo->zeros([3,3]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
         $mo->la()->gemm($A,$B,null,null,$C,$transA=true);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage "A" and "C" must have the same number of rows."B" and "C" must have the same number of columns
-     */
     public function testGemmUnmatchOutputShapeTransposeB()
     {
         $mo = $this->newMatrixOperator();
@@ -419,6 +402,8 @@ class Test extends TestCase
         $B = $mo->array([[1,2,3],[4,5,6]]);
 
         $C = $mo->zeros([3,3]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
         $mo->la()->gemm($A,$B,null,null,$C,null,$transB=true);
     }
 

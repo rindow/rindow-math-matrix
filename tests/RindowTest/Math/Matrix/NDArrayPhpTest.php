@@ -6,6 +6,9 @@ use Rindow\Math\Matrix\NDArrayPhp;
 use Interop\Polite\Math\Matrix\NDArray;
 use ArrayObject;
 use SplFixedArray;
+use OutOfRangeException;
+use InvalidArgumentException;
+use LogicException;
 
 class Test extends TestCase
 {
@@ -109,42 +112,34 @@ class Test extends TestCase
         $this->assertEquals([[4,5,6]],$nd->toArray());
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage The shape of the dimension is broken
-     */
     public function testCreateFromIllegalArray()
     {
         $array = [[1,2,3],[4,5]];
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The shape of the dimension is broken');
         $nd = new NDArrayPhp($array);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage Invalid dimension size
-     */
     public function testCreateFromNumberAndIllegalShape()
     {
         $array = 123;
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid dimension size');
         $nd = new NDArrayPhp($array,NDArray::float32,[2,3]);
     }
 
-    /**
-     * @expectedException       InvalidArgumentException
-     * expectedExceptionMessage Invalid type of array
-     */
     public function testCreateNullAndNoShape()
     {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid type of array');
         $nd = new NDArrayPhp(null,NDArray::float32);
     }
 
-    /**
-     * @expectedException        InvalidArgumentException
-     * @expectedExceptionMessage Invalid dimension size
-     */
     public function testCreateFromBufferAndIllegalOffset()
     {
         $array = SplFixedArray::fromArray([1,2,3,4,5,6]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid dimension size');
         $nd = new NDArrayPhp($array,NDArray::float32,[1,3],4);
     }
 
@@ -161,15 +156,13 @@ class Test extends TestCase
         $this->assertFalse(isset($nd[2][1]));
     }
 
-    /**
-     * @expectedException        OutOfRangeException
-     * @expectedExceptionMessage Dimension must be integer
-     */
     public function testOffsetExistsWithInvalidNumber()
     {
         $array = [[1,2,3],[4,5,6]];
         $nd = new NDArrayPhp($array);
-        $this->assertTrue($nd->offsetExists(0.5));
+        $this->expectException(OutOfRangeException::class);
+        $this->expectExceptionMessage('Dimension must be integer');
+        $b = $nd->offsetExists(0.5);
     }
 
     public function testOffsetGet()
@@ -218,36 +211,30 @@ class Test extends TestCase
         $this->assertEquals([[400,500,600]],$nd->toArray());
     }
 
-    /**
-     * @expectedException        OutOfRangeException
-     * @expectedExceptionMessage Index is out of range
-     */
     public function testOutOfRangeWithOffgetSet()
     {
         $array = [[1,2,3],[4,5,6]];
         $nd = new NDArrayPhp($array);
+        $this->expectException(OutOfRangeException::class);
+        $this->expectExceptionMessage('Index is out of range');
         $a = $nd[2];
     }
 
-    /**
-     * @expectedException        OutOfRangeException
-     * @expectedExceptionMessage Index is out of range
-     */
     public function testOutOfRangeWithOffsetSet()
     {
         $array = [[1,2,3],[4,5,6]];
         $nd = new NDArrayPhp($array);
+        $this->expectException(OutOfRangeException::class);
+        $this->expectExceptionMessage('Index is out of range');
         $nd[3] = new NDArrayPhp([400,500,600]);
     }
 
-    /**
-     * @expectedException        LogicException
-     * @expectedExceptionMessage Unsuppored Operation
-     */
     public function testOffunSet()
     {
         $array = [[1,2,3],[4,5,6]];
         $nd = new NDArrayPhp($array);
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Unsuppored Operation');
         unset($nd[1]);
     }
 
@@ -341,14 +328,12 @@ class Test extends TestCase
         $this->assertFalse($a->offsetExists([0,10]));
     }
 
-    /**
-     * @expectedException        OutOfRangeException
-     * @expectedExceptionMessage Illegal range specification
-     */
     public function testOffsetExistsForIllegalRange()
     {
         $array = [1,2,3,4,5,6,7,8,9,10];
         $a = new NDArrayPhp($array,NDArray::int32);
-        $this->assertFalse($a->offsetExists([1,0]));
+        $this->expectException(OutOfRangeException::class);
+        $this->expectExceptionMessage('Illegal range specification');
+        $b = $a->offsetExists([1,0]);
     }
 }
