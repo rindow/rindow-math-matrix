@@ -524,9 +524,11 @@ class LinearAlgebra
             if($xd===null)
                 break;
             $ad = array_pop($shapeA);
-            if($xd!==$ad)
+            if($xd!==$ad) {
+                $shapeA = $trans ? array_reverse($A->shape()) : $A->shape();
                 throw new InvalidArgumentException('Unmatch dimension size for broadcast.: '.
-                    '['.implode(',',$X->shape()).'] => ['.implode(',',$A->shape()).']');
+                    '['.implode(',',$X->shape()).'] => ['.implode(',',$shapeA).']');
+            }
         }
         $n = $X->size();
         $XX = $X->buffer();
@@ -949,7 +951,7 @@ class LinearAlgebra
         callable $func, NDArray $A,int $axis,NDArray $X=null,$dtypeX=null) : NDArray
     {
         if($A->ndim()!=2) {
-            throw new InvalidArgumentException('"A" must be 2D-NDArray.');
+            throw new InvalidArgumentException('"A" must be 2D-NDArray.: ['.implode(',',$A->shape()).']');
         }
         if($axis === -1)
             $axis = 1;

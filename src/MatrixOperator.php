@@ -1110,6 +1110,21 @@ class MatrixOperator
         }
         return $this->dtypeToString[$dtype];
     }
+    public function toString(NDArray $array) : string
+    {
+        $shape = $array->shape();
+        $n = array_shift($shape);
+        if(count($shape)==0) {
+            return '['.implode(',',$array->toArray()).']';
+        }
+        $string = '[';
+        for($i=0;$i<$n;$i++) {
+            if($i!=0)
+                $string .= ',';
+            $string .= $this->toString($array[$i]);
+        }
+        return $string.']';
+    }
 
     public function random()
     {
