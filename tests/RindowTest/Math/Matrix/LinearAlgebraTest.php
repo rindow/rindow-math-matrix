@@ -514,25 +514,25 @@ class Test extends TestCase
         ,$X->toArray());
     }
 
-    public function testDmaximum()
+    public function testGreater()
     {
         $mo = $this->newMatrixOperator();
 
-        // X := dmaximum(1,X)
+        // X := greater(1,X)
         $X = $mo->array([[-1,0,1],[2,3,4]]);
-        $mo->la()->dmaximum(1,$X);
+        $mo->la()->greater(1,$X);
         $this->assertEquals(
             [[0,0,0],[1,1,1]]
         ,$X->toArray());
     }
 
-    public function testDminimum()
+    public function testLess()
     {
         $mo = $this->newMatrixOperator();
 
-        // X := dminimum(1,X)
+        // X := less(1,X)
         $X = $mo->array([[-1,0,1],[2,3,4]]);
-        $mo->la()->dminimum(1,$X);
+        $mo->la()->less(1,$X);
         $this->assertEquals(
             [[1,1,0],[0,0,0]]
         ,$X->toArray());

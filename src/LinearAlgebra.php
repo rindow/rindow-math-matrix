@@ -466,7 +466,7 @@ class LinearAlgebra
      *     X := 1  (X > a)
      *     X := 0  (X <= a)
      */
-    public function dmaximum(
+    public function greater(
         float $alpha,
         NDArray $X
         ) : NDArray
@@ -475,7 +475,7 @@ class LinearAlgebra
         $XX = $X->buffer();
         $offX = $X->offset();
 
-        $this->math->dmaximum(
+        $this->math->greater(
             $n,
             $alpha,
             $XX,$offX,1);
@@ -487,7 +487,7 @@ class LinearAlgebra
      *     X := 1  (X < a)
      *     X := 0  (X >= a)
      */
-    public function dminimum(
+    public function less(
         float $alpha,
         NDArray $X
         ) : NDArray
@@ -496,7 +496,7 @@ class LinearAlgebra
         $XX = $X->buffer();
         $offX = $X->offset();
 
-        $this->math->dminimum(
+        $this->math->less(
             $n,
             $alpha,
             $XX,$offX,1);

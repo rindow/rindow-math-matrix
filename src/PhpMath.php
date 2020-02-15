@@ -209,14 +209,14 @@ class PhpMath
      *     X := 1  (X > a)
      *     X := 0  (X <= a)
      */
-    public function dmaximum(
+    public function greater(
         int $n,
         float $alpha,
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
         if($this->useMath($X)) {
-            $this->math->dmaximum($n,$alpha,$X,$offsetX,$incX);
+            $this->math->greater($n,$alpha,$X,$offsetX,$incX);
             return;
         }
 
@@ -237,14 +237,14 @@ class PhpMath
      *     X := 1  (X < a)
      *     X := 0  (X >= a)
      */
-    public function dminimum(
+    public function less(
         int $n,
         float $alpha,
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
         if($this->useMath($X)) {
-            $this->math->dminimum($n,$alpha,$X,$offsetX,$incX);
+            $this->math->less($n,$alpha,$X,$offsetX,$incX);
             return;
         }
 
