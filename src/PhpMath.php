@@ -803,12 +803,21 @@ class PhpMath
             $isFloat = true;
         } elseif(in_array($dtype,$this->intTypes)) {
             $isFloat = false;
+            if($dtype==NDArray::uint8) {
+                $mask = 0xff;
+            } elseif($dtype==NDArray::uint16) {
+                $mask = 0xffff;
+            } elseif($dtype==NDArray::uint32) {
+                $mask = 0xffffffff;
+            } else {
+                $mask = null;
+            }
         } elseif($dtype==NDArray::bool) {
             $isFloat = false;
         } else {
             throw new InvalidArgumentException('dtype must be type of integer or float: '.$dtype);
         }
-        if($X->dtype()==NDArray::bool) {
+        if(is_bool($X[0])) {
             $fromBoolean = true;
         } else {
             $fromBoolean = false;
@@ -836,8 +845,14 @@ class PhpMath
                     $Y[$idy] = (float)($X[$idx]);
                 }
             } else {
-                for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
-                    $Y[$idy] = (int)($X[$idx]);
+                if($mask) {
+                    for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
+                        $Y[$idy] = (int)($mask & $X[$idx]);
+                    }
+                } else {
+                    for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
+                        $Y[$idy] = (int)($X[$idx]);
+                    }
                 }
             }
         }
