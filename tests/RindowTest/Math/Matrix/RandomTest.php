@@ -19,6 +19,28 @@ class Test extends TestCase
         return $mo;
     }
 
+    public function testRand()
+    {
+        $mo = $this->newMatrixOperator();
+        $x = $mo->random()->rand(10000);
+        $this->assertGreaterThanOrEqual(0,$mo->min($x));
+        $this->assertLessThanOrEqual(1,$mo->max($x));
+    }
+
+    public function testRandn()
+    {
+        $mo = $this->newMatrixOperator();
+        $x = $mo->random()->randn(10000);
+        $this->assertTrue(true);
+    }
+
+    public function testRandomInt()
+    {
+        $mo = $this->newMatrixOperator();
+        $x = $mo->random()->randomInt(100);
+        $this->assertTrue(true);
+    }
+
     public function testChoiceNormal()
     {
         $mo = $this->newMatrixOperator();

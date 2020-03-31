@@ -8,6 +8,9 @@
         "php": ">=7.2",
         "interop-phpobjects/polite-math": "^1.0"
     },
+    "suggest": {
+        "ext-rindow_openblas": "strongly recommended for speed"
+    },
     "autoload": {
         "psr-4": {
             "Rindow\\Math\\Matrix\\": "src/"

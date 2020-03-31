@@ -5,7 +5,7 @@ use ArrayObject;
 use InvalidArgumentException;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
-use Rindow\OpenBLAS\BLAS as OpenBLAS;
+use Rindow\OpenBLAS\Blas as OpenBLAS;
 use Rindow\OpenBLAS\Math as OpenBLASMath;
 
 class MatrixOperator
@@ -129,12 +129,12 @@ class MatrixOperator
             return $dtypeY;
     }
 
-    public function setDefaultIntType($dtype)
+    public function setDefaultIntType($dtype) : void
     {
         $this->defaultIntType = $dtype;
     }
 
-    public function setDefaultFloatType($dtype)
+    public function setDefaultFloatType($dtype) : void
     {
         $this->defaultFloatType = $dtype;
     }
@@ -142,7 +142,7 @@ class MatrixOperator
     public function array($array,$dtype=null) : NDArray
     {
         if($dtype==null)
-            $dtype=NDArray::float32;
+            $dtype=$this->defaultFloatType;
         if(is_array($array)) {
             return $this->alloc($array,$dtype);
         } elseif($array instanceof ArrayObject) {
@@ -190,52 +190,7 @@ class MatrixOperator
 
     public function astype(NDArray $array, $dtype) : NDArray
     {
-        if(in_array($dtype,$this->floatTypes)) {
-            $isFloat = true;
-        } elseif(in_array($dtype,$this->intTypes)) {
-            $isFloat = false;
-        } elseif($dtype==NDArray::bool) {
-            $isFloat = false;
-        } else {
-            throw new InvalidArgumentException('dtype must be type of integer or float: '.$dtype);
-        }
-        if($array->dtype()==NDArray::bool) {
-            $fromBoolean = true;
-        } else {
-            $fromBoolean = false;
-        }
-        $newArray = $this->alloc(null, $dtype, $array->shape());
-        $bufA = $array->buffer();
-        $offA = $array->offset();
-        $bufN = $newArray->buffer();
-        $offN = $newArray->offset();
-        $size = $array->size();
-        if($fromBoolean) {
-            if($isFloat) {
-                for($idx=0;$idx<$size;$idx++) {
-                    $bufN[$offN+$idx] = ($bufA[$offA+$idx]) ? 1.0 : 0.0;
-                }
-            } else {
-                for($idx=0;$idx<$size;$idx++) {
-                    $bufN[$offN+$idx] = ($bufA[$offA+$idx]) ? 1 : 0;
-                }
-            }
-        } else {
-            if($dtype==NDArray::bool) {
-                for($idx=0;$idx<$size;$idx++) {
-                    $bufN[$offN+$idx] = ($bufA[$offA+$idx]) ? true : false;
-                }
-            } elseif($isFloat) {
-                for($idx=0;$idx<$size;$idx++) {
-                    $bufN[$offN+$idx] = (float)$bufA[$offA+$idx];
-                }
-            } else {
-                for($idx=0;$idx<$size;$idx++) {
-                    $bufN[$offN+$idx] = (int)$bufA[$offA+$idx];
-                }
-            }
-        }
-        return $newArray;
+        return $this->la()->astype($array,$dtype);
     }
 
     public function arange(int $count ,$start=null, $step=null, $dtype=null) : NDArray
@@ -490,6 +445,9 @@ class MatrixOperator
         return $C;
     }
 
+    /*
+     *  DISCONTINUE
+     */
     public function pos2index(int $pos,array $shape) : array
     {
         $rank = count($shape);
@@ -507,6 +465,9 @@ class MatrixOperator
         return $index;
     }
 
+    /*
+     *  DISCONTINUE
+     */
     public function projection(NDArray $X,array $idx) : NDArray
     {
         $shape = $X->shape();
@@ -1115,7 +1076,17 @@ class MatrixOperator
         $shape = $array->shape();
         $n = array_shift($shape);
         if(count($shape)==0) {
-            return '['.implode(',',$array->toArray()).']';
+            if($array->dtype()==NDArray::bool) {
+                $str = '';
+                foreach($array->toArray() as $value) {
+                    $str .= ($str==='') ? '[' : ',';
+                    $str .= $value ? 'true' : 'false';
+                }
+                $str .= ']';
+                return $str;
+            } else {
+                return '['.implode(',',$array->toArray()).']';
+            }
         }
         $string = '[';
         for($i=0;$i<$n;$i++) {

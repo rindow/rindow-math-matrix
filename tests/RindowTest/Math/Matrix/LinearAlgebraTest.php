@@ -788,6 +788,105 @@ class Test extends TestCase
         $this->assertEquals([0,0,0],$x->toArray());
     }
 
+    public function testSelect()
+    {
+        $mo = $this->newMatrixOperator();
+
+        $a = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ],NDArray::float32);
+        $x = $mo->array([0,2],NDArray::int32);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+
+        $a = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $x = $mo->array([0,1,2,0],NDArray::int32);
+        $y = $mo->la()->select($a,$x,$axis=1);
+        $this->assertEquals([1,5,9,10],$y->toArray());
+    }
+
+    public function testSelectAxis0()
+    {
+        $mo = $this->newMatrixOperator();
+        $a = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ],NDArray::float32);
+        $x = $mo->array([0,2],NDArray::int32);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+
+        $a = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ],NDArray::float64);
+        $x = $mo->array([0,2],NDArray::int64);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+
+        $a = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ],NDArray::int64);
+        $x = $mo->array([0,2],NDArray::int64);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+
+        $a = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ],NDArray::uint8);
+        $x = $mo->array([0,2],NDArray::uint8);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+
+        $a = $mo->array([1,2,3,4],NDArray::float32);
+        $x = $mo->array([0,2],NDArray::int32);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([1,3],$y->toArray());
+
+        $a = $mo->array([1,2,3,4],NDArray::float64);
+        $x = $mo->array([0,2],NDArray::int64);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([1,3],$y->toArray());
+
+        $a = $mo->array([1,2,3,4],NDArray::int64);
+        $x = $mo->array([0,2],NDArray::int64);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([1,3],$y->toArray());
+
+        $a = $mo->array([252,253,254,255],NDArray::uint8);
+        $x = $mo->array([0,2],NDArray::uint8);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $this->assertEquals([252,254],$y->toArray());
+
+        $a = $mo->full([256],255,NDArray::uint8);
+        $x = $mo->array([0,2],NDArray::uint8);
+        $y = $mo->la()->select($a,$x,$axis=0);
+        $a2 = $mo->full([256],255,NDArray::uint8);
+        $x2 = $mo->array([0,2],NDArray::uint8);
+        $y2 = $mo->la()->select($a2,$x2,$axis=0);
+
+    }
+
     public function testSelectAxis1()
     {
         $mo = $this->newMatrixOperator();
@@ -798,19 +897,19 @@ class Test extends TestCase
             [10,11,12],
         ]);
         $x = $mo->array([0,1,2,0],NDArray::int32);
-        $y = $mo->la()->selectAxis1($a,$x);
+        $y = $mo->la()->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
         $x = $mo->array([0,1,2,0],NDArray::int64);
-        $y = $mo->la()->selectAxis1($a,$x);
+        $y = $mo->la()->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
         $x = $mo->array([0,1,2,0],NDArray::float32);
-        $y = $mo->la()->selectAxis1($a,$x);
+        $y = $mo->la()->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
         $x = $mo->array([0,1,2,0],NDArray::float64);
-        $y = $mo->la()->selectAxis1($a,$x);
+        $y = $mo->la()->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
     }
 
@@ -918,5 +1017,120 @@ class Test extends TestCase
         $this->assertTrue($this->equalTest(0.15769,$y[0][2]));
         $this->assertTrue($this->equalTest(0.25999,$y[0][3]));
         $this->assertTrue($this->equalTest(0.42865,$y[0][4]));
+    }
+
+    public function testastype()
+    {
+        $mo = $this->newMatrixOperator();
+        $math = $mo->la();
+
+        #### int to any
+        $X = $mo->array([-1,0,1,2,3],NDArray::int32);
+        $dtype = NDArray::float32;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals(NDArray::float32,$Y->dtype());
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::float64;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int8;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int16;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int32;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int64;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::bool;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([true,false,true,true,true],$Y->toArray());
+
+        #### float to any ######
+        $X = $mo->array([-1,0,1,2,3],NDArray::float32);
+        $dtype = NDArray::float32;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::float64;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int8;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int16;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int32;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::int64;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::bool;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([true,false,true,true,true],$Y->toArray());
+
+        #### bool to any ######
+        $X = $mo->array([true,false,true,true,true],NDArray::bool);
+        $dtype = NDArray::float32;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([1,0,1,1,1],$Y->toArray());
+
+        $dtype = NDArray::float64;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([1,0,1,1,1],$Y->toArray());
+
+        $dtype = NDArray::int8;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([1,0,1,1,1],$Y->toArray());
+
+        $dtype = NDArray::int16;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([1,0,1,1,1],$Y->toArray());
+
+        $dtype = NDArray::int32;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([1,0,1,1,1],$Y->toArray());
+
+        $dtype = NDArray::int64;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([1,0,1,1,1],$Y->toArray());
+
+        $dtype = NDArray::bool;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([true,false,true,true,true],$Y->toArray());
+
+        #### float to unsigned ######
+        $X = $mo->array([-1,0,1,2,3],NDArray::float32);
+        $dtype = NDArray::uint8;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([255,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::uint16;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([65535,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::uint32;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([4294967295,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::uint64;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
     }
 }

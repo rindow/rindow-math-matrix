@@ -10,6 +10,10 @@ class PhpMath
 {
     protected $math;
     protected $forceMath;
+    protected $intTypes= [
+        NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
+        NDArray::uint8,NDArray::uint16,NDArray::uint32,NDArray::uint64,
+    ];
     protected $floatTypes= [
         NDArray::float16,NDArray::float32,NDArray::float64,
     ];
@@ -39,7 +43,7 @@ class PhpMath
         int $n,
         Buffer $X, int $offsetX, int $incX ) : float
     {
-        if($this->useMath($X)) {
+        if($this->math) {
             return $this->math->sum($n,$X,$offsetX,$incX);
         }
 
@@ -563,6 +567,54 @@ class PhpMath
     /**
      *     Y := A(k,X(m))
      */
+    public function selectAxis0(
+        int $m,
+        int $n,
+        int $k,
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $ldY
+        ) : void
+    {
+        if($this->math) {
+            $this->math->selectAxis0($m,$n,$k,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$ldY);
+            return;
+        }
+
+        if($offsetA+($m-1)*$ldA+$n-1>=count($A))
+            throw new RuntimeException('Vector specification too large for bufferA.');
+        if($offsetX+($k-1)*$incX>=count($X))
+            throw new RuntimeException('Vector specification too large for bufferX.');
+        if($offsetY+($k-1)*$ldY+$n-1>=count($Y))
+            throw new RuntimeException('Vector specification too large for bufferY.');
+
+        $idx = $offsetX;
+        $idy = $offsetY;
+        for($i=0; $i<$k; $i++,$idx+=$incX,$idy+=$ldY) {
+            $label = (int)$X[$idx];
+            if($label>=$m||$label<0)
+                throw new RuntimeException('Label number is out of bounds.');
+            $idA = $offsetA+$ldA*$label;
+            if($n==1) {
+                $Y[$idy]  = $A[$idA];
+            } else {
+                $this->rindow_openblas_math_copy($n, $A,$idA,1, $Y,$idy,1);
+            }
+        }
+    }
+
+    protected function rindow_openblas_math_copy($n,$X,$offsetX,$incX,$Y,$offsetY,$incY)
+    {
+        $idX = $offsetX;
+        $idY = $offsetY;
+        for($i=0; $i<$n; $i++, $idX+=$incX,$idY+=$incY) {
+            $Y[$idY] = $X[$idX];
+        }
+    }
+
+    /**
+     *     Y := A(k,X(m))
+     */
     public function selectAxis1(
         int $m,
         int $n,
@@ -733,5 +785,61 @@ class PhpMath
             }
         }
         return $a;
+    }
+
+    public function astype(
+        int $n,
+        int $dtype,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY
+        ) : void
+    {
+        if($this->math) {
+            $this->math->astype($n,$dtype,$X,$offsetX,$incX,$Y,$offsetY,$incY);
+            return;
+        }
+
+        if(in_array($dtype,$this->floatTypes)) {
+            $isFloat = true;
+        } elseif(in_array($dtype,$this->intTypes)) {
+            $isFloat = false;
+        } elseif($dtype==NDArray::bool) {
+            $isFloat = false;
+        } else {
+            throw new InvalidArgumentException('dtype must be type of integer or float: '.$dtype);
+        }
+        if($X->dtype()==NDArray::bool) {
+            $fromBoolean = true;
+        } else {
+            $fromBoolean = false;
+        }
+
+        $idx = $offsetX;
+        $idy = $offsetY;
+        if($fromBoolean) {
+            if($isFloat) {
+                for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
+                    $Y[$idy] = ($X[$idx]) ? 1.0 : 0.0;
+                }
+            } else {
+                for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
+                    $Y[$idy] = ($X[$idx]) ? 1 : 0;
+                }
+            }
+        } else {
+            if($dtype==NDArray::bool) {
+                for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
+                    $Y[$idy] = ($X[$idx]) ? true : false;
+                }
+            } elseif($isFloat) {
+                for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
+                    $Y[$idy] = (float)($X[$idx]);
+                }
+            } else {
+                for($i=0; $i<$n; $i++,$idx+=$incX,$idy+=$incY) {
+                    $Y[$idy] = (int)($X[$idx]);
+                }
+            }
+        }
     }
 }

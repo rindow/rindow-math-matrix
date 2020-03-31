@@ -36,7 +36,7 @@ class Random
         return $shape;
     }
 
-    public function rand($n,$dtype=null)
+    public function rand($n,$dtype=null) : NDArray
     {
         $shape = $this->checkSize($n);
         if($dtype===null)
@@ -45,12 +45,12 @@ class Random
         $buffer = $array->buffer();
         $size = $array->size();
         for($i=0;$i<$size;$i++) {
-            $buffer[$i] = $this->RandomInt(PHP_INT_MAX)/PHP_INT_MAX;
+            $buffer[$i] = $this->randomInt(PHP_INT_MAX)/PHP_INT_MAX;
         }
         return $array;
     }
 
-    public function randn($n,$dtype=null)
+    public function randn($n,$dtype=null) : NDArray
     {
         $shape = $this->checkSize($n);
         if($dtype===null)
@@ -66,7 +66,7 @@ class Random
         return $array;
     }
 
-    public function RandomInt($max)
+    public function randomInt(int $max) : int
     {
         return random_int(0,$max);
     }
