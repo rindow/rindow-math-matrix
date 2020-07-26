@@ -47,10 +47,12 @@ class NDArrayPhp implements NDArray,Serializable
             if($shape==null) {
                 $shape = [1];
             }
-            if($this->calcMatrixSize($shape)!=1)
+            $this->assertShape($shape);
+            if(array_product($shape)!=1)
                 throw new InvalidArgumentException("Invalid dimension size");
         } elseif($array===null && $shape) {
-            $size = $this->calcMatrixSize($shape);
+            $this->assertShape($shape);
+            $size = (int)array_product($shape);
             $this->_buffer = $this->newBuffer($size,$dtype);
             $this->_offset = 0;
         } elseif($this->isBuffer($array)) {
@@ -63,9 +65,10 @@ class NDArrayPhp implements NDArray,Serializable
         } else {
             throw new InvalidArgumentException("Invalid type of array");
         }
+        $this->assertShape($shape);
         $this->_shape = $shape;
 
-        $size = $this->calcMatrixSize($shape);
+        $size = (int)array_product($shape);
         if(count($this->_buffer) - $this->_offset < $size)
             throw new InvalidArgumentException("Invalid dimension size");
 
@@ -90,9 +93,8 @@ class NDArrayPhp implements NDArray,Serializable
         }
     }
 
-    protected function calcMatrixSize(array $shape)
+    protected function assertShape(array $shape)
     {
-        $size = 1;
         foreach($shape as $num) {
             if(!is_int($num)) {
                 throw new InvalidArgumentException(
@@ -102,9 +104,7 @@ class NDArrayPhp implements NDArray,Serializable
                 throw new InvalidArgumentException(
                     "Invalid shape numbers. It gives ".$num);
             }
-            $size *= $num;
         }
-        return $size;
     }
 
     protected function array2Flat($A, $F, &$idx, $prepare)
@@ -193,12 +193,13 @@ class NDArrayPhp implements NDArray,Serializable
 
     public function size() : int
     {
-        return $this->calcMatrixSize($this->_shape);
+        return (int)array_product($this->_shape);
     }
 
     public function reshape(array $shape) : NDArray
     {
-        if($this->size()!=$this->calcMatrixSize($shape))
+        $this->assertShape($shape);
+        if($this->size()!=array_product($shape))
             throw new InvalidArgumentException("Unmatch size");
         $newArray = new self($this->buffer(),$this->dtype(),$shape,$this->offset());
         return $newArray;
@@ -242,12 +243,15 @@ class NDArrayPhp implements NDArray,Serializable
             array_shift($shape);
             $rowsCount = $offset[1]-$offset[0]+1;
             if(count($shape)>0) {
-                $itemSize = $this->calcMatrixSize($shape);
+                $itemSize = (int)array_product($shape);
             } else {
                 $itemSize = 1;
             }
+            if($rowsCount<0) {
+                throw new OutOfRangeException('Invalid range');
+            }
             array_unshift($shape,$rowsCount);
-            $size = $this->calcMatrixSize($shape);
+            $size = (int)array_product($shape);
             $new = new self($this->_buffer,$this->_dtype,$shape,$this->_offset+$offset[0]*$itemSize);
             return $new;
         }
@@ -258,7 +262,7 @@ class NDArrayPhp implements NDArray,Serializable
         if(count($shape)==0) {
             return $this->_buffer[$this->_offset+$offset];
         }
-        $size = $this->calcMatrixSize($shape);
+        $size = (int)array_product($shape);
         $new = new self($this->_buffer,$this->_dtype,$shape,$this->_offset+$offset*$size);
         return $new;
     }
@@ -285,7 +289,7 @@ class NDArrayPhp implements NDArray,Serializable
             throw new InvalidArgumentException("Unmatch shape numbers");
         }
         $copy = $value->buffer();
-        $size = $this->calcMatrixSize($shape);
+        $size = (int)array_product($shape);
         $src_idx = $value->offset();
         $idx=$this->_offset+$offset*$size;
         for($i=0 ; $i<$size ; $i++,$idx++,$src_idx++) {
