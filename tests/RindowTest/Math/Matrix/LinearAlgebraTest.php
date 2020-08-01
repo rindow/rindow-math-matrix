@@ -1775,4 +1775,44 @@ class Test extends TestCase
         //    $newImages->toArray()
         //);
     }
+    
+    public function testRandomUniform()
+    {
+        $mo = $this->newMatrixOperator();
+
+        $x = $mo->la()->randomUniform(
+            $shape=[2,3],
+            $low=-1,
+            $high=1);
+        $y = $mo->la()->randomUniform(
+            $shape=[20,30],
+            $low=-1,
+            $high=1);
+        $this->assertEquals(
+            NDArray::float32,$x->dtype());
+        $this->assertNotEquals(
+            $x->toArray(),
+            $y->toArray());
+        $this->assertLessThanOrEqual(1,max($x->toArray()))
+        $this->assertGreaterThanOrEqual(-1,min($x->toArray()))
+
+        $x = $mo->la()->randomUniform(
+            $shape=[20,30],
+            $low=-1,
+            $high=1
+            $dtype=NDArray::int32
+            );
+        $y = $mo->la()->randomUniform(
+            $shape=[20,30],
+            $low=-1,
+            $high=1
+            $dtype=NDArray::int32);
+        $this->assertEquals(
+            NDArray::int32,$x->dtype());
+        $this->assertNotEquals(
+            $x->toArray(),
+            $y->toArray());
+        $this->assertLessThanOrEqual(1,max($x->toArray()))
+        $this->assertGreaterThanOrEqual(-1,min($x->toArray()))
+    }
 }
