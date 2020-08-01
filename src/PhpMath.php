@@ -1676,4 +1676,38 @@ class PhpMath
         }
     }
 
+    /**
+    * images: (n,h,w,c) : channels_last
+    *        (n,c,h,w) : channels_first
+    * strides:
+    * padding:
+    * data_format:
+    * output:(n,i)
+    */
+    public function randomUniform(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        $low,
+        $high,
+        int $seed
+        )
+    {
+        if($this->math) {
+            $this->math->randomUniform(
+                $n,
+                $X,
+                $offsetX,
+                $incX,
+                $low,
+                $high,
+                $seed
+            );
+            return;
+        }
+        mt_srand($seed);
+        $px = $offsetX;
+        for($i=0; $i<$n; $i++,$px+=$incX) {
+            $X[$px] = ($high-$low)*php_mt_rand()/mt_getrandmax()+$low;
+        }
+    }
 }
