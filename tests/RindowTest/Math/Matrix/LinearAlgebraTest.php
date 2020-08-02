@@ -1781,9 +1781,9 @@ class Test extends TestCase
         $mo = $this->newMatrixOperator();
 
         $x = $mo->la()->randomUniform(
-            $shape=[2,3],
-            $low=-1,
-            $high=1);
+            $shape=[20,30],
+            $low=-1.0,
+            $high=1.0);
         $y = $mo->la()->randomUniform(
             $shape=[20,30],
             $low=-1,
@@ -1793,26 +1793,70 @@ class Test extends TestCase
         $this->assertNotEquals(
             $x->toArray(),
             $y->toArray());
-        $this->assertLessThanOrEqual(1,max($x->toArray()))
-        $this->assertGreaterThanOrEqual(-1,min($x->toArray()))
+        $this->assertLessThanOrEqual(1,$mo->max($x));
+        $this->assertGreaterThanOrEqual(-1,$mo->min($x));
 
         $x = $mo->la()->randomUniform(
             $shape=[20,30],
             $low=-1,
-            $high=1
+            $high=1,
             $dtype=NDArray::int32
             );
         $y = $mo->la()->randomUniform(
             $shape=[20,30],
             $low=-1,
-            $high=1
+            $high=1,
             $dtype=NDArray::int32);
         $this->assertEquals(
             NDArray::int32,$x->dtype());
         $this->assertNotEquals(
             $x->toArray(),
+            $y->toArray());;
+        $mop = new MatrixOperator();
+        $this->assertLessThanOrEqual(1,$mop->max($x));
+        $this->assertGreaterThanOrEqual(-1,$mop->min($x));
+    }
+
+    public function testRandomNormal()
+    {
+        $mo = $this->newMatrixOperator();
+
+        $x = $mo->la()->randomNormal(
+            $shape=[20,30],
+            $mean=0.0,
+            $scale=1.0);
+        $y = $mo->la()->randomNormal(
+            $shape=[20,30],
+            $mean=0.0,
+            $scale=1.0);
+        $this->assertEquals(
+            NDArray::float32,$x->dtype());
+        $this->assertNotEquals(
+            $x->toArray(),
             $y->toArray());
-        $this->assertLessThanOrEqual(1,max($x->toArray()))
-        $this->assertGreaterThanOrEqual(-1,min($x->toArray()))
+        $this->assertLessThanOrEqual(4,$mo->max($x));
+        $this->assertGreaterThanOrEqual(-4,$mo->min($x));
+
+    }
+
+    public function testRandomSequence()
+    {
+        $mo = $this->newMatrixOperator();
+
+        $x = $mo->la()->randomSequence(
+            $base=500,
+            $size=100
+            );
+        $y = $mo->la()->randomSequence(
+            $base=500,
+            $size=100
+            );
+        $this->assertEquals(
+            NDArray::int64,$x->dtype());
+        $this->assertEquals(
+            [100],$x->shape());
+        $this->assertNotEquals(
+            $x->toArray(),
+            $y->toArray());
     }
 }

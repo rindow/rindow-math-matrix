@@ -1775,7 +1775,7 @@ class LinearAlgebra
         int $seed=null,
         NDArray $X=null) : NDArray
     {
-        if($dtype!==null) {
+        if($dtype!==null&&$X!==null) {
             if ($X->dtype()!=$dtype) {
                 throw new InvalidArgumentException('Unmatch dtype and dtype of X');
             }
@@ -1791,7 +1791,7 @@ class LinearAlgebra
             }
         }
         if($seed===null) {
-            $seed = random_int(PHP_INT_MIM,PHP_INT_MAX);
+            $seed = random_int(~PHP_INT_MAX,PHP_INT_MAX);
         }
 
         $n = $X->size();
@@ -1800,11 +1800,80 @@ class LinearAlgebra
 
         $this->math->randomUniform(
             $n,
-            $XX,$offX,1
+            $XX,$offX,1,
             $low,
             $high,
             $seed);
 
         return $X;
     }
+
+    public function randomNormal(
+        array $shape,
+        $mean,
+        $scale,
+        $dtype=null,
+        int $seed=null,
+        NDArray $X=null) : NDArray
+    {
+        if($dtype!==null&&$X!==null) {
+            if ($X->dtype()!=$dtype) {
+                throw new InvalidArgumentException('Unmatch dtype and dtype of X');
+            }
+        }
+        if($X===null) {
+            $X = $this->alloc($shape,$dtype);
+        } else {
+            if ($X->shape()!=$shape) {
+                throw new InvalidArgumentException('Unmatch shape and shape of X');
+            }
+            if(!is_numeric($low)||!is_numeric($high)){
+                throw new InvalidArgumentException('low and high must be integer or float');
+            }
+        }
+        if($seed===null) {
+            $seed = random_int(~PHP_INT_MAX,PHP_INT_MAX);
+        }
+
+        $n = $X->size();
+        $XX = $X->buffer();
+        $offX = $X->offset();
+
+        $this->math->randomNormal(
+            $n,
+            $XX,$offX,1,
+            $mean,
+            $scale,
+            $seed);
+
+        return $X;
+    }
+    
+    public function randomSequence(
+        int $base,
+        int $size=null,
+        int $seed=null
+        ) : NDArray
+    {
+        if($size==null) {
+            $size = $base;
+        }
+        $X = $this->alloc([$base],NDArray::int64);
+        if($seed===null) {
+            $seed = random_int(~PHP_INT_MAX,PHP_INT_MAX);
+        }
+
+        $n = $base;
+        $XX = $X->buffer();
+        $offX = $X->offset();
+
+        $this->math->randomSequence(
+            $n,
+            $size,
+            $XX,$offX,1,
+            $seed);
+        $X = $X[[0,$size-1]];
+        return $X;
+    }
+    
 }
