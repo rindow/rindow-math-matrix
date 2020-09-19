@@ -89,4 +89,34 @@ class Test extends TestCase
         $this->expectExceptionMessage('The total number is smaller than the number of samples');
         $choice = $mo->random()->choice($total=4, $sampling=10,$replace=false);
     }
+
+    public function testChoiceNoReplace()
+    {
+        $mo = $this->newMatrixOperator();
+        $size = 10000;
+        $choice = $mo->random()->choice($total=$size, $sampling=$size,$replace=false);
+        $seen = [];
+        for($i=0;$i<$size;$i++) {
+            $seen[$choice[$i]] = 1;
+        }
+        $this->assertCount($size,$seen);
+
+        $size = 10000;
+        $choice = $mo->random()->choice($total=$size*2, $sampling=$size,$replace=false);
+        $seen = [];
+        for($i=0;$i<$size;$i++) {
+            $seen[$choice[$i]] = 1;
+        }
+        $this->assertCount($size,$seen);
+        $count=0;
+        foreach($seen as $k=>$v) {
+            if($k>$size) {
+                if($k>=$size*2) {
+                    $this->assertTrue(false);
+                }
+                $count++;
+            }
+        }
+        $this->assertGreaterThanOrEqual(3000,$count);
+    }
 }

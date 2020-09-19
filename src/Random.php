@@ -116,10 +116,9 @@ class Random
             for($n=0;$n<$size;$n++) {
                 $idx = $this->randomInt($sourceSize-$n-1);
                 $r[$n] = $a[$select[$idx]];
-                $select[$idx] = $sourceSize-$n-1;
+                $select[$idx] = $select[$sourceSize-$n-1];
             }
         }
-
         return $r;
     }
 }

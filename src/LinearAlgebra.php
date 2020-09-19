@@ -6,15 +6,22 @@ use Interop\Polite\Math\Matrix\NDArray;
 use InvalidArgumentException;
 use ArrayAccess as Buffer;
 
+define("LAPACK_ROW_MAJOR",101);
+define("LAPACK_COL_MAJOR",102);
+
+
 class LinearAlgebra
 {
+    protected $iaminwarning;
     protected $blas;
+    protected $lapack;
     protected $math;
     protected $defaultFloatType = NDArray::float32;
 
-    public function __construct($blas,$math,$defaultFloatType=null)
+    public function __construct($blas,$lapack,$math,$defaultFloatType=null)
     {
         $this->blas = $blas;
+        $this->lapack = $lapack;
         $this->math = $math;
         if($defaultFloatType!==null)
             $this->defaultFloatType = $defaultFloatType;
@@ -172,9 +179,37 @@ class LinearAlgebra
         $N = $X->size();
         $XX = $X->buffer();
         $offX = $X->offset();
-        return $this->blas->iamin($N,$XX,$offX,1);
+        if(method_exists($this->blas,'iamin')) {
+            return $this->blas->iamin($N,$XX,$offX,1);
+        } else {
+            return $this->iaminCompatible($N,$XX,$offX,1);
+        }
     }
 
+    /**
+    *   legacy opennblas compatible
+    */
+    protected function iaminCompatible(
+        int $n,
+        Buffer $X, int $offsetX, int $incX ) : int
+    {
+        if($this->iaminwarning) {
+            echo "*iamin* not found. probably OpenBLAS is legacy version.";
+            $this->iaminwarning = true;
+        }
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new RuntimeException('Vector X specification too large for buffer.');
+        $idxX = $offsetX+$incX;
+        $acc = abs($X[$offsetX]);
+        $idx = 0;
+        for($i=1; $i<$n; $i++,$idxX+=$incX) {
+            if($acc > abs($X[$idxX])) {
+                $acc = abs($X[$idxX]);
+                $idx = $i;
+            }
+        }
+        return $idx;
+    }
 
     /**
     *    ret := max |X(i)|
@@ -198,8 +233,25 @@ class LinearAlgebra
         $N = $X->size();
         $XX = $X->buffer();
         $offX = $X->offset();
-        $i = $this->blas->iamin($N,$XX,$offX,1);
+        if(method_exists($this->blas,'iamin')) {
+            $i = $this->blas->iamin($N,$XX,$offX,1);
+        } else {
+            $i = $this->iaminCompatible($N,$XX,$offX,1);
+        }
         return $XX[$offX+$i];
+    }
+
+    /**
+    *    ret := sqrt(sum(Xn ** 2))
+    */
+    public function nrm2(
+        NDArray $X) : float
+    {
+        $N = $X->size();
+        $XX = $X->buffer();
+        $offX = $X->offset();
+        $ret = $this->blas->nrm2($N,$XX,$offX,1);
+        return $ret;
     }
 
     /**
@@ -748,6 +800,24 @@ class LinearAlgebra
     }
 
     /**
+     *     X := tanh(X)
+     */
+    public function tanh(
+        NDArray $X
+        ) : NDArray
+    {
+        $n = $X->size();
+        $XX = $X->buffer();
+        $offX = $X->offset();
+
+        $this->math->tanh(
+            $n,
+            $XX,$offX,1);
+
+        return $X;
+    }
+
+    /**
      *     Y(i) := 1 (X(i) = Y(i))
      *     Y(i) := 0 (X(i) = Y(i))
      */
@@ -817,38 +887,9 @@ class LinearAlgebra
         return $A;
     }
 
-    //
-    // discontinue
-    //
-    public function repeat(NDArray $A, int $repeats=null)
-    {
-        if($repeats===null)
-            $repeats = 1;
-        $shapeCell = $A->shape();
-        $s1 = array_shift($shapeCell);
-        $shape = array_merge([$s1,$repeats],$shapeCell);
-        $B = $this->alloc($shape,$A->dtype());
-        $cellSize = 1;
-        while(($s=array_shift($shapeCell))!==null) {
-            $cellSize *= $s;
-        }
-        [$m,$n] = $A->shape();
-        $AA = $A->buffer();
-        $offA = $A->offset();
-        $BB = $B->buffer();
-        $offB = $B->offset();
-        for($j=0;$j<$repeats;$j++) {
-            $idA = $offA;
-            $idB = $offB + $cellSize*$j;
-            for($i=0;$i<$m;$i++) {
-                $this->blas->copy($cellSize,$AA,$idA,1,$BB,$idB,1);
-                $idA += $cellSize;
-                $idB += $cellSize*$repeats;
-            }
-        }
-        return $B;
-    }
-
+    /**
+     * Y := A[X]
+     */
     public function select(
         NDArray $A,
         NDArray $X,
@@ -867,6 +908,9 @@ class LinearAlgebra
         }
     }
 
+    /**
+     *    Y(i,j) := A(X[i],j)
+     */
     protected function selectAxis0(
         NDArray $A,
         NDArray $X,
@@ -915,6 +959,9 @@ class LinearAlgebra
         return $Y;
     }
 
+    /**
+     *  Y(i) := A(i,X[i])
+     */
     protected function selectAxis1(
         NDArray $A,
         NDArray $X,
@@ -959,6 +1006,9 @@ class LinearAlgebra
         return $Y;
     }
 
+    /**
+     * A(X) := Y
+     */
     public function scatter(
         NDArray $X,
         NDArray $Y,
@@ -970,18 +1020,43 @@ class LinearAlgebra
             $axis=0;
         }
         if($axis==0) {
-            return $this->scatterAxis0($X,$Y,$numClass,$A);
+            return $this->scatterAxis0(false,$X,$Y,$numClass,$A);
         } elseif($axis==1) {
-            return $this->scatterAxis1($X,$Y,$numClass,$A);
+            return $this->scatterAxis1(false,$X,$Y,$numClass,$A);
         } else {
             throw new InvalidArgumentException('axis must be 0 or 1');
         }
     }
 
-    protected function scatterAxis0(
+    /**
+     * A(X) := Y
+     */
+    public function scatterAdd(
         NDArray $X,
         NDArray $Y,
-        int $numClass,
+        NDArray $A,
+        int $axis=null) : NDArray
+    {
+        if($axis===null) {
+            $axis=0;
+        }
+        if($axis==0) {
+            return $this->scatterAxis0(true,$X,$Y,null,$A);
+        } elseif($axis==1) {
+            return $this->scatterAxis1(true,$X,$Y,null,$A);
+        } else {
+            throw new InvalidArgumentException('axis must be 0 or 1');
+        }
+    }
+
+    /**
+     * A(X[i],j) := Y[i,j]
+     */
+    protected function scatterAxis0(
+        bool $addMode,
+        NDArray $X,
+        NDArray $Y,
+        int $numClass=null,
         NDArray $A=null) : NDArray
     {
         if($X->ndim()!=1) {
@@ -993,15 +1068,17 @@ class LinearAlgebra
         if($countX!=$countY) {
             throw new InvalidArgumentException('Unmatch size "Y" with "X".');
         }
-        $m = $numClass;
         $n = (int)array_product($shape);
-        array_unshift($shape,$numClass);
         if($A==null) {
+            $m = $numClass;
+            array_unshift($shape,$numClass);
             $A = $this->alloc($shape,$Y->dtype());
             $this->zeros($A);
         } else {
+            $m = $A->shape()[0];
+            array_unshift($shape,$m);
             if($A->shape()!=$shape){
-            throw new InvalidArgumentException('Unmatch size "Y" with "X" and "A" .');
+                throw new InvalidArgumentException('Unmatch size "Y" with "A" .');
             }
         }
 
@@ -1020,15 +1097,21 @@ class LinearAlgebra
             $countX,
             $AA,$offA,$ldA,
             $XX,$offX,1,
-            $YY,$offY,$ldY);
+            $YY,$offY,$ldY,
+            $addMode
+            );
 
         return $A;
     }
 
+    /**
+     * A(i,X[i]) := Y[i]
+     */
     protected function scatterAxis1(
+        bool $addMode,
         NDArray $X,
         NDArray $Y,
-        int $numClass,
+        int $numClass=null,
         NDArray $A=null) : NDArray
     {
         if($X->ndim()!=1) {
@@ -1041,14 +1124,18 @@ class LinearAlgebra
             throw new InvalidArgumentException('Unmatch size "X" and "Y".');
         }
         $m = $X->shape()[0];
-        $n = $numClass;
         if($A==null) {
+            if($numClass==null){
+                throw new InvalidArgumentException('numClass must be specified when without target Array.');
+            }
+            $n = $numClass;
             $A = $this->alloc([$m,$n]);
             $this->zeros($A);
         } else {
-            if($A->shape()!=[$m,$n]) {
-                throw new InvalidArgumentException('Unmatch size "X" and "Y" and "A".');
+            if($A->shape()[0]!=$m) {
+                throw new InvalidArgumentException('Unmatch size "X" and "A".');
             }
+            $n = $A->shape()[1];
         }
 
         $AA = $A->buffer();
@@ -1064,7 +1151,9 @@ class LinearAlgebra
             $n,
             $AA,$offA,$ldA,
             $XX,$offX,1,
-            $YY,$offY,1);
+            $YY,$offY,1,
+            $addMode
+            );
 
         return $A;
     }
@@ -1228,7 +1317,7 @@ class LinearAlgebra
     /**
      *    X(m) := sum( A(m,n) )
      */
-     
+
     public function reduceSum(
         NDArray $A,
         int $axis=null,
@@ -1276,7 +1365,7 @@ class LinearAlgebra
 
         return $X;
     }
-    
+
     public function reduceMax(
         NDArray $A,
         int $axis,
@@ -1446,7 +1535,7 @@ class LinearAlgebra
         }
         return $cols;
     }
-    
+
     public function col2im(
         NDArray $cols,
         NDArray $images,
@@ -1581,7 +1670,7 @@ class LinearAlgebra
         );
         return $cols;
     }
-    
+
     public function im2col2d(
         bool $reverse,
         NDArray $images,
@@ -1848,7 +1937,7 @@ class LinearAlgebra
 
         return $X;
     }
-    
+
     public function randomSequence(
         int $base,
         int $size=null,
@@ -1875,5 +1964,402 @@ class LinearAlgebra
         $X = $X[[0,$size-1]];
         return $X;
     }
-    
+
+    public function slice(
+        NDArray $input,
+        array $begin,
+        array $size,
+        NDArray $output=null
+        ) : NDArray
+    {
+        return $this->doSlice(
+            false,
+            $input,
+            $begin,
+            $size,
+            $output
+        );
+    }
+
+    public function stick(
+        NDArray $input,
+        NDArray $output,
+        array $begin,
+        array $size
+        ) : NDArray
+    {
+        return $this->doSlice(
+            true,
+            $output,
+            $begin,
+            $size,
+            $input
+        );
+    }
+
+    public function stack(
+        array $values,
+        int $axis=null
+    )
+    {
+        if($axis==null){
+            $axis=0;
+        }
+        if($axis==0){
+            $m = count($values);
+            $shape = $values[0]->shape();
+            array_unshift($shape,$m);
+            $output = $this->alloc($shape,$values[0]->dtype());
+            $i = 0;
+            foreach($values as $value){
+                if(!($value instanceof NDArray)) {
+                    throw new InvalidArgumentException('values must be array of NDArray');
+                }
+                $shape = $value->shape();
+                array_unshift($shape,1);
+                $value = $value->reshape(
+                    $shape);
+                $this->doSlice(true,
+                    $output,
+                    [$i],[1],
+                    $value
+                );
+                $i++;
+            }
+        } elseif($axis==1){
+            $n = count($values);
+            $shape = $values[0]->shape();
+            $m = array_shift($shape);
+            array_unshift($shape,$n);
+            array_unshift($shape,$m);
+            $output = $this->alloc($shape,$values[0]->dtype());
+            $i = 0;
+            foreach($values as $value){
+                if(!($value instanceof NDArray)) {
+                    throw new InvalidArgumentException('values must be array of NDArray');
+                }
+                $shape = $value->shape();
+                $m = array_shift($shape);
+                array_unshift($shape,1);
+                array_unshift($shape,$m);
+                $value = $value->reshape(
+                    $shape);
+                $this->doSlice(true,
+                    $output,
+                    [0,$i],[-1,1],
+                    $value
+                );
+                $i++;
+            }
+        } else {
+            throw new InvalidArgumentException('unsuppoted axis');
+        }
+        return $output;
+    }
+
+    protected function doSlice(
+        bool $reverse,
+        NDArray $input,
+        array $begin,
+        array $size,
+        NDArray $output=null
+        ) : NDArray
+    {
+        if(!$reverse){
+            $messageInput='Input';
+        } else {
+            $messageInput='Output';
+        }
+        $orgBegin = $begin;
+        $orgSize = $size;
+        $ndimBegin = count($begin);
+        if($ndimBegin<1||$ndimBegin>2) {
+            throw new InvalidArgumentException('begin must has 1 or 2 integer.');
+        }
+        $ndimSize = count($size);
+        if($ndimSize<1||$ndimSize>2) {
+            throw new InvalidArgumentException('Size must has 1 or 2 integer.');
+        }
+        if($ndimBegin!=$ndimSize){
+            throw new InvalidArgumentException('Unmatch shape of begin and size');
+        }
+        $ndimInput = $input->ndim();
+        if($ndimInput<$ndimBegin){
+            throw new InvalidArgumentException($messageInput.' shape rank is low to slice');
+        }
+        $shape = $input->shape();
+        $m = array_shift($shape);
+        $startAxis0 = array_shift($begin);
+        if($startAxis0<0){
+            $startAxis0 = $m+$startAxis0;
+        }
+        if($startAxis0<0||$startAxis0>=$m){
+            throw new InvalidArgumentException('start of axis 0 is invalid value.');
+        }
+        $sizeAxis0 = array_shift($size);
+        if($sizeAxis0<0){
+            $sizeAxis0 = $m-$startAxis0+$sizeAxis0+1;
+        }
+        if($sizeAxis0<1||$startAxis0+$sizeAxis0>$m){
+            throw new InvalidArgumentException('size of axis 0 is invalid value.');
+        }
+        if($ndimBegin==1){
+            $n = 1;
+            $startAxis1 = 0;
+            $sizeAxis1 = 1;
+        } else {
+            $n = array_shift($shape);
+            $startAxis1 = array_shift($begin);
+            if($startAxis1<0){
+                $startAxis1 = $n+$startAxis1;
+            }
+            if($startAxis1<0||$startAxis1>=$n){
+                throw new InvalidArgumentException('start of axis 1 is invalid value.:begin=['.implode(',',$orgBegin).']');
+            }
+            $sizeAxis1 = array_shift($size);
+            if($sizeAxis1<0){
+                $sizeAxis1 = $n-$startAxis1+$sizeAxis1+1;
+            }
+            if($sizeAxis1<1||$startAxis1+$sizeAxis1>$n){
+                throw new InvalidArgumentException('size of axis 1 is invalid value.');
+            }
+        }
+        $k = array_product($shape);
+        $outputShape = [$sizeAxis0];
+        if($ndimBegin==2){
+            array_push($outputShape,
+                $sizeAxis1);
+        }
+        $outputShape = array_merge(
+            $outputShape,$shape);
+        if($output==null){
+            $output = $this->alloc($outputShape,$input->dtype());
+        }else{
+            if($outputShape!=$output->shape()){
+                throw new InvalidArgumentException('Unmatch output shape');
+            }
+        }
+
+        $A = $input->buffer();
+        $offsetA = $input->offset();
+        $Y = $output->buffer();
+        $offsetY = $output->offset();
+        $incA = 1;
+        $incY = 1;
+        $this->math->slice(
+            $reverse,
+            $addMode=false,
+            $m,
+            $n,
+            $k,
+            $A,$offsetA,$incA,
+            $Y,$offsetY,$incY,
+            $startAxis0,$sizeAxis0,
+            $startAxis1,$sizeAxis1
+        );
+        return $output;
+    }
+
+    //
+    // repeat
+    //
+    public function repeat(NDArray $A, int $repeats)
+    {
+        if($repeats<1) {
+            throw new InvalidArgumentException('repeats argument must be one or greater.');
+        }
+        if($A->ndim()<2) {
+            throw new InvalidArgumentException('dimension rank must be two or greater.');
+        }
+        $shapeCell = $A->shape();
+        $s1 = array_shift($shapeCell);
+        $shape = array_merge([$s1,$repeats],$shapeCell);
+        $B = $this->alloc($shape,$A->dtype());
+        $m = $s1;
+        $n = $repeats;
+        $k = (int)array_product($shapeCell);
+        $AA = $A->buffer();
+        $offA = $A->offset();
+        $BB = $B->buffer();
+        $offB = $B->offset();
+        $startAxis0 = 0;
+        $sizeAxis0 = $m;
+        for($i=0;$i<$repeats;$i++) {
+            $startAxis1 = $i;
+            $sizeAxis1 = 1;
+            $this->math->slice(
+                $reverse=true,
+                $addMode=false,
+                $m,
+                $n,
+                $k,
+                $BB,$offB,1,
+                $AA,$offA,1,
+                $startAxis0,$sizeAxis0,
+                $startAxis1,$sizeAxis1
+            );
+        }
+        return $B;
+    }
+
+    //
+    // repeat
+    //
+    public function reduceSumRepeated(NDArray $A)
+    {
+        if($A->ndim()<3) {
+            throw new InvalidArgumentException('dimension rank must be two or greater.');
+        }
+        $shapeCell = $A->shape();
+        $s1 = array_shift($shapeCell);
+        $repeats = array_shift($shapeCell);
+        $shape = array_merge([$s1],$shapeCell);
+        $B = $this->alloc($shape,$A->dtype());
+        $this->zeros($B);
+        $m = $s1;
+        $n = $repeats;
+        $k = (int)array_product($shapeCell);
+        $AA = $A->buffer();
+        $offA = $A->offset();
+        $BB = $B->buffer();
+        $offB = $B->offset();
+        $startAxis0 = 0;
+        $sizeAxis0 = $m;
+        for($i=0;$i<$repeats;$i++) {
+            $startAxis1 = $i;
+            $sizeAxis1 = 1;
+            $this->math->slice(
+                $reverse=false,
+                $addMode=true,
+                $m,
+                $n,
+                $k,
+                $AA,$offA,1,
+                $BB,$offB,1,
+                $startAxis0,$sizeAxis0,
+                $startAxis1,$sizeAxis1
+            );
+        }
+        return $B;
+    }
+
+    public function svd(NDArray $matrix,$fullMatrices=null)
+    {
+        if($matrix->ndim()!=2) {
+            throw new InvalidArgumentException("input array must be 2D array");
+        }
+        if($fullMatrices===null)
+            $fullMatrices = true;
+        [$m,$n] = $matrix->shape();
+        if($fullMatrices) {
+            $jobu  = 'A';
+            $jobvt = 'A';
+            $ldA = $n;
+            $ldU = $m;
+            $ldVT = $n;
+        } else {
+            $jobu  = 'S';
+            $jobvt = 'S';
+            $ldA = $n;
+            $ldU = min($m,$n);
+            #$ldVT = min($m,$n);
+            $ldVT = $n; // bug in the lapacke ???
+        }
+
+        $S = $this->alloc([min($m,$n)],$matrix->dtype());
+        $this->zeros($S);
+        $U = $this->alloc([$m,$ldU],$matrix->dtype());
+        $this->zeros($U);
+        $VT = $this->alloc([$ldVT,$n],$matrix->dtype());
+        $this->zeros($VT);
+        $SuperB = $this->alloc([min($m,$n)-1],$matrix->dtype());
+        $this->zeros($SuperB);
+
+        $AA = $matrix->buffer();
+        $offsetA = $matrix->offset();
+        $SS = $S->buffer();
+        $offsetS = $S->offset();
+        $UU = $U->buffer();
+        $offsetU = $U->offset();
+        $VVT = $VT->buffer();
+        $offsetVT = $VT->offset();
+        $SuperBB = $SuperB->buffer();
+        $offsetSuperB = $SuperB->offset();
+        $this->lapack->gesvd(
+            LAPACK_ROW_MAJOR,
+            ord($jobu),
+            ord($jobvt),
+            $m,
+            $n,
+            $AA,  $offsetA,  $ldA,
+            $SS,  $offsetS,
+            $UU,  $offsetU,  $ldU,
+            $VVT, $offsetVT, $ldVT,
+            $SuperBB,  $offsetSuperB
+        );
+        if(!$fullMatrices) {
+            // bug in the lapacke ???
+            $VT = $this->copy($VT[[0,min($m,$n)-1]]);
+        }
+        return [$U,$S,$VT];
+    }
+
+    public function numericalGradient(
+        float $h=null,
+        $f=null,
+        NDArray ...$variables) : array
+    {
+        if($h===null)
+            $h = 1e-4;
+        if(!is_callable($f)) {
+            throw new InvalidArgumentException("f must callable or array of f and h");
+        }
+        $grads = [];
+        $orgVariables = $variables;
+        $variables = [];
+        foreach ($orgVariables as $variable) {
+            $variables[] = $this->copy($variable);
+        }
+        foreach($variables as $x) {
+            $grad = $this->alloc($x->shape(),$x->dtype());
+            $this->zeros($grad);
+            $grads[] = $grad;
+            $size = $x->size();
+            $xx = $x->buffer();
+            $idx = $x->offset();
+            $gg = $grad->buffer();
+            $gidx = $grad->offset();
+            $h2 = $h*2 ;
+            for($i=0;$i<$size;$i++,$idx++,$gidx++) {
+                $value = $xx[$idx];
+                $xx[$idx] = $value + $h;
+                $y1 = $f(...$variables);
+                $xx[$idx] = $value - $h;
+                $y2 = $f(...$variables);
+                $d = $this->axpy($y2,$this->copy($y1),-1);
+                $gg[$gidx] = $this->sum($d)/$h2;
+                $xx[$idx] = $value;
+            }
+        }
+        return $grads;
+    }
+
+    public function isclose(NDArray $a, NDArray $b, $rtol=null, $atol=null)
+    {
+        if($rtol===null)
+            $rtol = 1e-04;
+        if($atol===null)
+            $atol = 1e-07;
+        if($a->shape()!=$b->shape()) {
+            return false;
+        }
+        // diff = b - a
+        $diff = $this->axpy($a,$this->copy($b),-1);
+        // close = atol + rtol * b
+        $close = $atol+abs($this->amax($this->scal($rtol,$this->copy($b))));
+        if(abs($this->amax($diff)) > $close) {
+            return false;
+        }
+        return true;
+    }
 }

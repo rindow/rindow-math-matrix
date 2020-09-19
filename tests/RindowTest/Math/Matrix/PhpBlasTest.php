@@ -13,7 +13,8 @@ class Test extends TestCase
 {
     public function getBlas($mo)
     {
-        $blas = new PhpBlas();
+        #$blas = new PhpBlas();
+        $blas = $mo->blas();
         return $blas;
     }
 
@@ -133,6 +134,50 @@ class Test extends TestCase
             $beta,
             $YY,$offY,1,
         ];
+    }
+
+    public function testGetConfig()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+        if(extension_loaded('rindow_openblas')) {
+            $this->assertStringStartsWith('OpenBLAS',$blas->getConfig());
+        } else {
+            $this->assertStringStartsWith('PhpBlas',$blas->getConfig());
+        }
+    }
+
+    public function testGetNumThreads()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+        if(extension_loaded('rindow_openblas')) {
+            $this->assertGreaterThanOrEqual(1,$blas->getNumThreads());
+        } else {
+            $this->assertEquals(1,$blas->getNumThreads());
+        }
+    }
+
+    public function testGetNumProcs()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+        if(extension_loaded('rindow_openblas')) {
+            $this->assertGreaterThanOrEqual(1,$blas->getNumProcs());
+        } else {
+            $this->assertEquals(1,$blas->getNumProcs());
+        }
+    }
+
+    public function testGetCorename()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+        if(extension_loaded('rindow_openblas')) {
+            $this->assertTrue(is_string($blas->getCorename()));
+        } else {
+            $this->assertTrue(is_string($blas->getCorename()));
+        }
     }
 
     public function testGemmNormal()
@@ -375,7 +420,7 @@ class Test extends TestCase
 
         $AA = $mo->array([1,2,3,4,5])->buffer();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Vector specification too large for bufferA');
+        $this->expectExceptionMessage('Matrix specification too large for bufferA.');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -404,7 +449,7 @@ class Test extends TestCase
 
         $BB = $mo->array([1,0,0, 0,1,0, 0,0])->buffer();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Vector specification too large for bufferB');
+        $this->expectExceptionMessage('Matrix specification too large for bufferB');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -434,7 +479,7 @@ class Test extends TestCase
 
         $CC = $mo->zeros([5])->buffer();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Vector specification too large for bufferC');
+        $this->expectExceptionMessage('Matrix specification too large for bufferC');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -463,7 +508,7 @@ class Test extends TestCase
 
         $AA = $mo->array([1,0,0, 0,1,0, 0,0])->buffer();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Vector specification too large for bufferA');
+        $this->expectExceptionMessage('Matrix specification too large for bufferA');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -492,7 +537,7 @@ class Test extends TestCase
 
         $BB = $mo->array([1,2,3,4,5])->buffer();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Vector specification too large for bufferB');
+        $this->expectExceptionMessage('Matrix specification too large for bufferB');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -521,7 +566,7 @@ class Test extends TestCase
 
         $CC = $mo->zeros([5])->buffer();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Vector specification too large for bufferC');
+        $this->expectExceptionMessage('Matrix specification too large for bufferC');
         $blas->gemm(
             BLAS::RowMajor,$transA,$transB,
             $M,$N,$K,
@@ -601,7 +646,7 @@ class Test extends TestCase
 
         $AA = $mo->array([1,2,3,4,5])->buffer();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Vector specification too large for bufferA');
+        $this->expectExceptionMessage('Matrix specification too large for bufferA');
         $blas->gemv(
             BLAS::RowMajor,$trans,
             $m,$n,

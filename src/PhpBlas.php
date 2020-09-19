@@ -33,6 +33,34 @@ class PhpBlas //implements BLASLevel1
         return $this->forceBlas || in_array($X->dtype(),$this->floatTypes);
     }
 
+    public function getNumThreads() : int
+    {
+        if($this->blas===null)
+            return 1;
+        return $this->blas->getNumThreads();
+    }
+
+    public function getNumProcs() : int
+    {
+        if($this->blas===null)
+            return 1;
+        return $this->blas->getNumProcs();
+    }
+
+    public function getConfig() : string
+    {
+        if($this->blas===null)
+            return 'PhpBlas';
+        return $this->blas->getConfig();
+    }
+
+    public function getCorename()
+    {
+        if($this->blas===null)
+            return 'PHP';
+        return $this->blas->getCorename();
+    }
+
     public function scal(
         int $n,
         float $alpha,
@@ -184,6 +212,26 @@ class PhpBlas //implements BLASLevel1
         }
     }
 
+    public function nrm2(
+        int $n,
+        Buffer $X, int $offsetX, int $incX
+        ) : float
+    {
+        if($this->useBlas($X)) {
+            return $this->blas->nrm2($n,$X,$offsetX,$incX);
+        }
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new RuntimeException('Vector X specification too large for buffer.');
+        $idxX = $offsetX;
+        // Y := sqrt(sum(Xn ** 2))
+        $sum = 0.0;
+        for ($i=0; $i<$n; $i++,$idxX+=$incX) {
+            $sum += $X[$idxX] ** 2;
+        }
+        $Y = sqrt($sum);
+        return $Y;
+    }
+
     public function gemv(
         int $order,
         int $trans,
@@ -210,7 +258,7 @@ class PhpBlas //implements BLASLevel1
         $cols = ($trans==BLAS::NoTrans) ? $n : $m;
 
         if($offsetA+($m-1)*$ldA+($n-1)*$incX>=count($A))
-            throw new RuntimeException('Vector specification too large for bufferA.');
+            throw new RuntimeException('Matrix specification too large for bufferA.');
         if($offsetX+($cols-1)*$incX>=count($X))
             throw new RuntimeException('Vector specification too large for bufferX.');
         if($offsetY+($rows-1)*$incY>=count($Y))
@@ -265,11 +313,11 @@ class PhpBlas //implements BLASLevel1
         $rowsB = ($transB==BLAS::NoTrans) ? $k : $n;
         $colsB = ($transB==BLAS::NoTrans) ? $n : $k;
         if($offsetA+($rowsA-1)*$ldA+($colsA-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for bufferA.');
+            throw new RuntimeException('Matrix specification too large for bufferA.');
         if($offsetB+($rowsB-1)*$ldB+($colsB-1)>=count($B))
-            throw new RuntimeException('Vector specification too large for bufferB.');
+            throw new RuntimeException('Matrix specification too large for bufferB.');
         if($offsetC+($m-1)*$ldC+($n-1)>=count($C))
-            throw new RuntimeException('Vector specification too large for bufferC.');
+            throw new RuntimeException('Matrix specification too large for bufferC.');
 
         $ldA_m = ($transA==BLAS::NoTrans) ? $ldA : 1;
         $ldA_k = ($transA==BLAS::NoTrans) ? 1 : $ldA;

@@ -10,6 +10,12 @@ Rindow Math Matrix is the fundamental package for scientific matrix operation
 - Useful linear algebra and random number capabilities
 
 
+
+Please see the documents on [Rindow projects](https://rindow.github.io/) web pages.
+
+
+
+
 ### Download the rindow_openblas extension
 
 You can do very fast N-dimensional array operations in conjunction

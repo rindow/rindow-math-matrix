@@ -498,6 +498,28 @@ class PhpMath
     }
 
     /**
+     *     X := tanh(X)
+     */
+    public function tanh(
+        int $n,
+        Buffer $X, int $offsetX, int $incX
+        ) : void
+    {
+        if($this->useMath($X)) {
+            $this->math->tanh($n,$X,$offsetX,$incX);
+            return;
+        }
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new RuntimeException('Vector specification too large for buffer.');
+
+        $idx = $offsetX;
+        for ($i=0; $i<$n; $i++,$idx+=$incX) {
+            $t = $X[$idx];
+            $X[$idx] = tanh($t);
+        }
+    }
+
+    /**
      *     A(m,n) := X(n)
      */
     public function duplicate(
@@ -612,6 +634,16 @@ class PhpMath
         }
     }
 
+    protected function rindow_openblas_math_add($n,$X,$offsetX,$incX,$Y,$offsetY,$incY)
+    {
+        $idX = $offsetX;
+        $idY = $offsetY;
+        for($i=0; $i<$n; $i++, $idX+=$incX,$idY+=$incY) {
+            $tmp = $Y[$idY];
+            $Y[$idY] = $tmp + $X[$idX];
+        }
+    }
+
     /**
      *     Y := A(k,X(m))
      */
@@ -655,11 +687,12 @@ class PhpMath
         int $k,
         Buffer $A, int $offsetA, int $ldA,
         Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $ldY
+        Buffer $Y, int $offsetY, int $ldY,
+        bool $addMode
         ) : void
     {
         if($this->math) {
-            $this->math->scatterAxis0($m,$n,$k,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$ldY);
+            $this->math->scatterAxis0($m,$n,$k,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$ldY,$addMode);
             return;
         }
 
@@ -678,9 +711,18 @@ class PhpMath
                 throw new RuntimeException('Label number is out of bounds.');
             $idA = $offsetA+$ldA*$label;
             if($n==1) {
-                $A[$idA] = $Y[$idy];
+                if($addMode){
+                    $tmp = $A[$idA];
+                    $A[$idA] = $tmp + $Y[$idy];
+                } else {
+                    $A[$idA] = $Y[$idy];
+                }
             } else {
-                $this->rindow_openblas_math_copy($n, $Y,$idy,1, $A,$idA,1);
+                if($addMode){
+                    $this->rindow_openblas_math_add($n, $Y,$idy,1, $A,$idA,1);
+                } else {
+                    $this->rindow_openblas_math_copy($n, $Y,$idy,1, $A,$idA,1);
+                }
             }
         }
     }
@@ -693,11 +735,12 @@ class PhpMath
         int $n,
         Buffer $A, int $offsetA, int $ldA,
         Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY
+        Buffer $Y, int $offsetY, int $incY,
+        bool $addMode
         ) : void
     {
         if($this->useMath($A)) {
-            $this->math->scatterAxis1($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$incY);
+            $this->math->scatterAxis1($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$incY,$addMode);
             return;
         }
 
@@ -713,9 +756,15 @@ class PhpMath
         $idy = $offsetY;
         for ($i=0; $i<$m; $i++,$ida+=$ldA,$idx+=$incX,$idy+=$incY) {
             $label = (int)$X[$idx];
-            if($label>=$n||$label<0)
+            if($label>=$n||$label<0){
                 throw new RuntimeException('Label number is out of bounds.');
-            $A[$ida+$label] = $Y[$idy];
+            }
+            if($addMode) {
+                $tmp = $A[$ida+$label];
+                $A[$ida+$label] = $tmp+$Y[$idy];
+            } else {
+                $A[$ida+$label] = $Y[$idy];
+            }
         }
     }
 
@@ -779,6 +828,19 @@ class PhpMath
         }
     }
 
+
+    protected function math_sum(
+        int $n,
+        Buffer $X, int $offsetX, int $incX ) : float
+    {
+        $idxX = $offsetX;
+        $acc = 0.0;
+        for ($i=0; $i<$n; $i++,$idxX+=$incX) {
+            $acc += $X[$idxX];
+        }
+        return $acc;
+    }
+
     /**
      * X(m) := sum( A(m,n) )
      */
@@ -812,17 +874,12 @@ class PhpMath
         $idAj = $offsetA;
         $idX = $offsetX;
         for($j=0; $j<$rows; $j++,$idAj+=$incAj,$idX+=$incX) {
-            $sum = 0;
-            $idA = $idAj;
-            for($i=0; $i<$cols; $i++,$idA+=$incAi) {
-                $sum += $A[$idA];
-            }
-            $X[$idX] = $sum;
+            $X[$idX] = $this->math_sum($cols,$A,$idAj,$incAi);
         }
     }
-    
+
     /**
-     * X(m) := sum( A(m,n) )
+     * X(m) := max( A(m,n) )
      */
     public function reduceMax(
         bool $trans,
@@ -1023,7 +1080,7 @@ class PhpMath
             }
         }
     }
-    
+
     /**
      * copy a image with channels
      */
@@ -1053,7 +1110,7 @@ class PhpMath
             #print('yx=%d,%d' % (yy,xx))
             for($c=0; $c<$channels; $c++) {
                 if($xx<0 || $xx>=$vim_w) {
-                    #print('pad') 
+                    #print('pad')
                     if(!$reverse) {
                         $out[$out_channel_pos] = 0;
                     }
@@ -1072,7 +1129,7 @@ class PhpMath
             $filter_w_pos += $filter_w_step;
         }
     }
-    
+
     /**
     * images: (n,h,w,c) : channels_last
     *        (n,c,h,w) : channels_first
@@ -1126,7 +1183,7 @@ class PhpMath
         }
         $out_w = (int)floor(($im_w-$filter_w)/$stride_w)+1;
         if($padding) {
-            $out_buf_size = 
+            $out_buf_size =
                 $batches*
                 $im_w*$filter_w*
                 $channels;
@@ -1168,13 +1225,13 @@ class PhpMath
             $out_channel_step = 1;
         }
         $out_cell_step = $filter_w*$channels;
-        
+
         $out_pos = $cols_offset;
         $batch_pos = $images_offset;
-    
+
         $start_vim_x = $start_w*$stride_w;
         $vim_w = ($out_w-1)*$stride_w+$filter_w;
-    
+
         for($batch=0; $batch<$batches;$batch++) {
             $stride_w_pos = $batch_pos+ $start_w*$stride_w_step;
             $vim_x = $start_vim_x;
@@ -1198,11 +1255,11 @@ class PhpMath
                 $stride_w_pos += $stride_w_step;
                 $vim_x += $stride_w;
                 $out_pos += $out_cell_step;
-            }    
+            }
             $batch_pos += $batch_step;
         }
     }
-    
+
     /**
      * copy a image with channels
      */
@@ -1240,7 +1297,7 @@ class PhpMath
                 for($c=0; $c<$channels; $c++) {
                     if($yy<0 || $yy>=$vim_h ||
                        $xx<0 || $xx>=$vim_w) {
-                        #print('pad') 
+                        #print('pad')
                         if(!$reverse) {
                             $out[$out_channel_pos] = 0;
                         }
@@ -1260,9 +1317,9 @@ class PhpMath
             }
             $filter_h_pos += $filter_h_step;
         }
-        
+
     }
-    
+
     /**
     * images: (n,h,w,c) : channels_last
     *        (n,c,h,w) : channels_first
@@ -1323,7 +1380,7 @@ class PhpMath
         $out_h = floor(($im_h-$filter_h)/$stride_h)+1;
         $out_w = floor(($im_w-$filter_w)/$stride_w)+1;
         if($padding) {
-            $out_buf_size = 
+            $out_buf_size =
                 $batches*
                 $im_h*$filter_h*
                 $im_w*$filter_w*
@@ -1374,15 +1431,15 @@ class PhpMath
             $out_channel_step = 1;
         }
         $out_cell_step = $filter_h*$filter_w*$channels;
-        
+
         $out_pos = $cols_offset;
         $batch_pos = $images_offset;
-    
+
         $start_vim_y = $start_h*$stride_h;
         $start_vim_x = $start_w*$stride_w;
         $vim_h = ($out_h-1)*$stride_h+$filter_h;
         $vim_w = ($out_w-1)*$stride_w+$filter_w;
-    
+
         for($batch=0; $batch<$batches;$batch++) {
             $stride_h_pos = $batch_pos+($start_h*$stride_h_step);
             $vim_y = $start_vim_y;
@@ -1416,7 +1473,7 @@ class PhpMath
                 }
                 $stride_h_pos += $stride_h_step;
                 $vim_y += $stride_h;
-            }    
+            }
             $batch_pos += $batch_step;
         }
     }
@@ -1466,7 +1523,7 @@ class PhpMath
                         if($zz<0 || $zz>=$vim_d ||
                             $yy<0 || $yy>=$vim_h ||
                            $xx<0 || $xx>=$vim_w) {
-                            #print('pad') 
+                            #print('pad')
                             if(!$reverse) {
                                 $out[$out_channel_pos] = 0;
                             }
@@ -1489,7 +1546,7 @@ class PhpMath
             $filter_d_pos += $filter_d_step;
         }
     }
-    
+
     /**
     * images: (n,h,w,c) : channels_last
     *        (n,c,h,w) : channels_first
@@ -1557,7 +1614,7 @@ class PhpMath
         $out_h = floor(($im_h-$filter_h)/$stride_h)+1;
         $out_w = floor(($im_w-$filter_w)/$stride_w)+1;
         if($padding) {
-            $out_buf_size = 
+            $out_buf_size =
                 $batches*
                 $im_d*$filter_d*
                 $im_h*$filter_h*
@@ -1617,17 +1674,17 @@ class PhpMath
             $out_channel_step = 1;
         }
         $out_cell_step = $filter_d*$filter_h*$filter_w*$channels;
-        
+
         $out_pos = $cols_offset;
         $batch_pos = $images_offset;
-    
+
         $start_vim_z = $start_d*$stride_d;
         $start_vim_y = $start_h*$stride_h;
         $start_vim_x = $start_w*$stride_w;
         $vim_d = ($out_d-1)*$stride_d+$filter_d;
         $vim_h = ($out_h-1)*$stride_h+$filter_h;
         $vim_w = ($out_w-1)*$stride_w+$filter_w;
-    
+
         for($batch=0; $batch<$batches;$batch++) {
             $stride_d_pos = $batch_pos+($start_d*$stride_d_step);
             $vim_z = $start_vim_z;
@@ -1741,7 +1798,7 @@ class PhpMath
             $X[$px] = $this->genRandNormal($mean,$scale);
         }
     }
-    
+
     /**
     */
     public function randomSequence(
@@ -1773,6 +1830,79 @@ class PhpMath
             $tmp = $X[$px];
             $X[$px] = $X[$idx];
             $X[$idx] = $tmp;
+        }
+    }
+
+    /**
+    */
+    public function slice(
+        bool $reverse,
+        bool $addMode,
+        int $m,
+        int $n,
+        int $k,
+        Buffer $A, int $offsetA, int $incA,
+        Buffer $Y, int $offsetY, int $incY,
+        int $startAxis0,
+        int $sizeAxis0,
+        int $startAxis1,
+        int $sizeAxis1
+        )
+    {
+        if($this->math) {
+            $this->math->slice(
+                $reverse,
+                $addMode,
+                $m,
+                $n,
+                $k,
+                $A,
+                $offsetA,
+                $incA,
+                $Y,
+                $offsetY,
+                $incY,
+                $startAxis0,
+                $sizeAxis0,
+                $startAxis1,
+                $sizeAxis1
+            );
+            return;
+        }
+        if($m*$n*$k*$incA+$offsetA>count ($A)) {
+            throw new InvalidArgumentException('unmatch BufferA size and m,n,k');
+        }
+        if($m*$n*$k*$incY+$offsetY>count ($Y)) {
+        }
+        if($startAxis0<0||$startAxis0>=$m||
+            $sizeAxis0<0||$sizeAxis0+$startAxis0>$m){
+            throw new InvalidArgumentException('Axis0 range is too large for source array.');
+        }
+        if($startAxis1<0||$startAxis1>=$n||
+            $sizeAxis1<0||$sizeAxis1+$startAxis1>$n){
+            throw new InvalidArgumentException('Axis1 range is too large for source array.');
+        }
+        if($sizeAxis0*$sizeAxis1*$k*$incY>count($Y)-$offsetY){
+            throw new InvalidArgumentException('BufferY size is too small');
+        }
+        for($i=0;$i<$sizeAxis0;$i++) {
+            for($j=0;$j<$sizeAxis1;$j++){
+                $pa = ($i+$startAxis0)*$n*$k+($j+$startAxis1)*$k+$offsetA;
+                $py = $i*$sizeAxis1*$k+$j*$k+$offsetY;
+                if(!$reverse) {
+                    if($addMode){
+                        $this->rindow_openblas_math_add($k,$A,$pa,$incA,$Y,$py,$incY);
+                    } else {
+                        $this->rindow_openblas_math_copy($k,$A,$pa,$incA,$Y,$py,$incY);
+                    }
+                } else {
+                    if($addMode){
+                        $this->rindow_openblas_math_add($k,$Y,$py,$incY,$A,$pa,$incA);
+                    } else {
+                        $this->rindow_openblas_math_copy($k,$Y,$py,$incY,$A,$pa,$incA);
+                    }
+                }
+            }
         }
     }
 }
