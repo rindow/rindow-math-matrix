@@ -2379,9 +2379,6 @@ class Test extends TestCase
         $this->assertTrue(true);
     }
 
-    /**
-    *   @requires extension rindow_openblas
-    */
     public function testSvdSmallU()
     {
         $mo = $this->newMatrixOperator();
@@ -2431,6 +2428,9 @@ class Test extends TestCase
         $this->assertTrue(true);
     }
 
+    /**
+    *   @requires extension rindow_openblas
+    */
     public function testSvdSmallVT()
     {
         $mo = $this->newMatrixOperator();
