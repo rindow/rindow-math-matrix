@@ -18,7 +18,7 @@ Please see the documents on [Rindow projects](https://rindow.github.io/) web pag
 
 ### Download the rindow_openblas extension
 
-You can do very fast N-dimensional array operations in conjunction
+You can perform very fast N-dimensional array operations in conjunction
 
 - [Pre-build binaries](https://github.com/rindow/rindow-openblas-binaries)
 - [Build from source](https://github.com/rindow/rindow-openblas)
