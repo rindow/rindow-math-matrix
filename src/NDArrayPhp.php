@@ -4,6 +4,8 @@ namespace Rindow\Math\Matrix;
 use SplFixedArray;
 use ArrayObject;
 use ArrayAccess;
+use Countable;
+use IteratorAggregate;
 use InvalidArgumentException;
 use OutOfRangeException;
 use LogicException;
@@ -13,7 +15,7 @@ use Rindow\OpenBLAS\Buffer;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 
-class NDArrayPhp implements NDArray,Serializable
+class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
 {
     protected $_shape;
     protected $_buffer;
@@ -199,8 +201,10 @@ class NDArrayPhp implements NDArray,Serializable
     public function reshape(array $shape) : NDArray
     {
         $this->assertShape($shape);
-        if($this->size()!=array_product($shape))
-            throw new InvalidArgumentException("Unmatch size");
+        if($this->size()!=array_product($shape)) {
+            throw new InvalidArgumentException("Unmatch size to reshape: ".
+                "[".implode(',',$this->shape())."]=>[".implode(',',$shape)."]");
+        }
         $newArray = new self($this->buffer(),$this->dtype(),$shape,$this->offset());
         return $newArray;
     }
@@ -303,6 +307,19 @@ class NDArrayPhp implements NDArray,Serializable
     public function offsetUnset( $offset )
     {
         throw new LogicException("Unsuppored Operation");
+    }
+
+    public function count()
+    {
+        return $this->_shape[0];
+    }
+
+    public function  getIterator()
+    {
+        $count = $this->_shape[0];
+        for($i=0;$i<$count;$i++) {
+            yield $i => $this->offsetGet($i);
+        }
     }
 
     public function setPortableSerializeMode(bool $mode)

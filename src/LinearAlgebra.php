@@ -27,6 +27,28 @@ class LinearAlgebra
             $this->defaultFloatType = $defaultFloatType;
     }
 
+    protected function printableShapes($values)
+    {
+        if(!is_array($values)) {
+            if($values instanceof NDArray)
+                return '('.implode(',',$values->shape()).')';
+            if(is_object($values))
+                return '"'.get_class($values).'"';
+            if(is_numeric($values) || is_string($values))
+                return strval($values);
+            return gettype($values);
+        }
+        $string = '[';
+        foreach($values as $value) {
+            if($string!='[') {
+                $string .= ',';
+            }
+            $string .= $this->printableShapes($value);
+        }
+        $string .= ']';
+        return $string;
+    }
+
     public function alloc(array $shape,$dtype=null)
     {
         if($dtype===null)
@@ -380,6 +402,118 @@ class LinearAlgebra
             $beta,
             $CC,$offC,$ldc);
 
+        return $C;
+    }
+
+    /**
+    *
+    */
+    public function matmul(
+        NDArray $A,
+        NDArray $B,
+        bool $transA=null,
+        bool $transB=null,
+        NDArray $C=null,
+        float $alpha=null,
+        float $beta=null
+        ) : NDArray
+    {
+        if($A->ndim()<2 || $B->ndim()<2) {
+            throw new InvalidArgumentException('Dimensions rank must be greater then 2D or equal:['.
+                implode(',',$A->shape()).']<=>['.implode(',',$B->shape()).']');
+        }
+        $shapeA = $A->shape();
+        $shapeB = $B->shape();
+        $shapeEA = [array_pop($shapeA)];
+        array_unshift($shapeEA,array_pop($shapeA));
+        $shapeEB = [array_pop($shapeB)];
+        array_unshift($shapeEB,array_pop($shapeB));
+        $batchA = (int)array_product($shapeA);
+        $batchB = (int)array_product($shapeB);
+        $flatA = $A->reshape(array_merge([$batchA],$shapeEA));
+        $flatB = $B->reshape(array_merge([$batchB],$shapeEB));
+
+        if($transA) {
+            $shapeEA = array_reverse($shapeEA);
+        }
+        if($transB) {
+            $shapeEB = array_reverse($shapeEB);
+        }
+        if($shapeEA[1]!=$shapeEB[0]) {
+            throw new InvalidArgumentException('The number of columns in "A" and the number of rows in "B" must be the same:['.
+                implode(',',$A->shape()).']<=>['.implode(',',$B->shape()).']');
+        }
+
+        $AA = $A->buffer();
+        $BB = $B->buffer();
+        $M = $shapeEA[0];
+        $N = $shapeEB[1];
+        $K = $shapeEA[1];
+
+        if($alpha===null) {
+            $alpha = 1.0;
+        }
+        if($beta===null) {
+            $beta = 0.0;
+        }
+        $lda = ($transA) ? $M : $K;
+        $ldb = ($transB) ? $K : $N;
+        $ldc = $N;
+        $transA = ($transA) ? BLAS::Trans : BLAS::NoTrans;
+        $transB = ($transB) ? BLAS::Trans : BLAS::NoTrans;
+
+        $shapeEC = [$shapeEA[0],$shapeEB[1]];
+        if($batchA>$batchB) {
+            $broadcastDest = $batchA;
+            $broadcastBase = $batchB;
+            $orgShapeC=array_merge($shapeA,$shapeEC);
+        } else {
+            $broadcastDest = $batchB;
+            $broadcastBase = $batchA;
+            $orgShapeC=array_merge($shapeB,$shapeEC);
+        }
+        if($broadcastDest % $broadcastBase != 0) {
+            throw new InvalidArgumentException('Matrix size-incompatible for broadcast:['.
+                implode(',',$A->shape()).']<=>['.implode(',',$B->shape()).']');
+        }
+        if($C!=null) {
+            if($C->shape()!=$orgShapeC) {
+                throw new InvalidArgumentException('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns:['.
+                    implode(',',$A->shape()).'] , ['.implode(',',$B->shape()).'] => ['.implode(',',$C->shape()).']');
+            }
+        } else {
+            $C = $this->alloc($orgShapeC,$A->dtype());
+            $this->zeros($C);
+        }
+        $flatC = $C->reshape(array_merge([$broadcastDest],$shapeEC));
+        $CC = $C->buffer();
+        $repeats = (int)floor($broadcastDest/$broadcastBase);
+        $offA = $A->offset();
+        $offB = $B->offset();
+        $offC = $C->offset();
+        $incA = $M*$K;
+        $incB = $N*$K;
+        $incC = $M*$N;
+        for($i=0;$i<$repeats;$i++) {
+            if($batchA>$batchB) {
+                $offB = $B->offset();
+            } else {
+                $offA = $A->offset();
+            }
+            for($j=0;$j<$broadcastBase;$j++) {
+                $this->blas->gemm(
+                    BLAS::RowMajor,$transA,$transB,
+                    $M,$N,$K,
+                    $alpha,
+                    $AA,$offA,$lda,
+                    $BB,$offB,$ldb,
+                    $beta,
+                    $CC,$offC,$ldc);
+                $offA+=$incA;
+                $offB+=$incB;
+                $offC+=$incC;
+            }
+        }
         return $C;
     }
 
@@ -2055,6 +2189,91 @@ class LinearAlgebra
             throw new InvalidArgumentException('unsuppoted axis');
         }
         return $output;
+    }
+
+    public function concat(
+        array $values,
+        int $axis=null
+    ) : NDArray
+    {
+        if($axis===null) {
+            $axis = -1;
+        }
+        if($axis<0) {
+            $axis = $values[0]->ndim() + $axis;
+        }
+        $m = null;
+        $base = null;
+        $n = 0;
+        $reshapeValues = [];
+        foreach ($values as $value) {
+            $shapePrefix = [];
+            $shape = $value->shape();
+            $mm = 1;
+            for($j=0;$j<$axis;$j++) {
+                $mmm = array_shift($shape);
+                $shapePrefix[] = $mmm;
+                $mm *= $mmm;
+            }
+            $nn = array_shift($shape);
+            if($base===null) {
+                $m = $mm;
+                $base = $shape;
+            } else {
+                if($m!=$mm||$base!=$shape) {
+                    throw new InvalidArgumentException('Unmatch shape: '.
+                        $this->printableShapes($values));
+                    }
+            }
+            $n += $nn;
+            $reshapeValues[] = $value->reshape(array_merge([$mm,$nn],$shape));
+        }
+        $dims = $shape;
+        $shape = array_merge([$m,$n],$shape);
+        $output = $this->alloc($shape,$values[0]->dtype());
+        $i = 0;
+        foreach ($reshapeValues as $value) {
+            $nn = $value->shape()[1];
+            $this->doSlice(true,
+                $output,
+                [0,$i],[-1,$nn],
+                $value
+            );
+            $i += $nn;
+        }
+        $output = $output->reshape(array_merge($shapePrefix,[$n],$dims));
+        return $output;
+    }
+
+    public function split(
+        NDArray $input, array $sizeSplits, $axis=null
+        ) : array
+    {
+        if($axis===null) {
+            $axis = -1;
+        }
+        if($axis<0) {
+            $axis = $input->ndim() + $axis;
+        }
+        $shapePrefix = [];
+        $shape = $input->shape();
+        $m = 1;
+        for($j=0;$j<$axis;$j++) {
+            $mmm = array_shift($shape);
+            $shapePrefix[] = $mmm;
+            $m *= $mmm;
+        }
+        $n = array_shift($shape);
+        $input = $input->reshape(array_merge([$m,$n],$shape));
+        $i = 0;
+        foreach ($sizeSplits as $size) {
+            $outputs[] = $this->doSlice(false,
+                $input,
+                [0,$i],[-1,$size]
+            )->reshape(array_merge($shapePrefix,[$size],$shape));
+            $i += $size;
+        }
+        return $outputs;
     }
 
     protected function doSlice(

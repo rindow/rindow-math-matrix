@@ -454,6 +454,200 @@ class Test extends TestCase
         $mo->la()->gemm($A,$B,null,null,$C,null,$transB=true);
     }
 
+    public function testMatmulNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $mo->array([[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]]);
+
+        $C = $mo->la()->matmul($A,$B);
+        $this->assertEquals([
+            [[1,2],
+             [4,5]],
+            [[120,100],
+             [60,40]],
+        ],$C->toArray());
+
+        $C = $mo->la()->matmul($B,$A);
+        $this->assertEquals([
+            [[1,2,3],
+             [4,5,6],
+             [0,0,0]],
+            [[120,100,80],
+             [60,40,20],
+             [0,0,0]],
+        ],$C->toArray());
+
+
+        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $mo->array([[1,0],[0,1],[0,0]]);
+
+        $C = $mo->la()->matmul($A,$B);
+        $this->assertEquals([
+            [[1,2],
+             [4,5]],
+            [[60,50],
+             [30,20]],
+        ],$C->toArray());
+
+        $C = $mo->la()->matmul($B,$A);
+        $this->assertEquals([
+            [[1,2,3],
+             [4,5,6],
+             [0,0,0]],
+            [[60,50,40],
+             [30,20,10],
+             [0,0,0]],
+        ],$C->toArray());
+    }
+
+    public function testMatmulTransposeA()
+    {
+        $mo = $this->newMatrixOperator();
+        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $mo->array([[[1,0,0],[0,1,0]],[[2,0,0],[0,2,0]]]);
+
+        $C = $mo->la()->matmul($A,$B,$transA=true);
+        $this->assertEquals([
+            [[1,4,0],
+             [2,5,0],
+             [3,6,0]],
+            [[120,60,0],
+             [100,40,0],
+             [80,20,0]],
+        ],$C->toArray());
+
+        $C = $mo->la()->matmul($B,$A,$transA=true);
+        $this->assertEquals([
+            [[1,2,3],
+             [4,5,6],
+             [0,0,0]],
+            [[120,100,80],
+             [60,40,20],
+             [0,0,0]],
+        ],$C->toArray());
+
+        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $mo->array([[1,0,0],[0,1,0]]);
+
+        $C = $mo->la()->matmul($A,$B,$transA=true);
+        $this->assertEquals([
+            [[1,4,0],
+             [2,5,0],
+             [3,6,0]],
+            [[60,30,0],
+             [50,20,0],
+             [40,10,0]],
+        ],$C->toArray());
+
+        $C = $mo->la()->matmul($B,$A,$transA=true);
+        $this->assertEquals([
+            [[1,2,3],
+             [4,5,6],
+             [0,0,0]],
+            [[60,50,40],
+             [30,20,10],
+             [0,0,0]],
+        ],$C->toArray());
+    }
+
+    public function testMatmulTransposeB()
+    {
+        $mo = $this->newMatrixOperator();
+        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $mo->array([[[1,0,0],[0,1,0]],[[2,0,0],[0,2,0]]]);
+
+        $C = $mo->la()->matmul($A,$B,null,$transB=true);
+        $this->assertEquals([
+            [[1,2],
+             [4,5]],
+            [[120,100],
+             [60,40]],
+        ],$C->toArray());
+
+        $C = $mo->la()->matmul($B,$A,null,$transB=true);
+        $this->assertEquals([
+            [[1,4],
+             [2,5]],
+            [[120,60],
+             [100,40]],
+        ],$C->toArray());
+
+        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $mo->array([[1,0,0],[0,1,0]]);
+
+        $C = $mo->la()->matmul($A,$B,null,$transB=true);
+        $this->assertEquals([
+            [[1,2],
+             [4,5]],
+            [[60,50],
+             [30,20]],
+        ],$C->toArray());
+
+        $C = $mo->la()->matmul($B,$A,null,$transB=true);
+        $this->assertEquals([
+            [[1,4],
+             [2,5]],
+            [[60,30],
+             [50,20]],
+        ],$C->toArray());
+    }
+
+    public function testMatmul4d()
+    {
+        $mo = $this->newMatrixOperator();
+        $A = $mo->array([[[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]],
+                         [[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]]);
+        $B = $mo->array([[[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]],
+                         [[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]]]);
+
+        $C = $mo->la()->matmul($A,$B);
+        $this->assertEquals([
+            [[[1,2],
+              [4,5]],
+             [[120,100],
+              [60,40]]],
+            [[[1,2],
+              [4,5]],
+             [[120,100],
+              [60,40]]],
+        ],$C->toArray());
+    }
+
+    public function testMatmulUnmatchBroadcast()
+    {
+        $mo = $this->newMatrixOperator();
+        $A = $mo->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
+        $B = $mo->array([[[1,0],[0,1]],[[1,0],[0,1]],[[1,0],[0,1]]]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Matrix size-incompatible for broadcast:[2,3,2]<=>[3,2,2]');
+        $C = $mo->la()->matmul($A,$B);
+    }
+
+    public function testMatmulUnmatchBaseMatrix()
+    {
+        $mo = $this->newMatrixOperator();
+        $A = $mo->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
+        $B = $mo->array([[[1,0],[0,1],[1,0]],[[1,0],[0,1],[1,0]]]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same:[2,3,2]<=>[2,3,2]');
+        $C = $mo->la()->matmul($A,$B);
+    }
+
+    public function testMatmulUnmatchOutputShape()
+    {
+        $mo = $this->newMatrixOperator();
+        $A = $mo->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
+        $B = $mo->array([[[1,0],[0,1]],[[1,0],[0,1]]]);
+        $C = $mo->zeros([2,2,2]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns:[2,3,2] , [2,2,2] => [2,2,2]');
+        $C = $mo->la()->matmul($A,$B,null,null,$C);
+    }
+
     public function testIncrement()
     {
         $mo = $this->newMatrixOperator();
@@ -1268,6 +1462,7 @@ class Test extends TestCase
         $x = $x[1];
         $this->assertEquals([5,7,9],$mo->la()->reduceSum($x,$axis=0)->toArray());
         $this->assertEquals([6,15],$mo->la()->reduceSum($x,$axis=1)->toArray());
+
     }
 
     public function testArgReduceMax()
@@ -2267,6 +2462,257 @@ class Test extends TestCase
         ],$y->toArray());
     }
 
+    public function testAnytypeSlice()
+    {
+        $mo = $this->newMatrixOperator();
+
+        $dtypes = [NDArray::float32,NDArray::float64,NDArray::uint8,NDArray::int32,NDArray::int64];
+        foreach($dtypes as $dtype) {
+            // forward slice
+            $x = $mo->arange(24,null,null,$dtype)->reshape([2,4,3]);
+            $y = $mo->la()->slice(
+                $x,
+                $start=[0,1],
+                $size=[-1,2]
+                );
+            $this->assertEquals([
+                [[3,4,5],
+                 [6,7,8],],
+                [[15,16,17],
+                 [18,19,20],],
+            ],$y->toArray());
+
+            // reverse slice
+            $x = $mo->arange(12,null,null,$dtype)->reshape([2,2,3]);
+            $y = $mo->zeros([2,4,3],$dtype);
+            $mo->la()->stick(
+                $x,
+                $y,
+                $start=[0,1],
+                $size=[-1,2]
+                );
+            $this->assertEquals([
+                [[0,0,0],
+                 [0,1,2],
+                 [3,4,5],
+                 [0,0,0]],
+                [[0,0,0],
+                 [6,7,8],
+                 [9,10,11],
+                 [0,0,0]],
+            ],$y->toArray());
+
+            // reverse and add
+            $Y = $mo->array([
+                [[1,2,3],[1,2,3]],
+                [[4,5,6],[4,5,6]],
+            ],$dtype);
+            $X = $mo->la()->reduceSumRepeated($Y);
+            $this->assertEquals([2,2,3],$Y->shape());
+            $this->assertEquals([2,3],$X->shape());
+            $this->assertEquals([
+                [[1,2,3],[1,2,3]],
+                [[4,5,6],[4,5,6]],
+            ],$Y->toArray());
+            $this->assertEquals([
+                [2,4,6],
+                [8,10,12]
+            ],$X->toArray());
+
+        }
+    }
+
+
+    public function testConcat()
+    {
+        $mo = $this->newMatrixOperator();
+
+        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]);
+        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
+        $y = $mo->la()->concat(
+            [$a,$b],
+            $axis=0
+            );
+        $this->assertEquals([
+            [0,1],
+            [2,3],
+            [4,5],
+            [6,7],
+            [8,9],
+        ],$y->toArray());
+
+        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]);
+        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
+        $y = $mo->la()->concat(
+            [$a,$b],
+            $axis=1
+            );
+        $this->assertEquals([
+            [0,1,2,6,7],
+            [3,4,5,8,9],
+        ],$y->toArray());
+
+        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]);
+        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $y = $mo->la()->concat(
+            [$a,$b],
+            $axis=0
+            );
+        $this->assertEquals([
+            [[0,1],[2,3]],
+            [[4,5],[6,7]],
+            [[8,9],[10,11]],
+            [[12,13],[14,15]],
+            [[16,17],[18,19]],
+        ],$y->toArray());
+
+        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]);
+        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $y = $mo->la()->concat(
+            [$a,$b],
+            $axis=1
+            );
+        $this->assertEquals([
+            [[0,1],
+             [2,3],
+             [4,5],
+             [12,13],
+             [14,15]],
+            [[6,7],
+             [8,9],
+             [10,11],
+             [16,17],[18,19]],
+        ],$y->toArray());
+
+        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]);
+        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $y = $mo->la()->concat(
+            [$a,$b],
+            $axis=2
+            );
+        $this->assertEquals([
+            [[0,1,2,12,13],
+             [3,4,5,14,15]],
+            [[6,7,8,16,17],
+             [9,10,11,18,19]],
+        ],$y->toArray());
+
+        $y = $mo->la()->concat(
+            [$a,$b],
+            $axis=-1
+            );
+        $this->assertEquals([
+            [[0,1,2,12,13],
+             [3,4,5,14,15]],
+            [[6,7,8,16,17],
+             [9,10,11,18,19]],
+        ],$y->toArray());
+    }
+
+    public function testSplit()
+    {
+        $mo = $this->newMatrixOperator();
+
+        $x = $mo->array([
+            [0,1],
+            [2,3],
+            [4,5],
+            [6,7],
+            [8,9],
+        ]);
+        $y = $mo->la()->split(
+            $x,
+            [3,2],
+            $axis=0
+        );
+        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]);
+        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
+        $this->assertCount(2,$y);
+        $this->assertEquals($a->toArray(),$y[0]->toArray());
+        $this->assertEquals($b->toArray(),$y[1]->toArray());
+
+        $x = $mo->array([
+            [0,1,2,6,7],
+            [3,4,5,8,9],
+        ]);
+        $y = $mo->la()->split(
+            $x,
+            [3,2],
+            $axis=1
+            );
+        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]);
+        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
+        $this->assertCount(2,$y);
+        $this->assertEquals($a->toArray(),$y[0]->toArray());
+        $this->assertEquals($b->toArray(),$y[1]->toArray());
+
+        $x = $mo->array([
+            [[0,1],[2,3]],
+            [[4,5],[6,7]],
+            [[8,9],[10,11]],
+            [[12,13],[14,15]],
+            [[16,17],[18,19]],
+        ]);
+        $y = $mo->la()->split(
+            $x,
+            [3,2],
+            $axis=0
+            );
+        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]);
+        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $this->assertCount(2,$y);
+        $this->assertEquals($a->toArray(),$y[0]->toArray());
+        $this->assertEquals($b->toArray(),$y[1]->toArray());
+
+        $x = $mo->array([
+            [[0,1],
+             [2,3],
+             [4,5],
+             [12,13],
+             [14,15]],
+            [[6,7],
+             [8,9],
+             [10,11],
+             [16,17],[18,19]],
+        ]);
+        $y = $mo->la()->split(
+            $x,
+            [3,2],
+            $axis=1
+            );
+        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]);
+        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $this->assertCount(2,$y);
+        $this->assertEquals($a->toArray(),$y[0]->toArray());
+        $this->assertEquals($b->toArray(),$y[1]->toArray());
+
+        $x = $mo->array([
+            [[0,1,2,12,13],
+             [3,4,5,14,15]],
+            [[6,7,8,16,17],
+             [9,10,11,18,19]],
+        ]);
+        $y = $mo->la()->split(
+            $x,
+            [3,2],
+            $axis=2
+            );
+        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]);
+        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $this->assertCount(2,$y);
+        $this->assertEquals($a->toArray(),$y[0]->toArray());
+        $this->assertEquals($b->toArray(),$y[1]->toArray());
+
+        $y = $mo->la()->split(
+            $x,
+            [3,2],
+            $axis=-1
+            );
+        $this->assertCount(2,$y);
+        $this->assertEquals($a->toArray(),$y[0]->toArray());
+        $this->assertEquals($b->toArray(),$y[1]->toArray());
+    }
+
     public function testSvdFull1()
     {
         $mo = $this->newMatrixOperator();
@@ -2341,14 +2787,14 @@ class Test extends TestCase
         $this->assertEquals([5],$s->shape());
         $this->assertEquals([6,6],$vt->shape());
 
-         echo "---- u ----\n";
-         foreach($u->toArray() as $array)
-             echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
-         echo "---- s ----\n";
-         echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$s->toArray()))."],\n";
-         echo "---- vt ----\n";
-         foreach($vt->toArray() as $array)
-             echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
+        # echo "---- u ----\n";
+        # foreach($u->toArray() as $array)
+        #     echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
+        # echo "---- s ----\n";
+        # echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$s->toArray()))."],\n";
+        # echo "---- vt ----\n";
+        # foreach($vt->toArray() as $array)
+        #     echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
 
         # ---- u ----
         $correctU = $mo->array([

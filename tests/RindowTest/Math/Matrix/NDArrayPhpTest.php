@@ -336,4 +336,63 @@ class Test extends TestCase
         $this->expectExceptionMessage('Illegal range specification');
         $b = $a->offsetExists([1,0]);
     }
+
+    public function testCount()
+    {
+        $array = [1,2,3,4,5,6,7,8,9,10];
+        $a = new NDArrayPhp($array,NDArray::int32);
+        $this->assertCount(10,$a);
+
+        $array = [[1],[2],[3],[4],[5],[6],[7],[8],[9],[10]];
+        $a = new NDArrayPhp($array,NDArray::int32);
+        $this->assertCount(10,$a);
+    }
+
+    public function testIterator()
+    {
+        $array = [1,2,3,4,5];
+        $a = new NDArrayPhp($array,NDArray::int32);
+        $this->assertEquals([5],$a->shape());
+        $r=[];
+        foreach ($a as $key => $value) {
+            $r[] = [$key,$value];
+        }
+        $this->assertEquals([
+            [0,1],[1,2],[2,3],[3,4],[4,5]
+        ],$r);
+
+        $array = [[1],[2]];
+        $a = new NDArrayPhp($array,NDArray::int32);
+        $this->assertEquals([2,1],$a->shape());
+        $r=[];
+        foreach ($a as $key => $value) {
+            $r[] = ['key'=>$key,'value'=>$value];
+        }
+        $this->assertEquals(0,$r[0]['key']);
+        $this->assertInstanceof(NDArray::class,$r[0]['value']);
+        $this->assertEquals([1],$r[0]['value']->toArray());
+
+        $this->assertEquals(1,$r[1]['key']);
+        $this->assertInstanceof(NDArray::class,$r[1]['value']);
+        $this->assertEquals([2],$r[1]['value']->toArray());
+    }
+
+    public function testNestIterator()
+    {
+        $array = [[1,2],[3,4]];
+        $a = new NDArrayPhp($array,NDArray::int32);
+        $this->assertEquals([2,2],$a->shape());
+        $r=[];
+        foreach ($a as $akey => $b) {
+            foreach ($b as $bkey => $value) {
+                $r[]='a['.$akey.']['.$bkey.']='.$value;
+            }
+        }
+        $this->assertEquals([
+            'a[0][0]=1',
+            'a[0][1]=2',
+            'a[1][0]=3',
+            'a[1][1]=4',
+        ],$r);
+    }
 }
