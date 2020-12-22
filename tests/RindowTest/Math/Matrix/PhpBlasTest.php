@@ -141,7 +141,12 @@ class Test extends TestCase
         $mo = new MatrixOperator();
         $blas = $this->getBlas($mo);
         if(extension_loaded('rindow_openblas')) {
-            $this->assertStringStartsWith('OpenBLAS',$blas->getConfig());
+            if(strpos($blas->getConfig(),'OpenBLAS')===0) {
+                $this->assertStringStartsWith('OpenBLAS',$blas->getConfig());
+            } else {
+                // In case of OLD VERSION OpenBLAS, the config string has no "OpenBLAS".
+                $this->assertFalse(strpos($blas->getConfig(),'PhpBlas')===0);
+            }
         } else {
             $this->assertStringStartsWith('PhpBlas',$blas->getConfig());
         }

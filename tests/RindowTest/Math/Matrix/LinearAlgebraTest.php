@@ -4,12 +4,15 @@ namespace RindowTest\Math\Matrix\LinearAlgebraTest;
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
+use Rindow\Math\Matrix\NDArrayPhp;
+use Rindow\Math\Plot\Plot;
 use ArrayObject;
 use SplFixedArray;
 use InvalidArgumentException;
 
 class Test extends TestCase
 {
+    static protected $speedtest = false;
     protected $equalEpsilon = 1e-04;
 
     public function newMatrixOperator()
@@ -23,18 +26,37 @@ class Test extends TestCase
         return $mo;
     }
 
+    public function newLA($mo)
+    {
+        return $mo->la();
+    }
+
+    public function newArray(array $shape,$dtype=null)
+    {
+        if($dtype===null)
+            $dtype = NDArray::float32;
+        $array = new NDArrayPhp(null,$dtype,$shape);
+        $size = $array->size();
+        $buffer = $array->buffer();
+        for($i=0;$i<$size;$i++) {
+            $buffer[$i] = 0.0;
+        }
+        return $array;
+    }
+
     public function equalTest($a,$b)
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
         if($a instanceof NDArray) {
             if(!($b instanceof NDArray))
                 throw new InvalidArgumentException('NDArrays must be of the same type.');
             if($a->shape()!=$b->shape())
                 return false;
-            $delta = $mo->zerosLike($b);
-            $mo->la()->copy($b,$delta);
-            $mo->la()->axpy($a,$delta,-1.0);
-            $delta = $mo->la()->asum($delta);
+            $delta = $la->zerosLike($b);
+            $la->copy($b,$delta);
+            $la->axpy($a,$delta,-1.0);
+            $delta = $la->asum($delta);
         } elseif(is_numeric($a)) {
             if(!is_numeric($b))
                 throw new InvalidArgumentException('Values must be of the same type.');
@@ -57,7 +79,8 @@ class Test extends TestCase
     public function testAlloc()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->la()->alloc([2,3]);
+        $la = $this->newLA($mo);
+        $x = $la->alloc([2,3]);
         $this->assertEquals([2,3],$x->shape());
         $this->assertEquals(NDArray::float32,$x->dtype());
         $this->assertEquals(6,$x->size());
@@ -67,8 +90,9 @@ class Test extends TestCase
     public function testScal()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2,3],[4,5,6],[7,8,9]],NDArray::float32);
-        $mo->la()->scal(2,$x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6],[7,8,9]],NDArray::float32);
+        $la->scal(2,$x);
         $this->assertEquals([[2,4,6],[8,10,12],[14,16,18]],$x->toArray());
     }
 
@@ -78,9 +102,10 @@ class Test extends TestCase
     public function testaxpy()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2,3],[4,5,6]],NDArray::float32);
-        $y = $mo->array([[10,20,30],[40,50,60]],NDArray::float32);
-        $mo->la()->axpy($x,$y,2);
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6]],NDArray::float32);
+        $y = $la->array([[10,20,30],[40,50,60]],NDArray::float32);
+        $la->axpy($x,$y,2);
         $this->assertEquals([[12,24,36],[48,60,72]],$y->toArray());
     }
 
@@ -90,9 +115,10 @@ class Test extends TestCase
     public function testdot()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2,3],[4,5,6]],NDArray::float32);
-        $y = $mo->array([[10,20,30],[40,50,60]],NDArray::float32);
-        $ret = $mo->la()->dot($x,$y);
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6]],NDArray::float32);
+        $y = $la->array([[10,20,30],[40,50,60]],NDArray::float32);
+        $ret = $la->dot($x,$y);
         $this->assertEquals(1*10+2*20+3*30+4*40+5*50+6*60,$ret);
     }
 
@@ -102,8 +128,9 @@ class Test extends TestCase
     public function testasum()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->asum($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->asum($x);
         $this->assertEquals(1+2+3+4+5+6,$ret);
     }
 
@@ -113,8 +140,9 @@ class Test extends TestCase
     public function testimax()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->imax($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->imax($x);
         $this->assertEquals(4,$ret);
     }
 
@@ -124,8 +152,9 @@ class Test extends TestCase
     public function testiamax()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->iamax($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->iamax($x);
         $this->assertEquals(5,$ret);
     }
 
@@ -135,8 +164,9 @@ class Test extends TestCase
     public function testimin()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->imin($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->imin($x);
         $this->assertEquals(5,$ret);
     }
 
@@ -146,8 +176,9 @@ class Test extends TestCase
     public function testiamin()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->iamin($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->iamin($x);
         $this->assertEquals(0,$ret);
     }
 
@@ -157,8 +188,9 @@ class Test extends TestCase
     public function testmax()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->max($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->max($x);
         $this->assertEquals(5,$ret);
     }
 
@@ -168,8 +200,9 @@ class Test extends TestCase
     public function testamax()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->amax($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->amax($x);
         $this->assertEquals(-6,$ret);
     }
 
@@ -179,8 +212,9 @@ class Test extends TestCase
     public function testmin()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->min($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->min($x);
         $this->assertEquals(-6,$ret);
     }
 
@@ -190,8 +224,9 @@ class Test extends TestCase
     public function testamin()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $ret = $mo->la()->amin($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $ret = $la->amin($x);
         $this->assertEquals(-1,$ret);
     }
 
@@ -201,9 +236,10 @@ class Test extends TestCase
     public function testcopy()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
-        $y = $mo->zerosLike($x);
-        $ret = $mo->la()->copy($x,$y);
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
+        $y = $la->zerosLike($x);
+        $ret = $la->copy($x,$y);
         $this->assertEquals([[-1,2,-3],[-4,5,-6]],$y->toArray());
     }
 
@@ -213,20 +249,98 @@ class Test extends TestCase
     public function testNrm2()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2],[3,4]],NDArray::float32);
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2],[3,4]],NDArray::float32);
         $nrm2 = sqrt(1+2**2+3**2+4**2);
         $this->assertLessThan(0.00001,abs($nrm2-
-            $mo->la()->nrm2($x)
+            $la->nrm2($x)
         ));
+    }
+
+    /**
+    *    a,b,cos,sin := rotg(x,y)
+    *
+    *   @requires extension rindow_openblas
+    */
+    public function testRotg()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array([1,2,3,4,5],NDArray::float32);
+        $y = $la->array([1,2,3,4,5],NDArray::float32);
+        $x = $x->reshape([$x->size(),1]);
+        $y = $y->reshape([$y->size(),1]);
+        for($i=0;$i<5;$i++) {
+            $xx = $x[$i][0];
+            $yy = $y[$i][0];
+            [$r,$z,$cos,$sin] = $la->rotg($x[$i],$y[$i]);
+            $rr = $r[0];
+            $zz = $z[0];
+            $cc = $cos[0];
+            $ss = $sin[0];
+            #echo "(x,y)=(".$x[$i][0].", ".$y[$i][0].")\n";
+            #echo "(r,z)=(".$rr.", ".$zz.")\n";
+            #echo "(c,s)=(".$cc.", ".$ss.")\n";
+            $this->assertLessThan(1e-7,abs($xx-$x[$i][0]));
+            $this->assertLessThan(1e-7,abs($yy-$y[$i][0]));
+            $rx =  $cc * $xx + $ss * $yy;
+            $ry = -$ss * $xx + $cc * $yy;
+            #echo "(rx,ry)=(".$rx.",".$ry.")\n";
+            $this->assertLessThan(1e-6,abs($rr-$rx));
+            $this->assertLessThan(1e-6,abs(0-$ry));
+        }
+    }
+
+    public function testRot()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array([1,2,3,4,5],NDArray::float32);
+        $y = $la->array([1,2,3,4,5],NDArray::float32);
+        $c = $la->array([cos(pi()/4),NDArray::float32]);
+        $s = $la->array([sin(pi()/4),NDArray::float32]);
+        $la->rot($x,$y,$c,$s);
+        for($i=0;$i<5;$i++) {
+            $this->assertLessThan(1e-6,abs(sqrt(2)*($i+1)-$x[$i]));
+            $this->assertLessThan(1e-6,abs($y[$i]));
+        }
+        $la->rot($x,$y,$c,$s);
+        for($i=0;$i<5;$i++) {
+            $this->assertLessThan(1e-6,abs(($i+1)-$x[$i]));
+            $this->assertLessThan(1e-6,abs((-$i-1)-$y[$i]));
+        }
+    }
+
+    /**
+    *    Y := X
+    *    X := Y
+    */
+    public function testSwap()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array($mo->arange(16,null,null,NDArray::float32));
+        $y = $la->array($mo->arange(16,15,-1,NDArray::float32));
+        $la->swap($x,$y);
+        for($i=0;$i<16;$i++) {
+            if(is_scalar($x[$i])) {
+                $this->assertEquals(15-$i,$x[$i]);
+                $this->assertEquals($i,$y[$i]);
+            } else {
+                $this->assertEquals(15-$i,$x[$i]->toArray());
+                $this->assertEquals($i,$y[$i]->toArray());
+            }
+        }
     }
 
     public function testGemvNormal()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6]]);
-        $X = $mo->array([100,10,1]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6]]);
+        $X = $la->array([100,10,1]);
 
-        $Y = $mo->la()->gemv($A,$X);
+        $Y = $la->gemv($A,$X);
         $this->assertEquals(
             [123,456]
         ,$Y->toArray());
@@ -235,10 +349,11 @@ class Test extends TestCase
     public function testGemvTranspose()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6]]);
-        $X = $mo->array([10,1]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6]]);
+        $X = $la->array([10,1]);
 
-        $Y = $mo->la()->gemv($A,$X,null,null,null,$trans=true);
+        $Y = $la->gemv($A,$X,null,null,null,$trans=true);
         $this->assertEquals(
             [14,25,36]
         ,$Y->toArray());
@@ -247,10 +362,11 @@ class Test extends TestCase
     public function testGemmNormal()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6],[7,8,9]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6],[7,8,9]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->la()->gemm($A,$B);
+        $C = $la->gemm($A,$B);
         $this->assertEquals([
             [1,2,3],
             [4,5,6],
@@ -261,10 +377,11 @@ class Test extends TestCase
     public function testGemmScaleAlpha()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6],[7,8,9]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6],[7,8,9]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->la()->gemm($A,$B,10);
+        $C = $la->gemm($A,$B,10);
         $this->assertEquals([
             [10,20,30],
             [40,50,60],
@@ -275,11 +392,12 @@ class Test extends TestCase
     public function testGemmScaleBeta()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6],[7,8,9]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6],[7,8,9]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->ones([$A->shape()[0],$B->shape()[1]]);
-        $mo->la()->gemm($A,$B,null,10,$C);
+        $C = $la->array($mo->ones([$A->shape()[0],$B->shape()[1]]));
+        $la->gemm($A,$B,null,10,$C);
         $this->assertEquals([
             [11,12,13],
             [14,15,16],
@@ -290,10 +408,11 @@ class Test extends TestCase
     public function testGemmTransposeSquareA()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6],[7,8,9]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6],[7,8,9]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->la()->gemm($A,$B,null,null,null,$transA=true);
+        $C = $la->gemm($A,$B,null,null,null,$transA=true);
         $this->assertEquals([
             [1,4,7],
             [2,5,8],
@@ -304,10 +423,11 @@ class Test extends TestCase
     public function testGemmTransposeSquareB()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
-        $B = $mo->array([[1,2,3],[4,5,6],[7,8,9]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $B = $la->array([[1,2,3],[4,5,6],[7,8,9]]);
 
-        $C = $mo->la()->gemm($A,$B,null,null,null,null,$transB=true);
+        $C = $la->gemm($A,$B,null,null,null,null,$transB=true);
         $this->assertEquals([
             [1,4,7],
             [2,5,8],
@@ -318,10 +438,11 @@ class Test extends TestCase
     public function testGemmNoTransRectangleA23()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->la()->gemm($A,$B);
+        $C = $la->gemm($A,$B);
         $this->assertEquals([
             [1,2,3],
             [4,5,6],
@@ -331,9 +452,10 @@ class Test extends TestCase
     public function testGemmTransposeRectangleA32()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2],[3,4],[5,6]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
-        $C = $mo->la()->gemm($A,$B,null,null,null,$transA=true);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2],[3,4],[5,6]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $C = $la->gemm($A,$B,null,null,null,$transA=true);
         $this->assertEquals([
             [1,3,5],
             [2,4,6],
@@ -343,9 +465,10 @@ class Test extends TestCase
     public function testGemmNoTransRectangleB32()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
-        $B = $mo->array([[1,2],[3,4],[5,6]]);
-        $C = $mo->la()->gemm($A,$B);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $B = $la->array([[1,2],[3,4],[5,6]]);
+        $C = $la->gemm($A,$B);
         $this->assertEquals([
             [1,2],
             [3,4],
@@ -356,9 +479,10 @@ class Test extends TestCase
     public function testGemmTransposeRectangleB23()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
-        $B = $mo->array([[1,2,3],[4,5,6]]);
-        $C = $mo->la()->gemm($A,$B,null,null,null,null,$transB=true);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $B = $la->array([[1,2,3],[4,5,6]]);
+        $C = $la->gemm($A,$B,null,null,null,null,$transB=true);
         $this->assertEquals([
             [1,4],
             [2,5],
@@ -369,98 +493,136 @@ class Test extends TestCase
     public function testGemmUnmatchShapeNoTransRectangleA32()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2],[3,4],[5,6]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2],[3,4],[5,6]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
-        $C = $mo->la()->gemm($A,$B);
+        $C = $la->gemm($A,$B);
     }
 
     public function testGemmUnmatchShapeTransposeRectangleA23()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
-        $C = $mo->la()->gemm($A,$B,null,null,null,$transA=true);
+        $C = $la->gemm($A,$B,null,null,null,$transA=true);
     }
 
     public function testGemmUnmatchShapeNoTransRectangleB23()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
-        $B = $mo->array([[1,2,3],[4,5,6]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $B = $la->array([[1,2,3],[4,5,6]]);
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
-        $C = $mo->la()->gemm($A,$B);
+        $C = $la->gemm($A,$B);
     }
 
     public function testGemmUnmatchShapeTransposeRectangleB32()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
-        $B = $mo->array([[1,2],[3,4],[5,6]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $B = $la->array([[1,2],[3,4],[5,6]]);
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same');
-        $C = $mo->la()->gemm($A,$B,null,null,null,null,$transB=true);
+        $C = $la->gemm($A,$B,null,null,null,null,$transB=true);
     }
 
     public function testGemmUnmatchOutputShapeNoTransA()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->zeros([3,3]);
+        $C = $la->array($mo->zeros([3,3]));
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
-        $mo->la()->gemm($A,$B,null,null,$C);
+        $la->gemm($A,$B,null,null,$C);
     }
 
     public function testGemmUnmatchOutputShapeNoTransB()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2,3],[4,5,6]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2,3],[4,5,6]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->zeros([2,2]);
+        $C = $la->array($mo->zeros([2,2]));
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
-        $mo->la()->gemm($A,$B,null,null,$C);
+        $la->gemm($A,$B,null,null,$C);
     }
 
     public function testGemmUnmatchOutputShapeTransposeA()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,2],[3,4],[5,6]]);
-        $B = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,2],[3,4],[5,6]]);
+        $B = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
 
-        $C = $mo->zeros([3,3]);
+        $C = $la->array($mo->zeros([3,3]));
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
-        $mo->la()->gemm($A,$B,null,null,$C,$transA=true);
+        $la->gemm($A,$B,null,null,$C,$transA=true);
     }
 
     public function testGemmUnmatchOutputShapeTransposeB()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[1,0,0],[0,1,0],[0,0,1]]);
-        $B = $mo->array([[1,2,3],[4,5,6]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[1,0,0],[0,1,0],[0,0,1]]);
+        $B = $la->array([[1,2,3],[4,5,6]]);
 
-        $C = $mo->zeros([3,3]);
+        $C = $la->array($mo->zeros([3,3]));
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
-        $mo->la()->gemm($A,$B,null,null,$C,null,$transB=true);
+        $la->gemm($A,$B,null,null,$C,null,$transB=true);
+    }
+
+    public function testGemmSpeed()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        $rows = 2000;
+        $cols = 2000;
+        $a = $la->alloc([$rows,$cols],NDArray::float32);
+        $b = $la->alloc([$cols,$rows],NDArray::float32);
+        $la->fill(1.0,$a);
+        $la->fill(1.0,$b);
+        $c = $la->gemm($a,$b);
+        $start = hrtime(true);
+        $c = $la->gemm($a,$b);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        $this->assertTrue(true);
     }
 
     public function testMatmulNormal()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
-        $B = $mo->array([[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $la->array([[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]]);
 
-        $C = $mo->la()->matmul($A,$B);
+        $C = $la->matmul($A,$B);
         $this->assertEquals([
             [[1,2],
              [4,5]],
@@ -468,7 +630,7 @@ class Test extends TestCase
              [60,40]],
         ],$C->toArray());
 
-        $C = $mo->la()->matmul($B,$A);
+        $C = $la->matmul($B,$A);
         $this->assertEquals([
             [[1,2,3],
              [4,5,6],
@@ -479,10 +641,10 @@ class Test extends TestCase
         ],$C->toArray());
 
 
-        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
-        $B = $mo->array([[1,0],[0,1],[0,0]]);
+        $A = $la->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $la->array([[1,0],[0,1],[0,0]]);
 
-        $C = $mo->la()->matmul($A,$B);
+        $C = $la->matmul($A,$B);
         $this->assertEquals([
             [[1,2],
              [4,5]],
@@ -490,7 +652,7 @@ class Test extends TestCase
              [30,20]],
         ],$C->toArray());
 
-        $C = $mo->la()->matmul($B,$A);
+        $C = $la->matmul($B,$A);
         $this->assertEquals([
             [[1,2,3],
              [4,5,6],
@@ -504,10 +666,11 @@ class Test extends TestCase
     public function testMatmulTransposeA()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
-        $B = $mo->array([[[1,0,0],[0,1,0]],[[2,0,0],[0,2,0]]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $la->array([[[1,0,0],[0,1,0]],[[2,0,0],[0,2,0]]]);
 
-        $C = $mo->la()->matmul($A,$B,$transA=true);
+        $C = $la->matmul($A,$B,$transA=true);
         $this->assertEquals([
             [[1,4,0],
              [2,5,0],
@@ -517,7 +680,7 @@ class Test extends TestCase
              [80,20,0]],
         ],$C->toArray());
 
-        $C = $mo->la()->matmul($B,$A,$transA=true);
+        $C = $la->matmul($B,$A,$transA=true);
         $this->assertEquals([
             [[1,2,3],
              [4,5,6],
@@ -527,10 +690,10 @@ class Test extends TestCase
              [0,0,0]],
         ],$C->toArray());
 
-        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
-        $B = $mo->array([[1,0,0],[0,1,0]]);
+        $A = $la->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $la->array([[1,0,0],[0,1,0]]);
 
-        $C = $mo->la()->matmul($A,$B,$transA=true);
+        $C = $la->matmul($A,$B,$transA=true);
         $this->assertEquals([
             [[1,4,0],
              [2,5,0],
@@ -540,7 +703,7 @@ class Test extends TestCase
              [40,10,0]],
         ],$C->toArray());
 
-        $C = $mo->la()->matmul($B,$A,$transA=true);
+        $C = $la->matmul($B,$A,$transA=true);
         $this->assertEquals([
             [[1,2,3],
              [4,5,6],
@@ -554,10 +717,11 @@ class Test extends TestCase
     public function testMatmulTransposeB()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
-        $B = $mo->array([[[1,0,0],[0,1,0]],[[2,0,0],[0,2,0]]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $la->array([[[1,0,0],[0,1,0]],[[2,0,0],[0,2,0]]]);
 
-        $C = $mo->la()->matmul($A,$B,null,$transB=true);
+        $C = $la->matmul($A,$B,null,$transB=true);
         $this->assertEquals([
             [[1,2],
              [4,5]],
@@ -565,7 +729,7 @@ class Test extends TestCase
              [60,40]],
         ],$C->toArray());
 
-        $C = $mo->la()->matmul($B,$A,null,$transB=true);
+        $C = $la->matmul($B,$A,null,$transB=true);
         $this->assertEquals([
             [[1,4],
              [2,5]],
@@ -573,10 +737,10 @@ class Test extends TestCase
              [100,40]],
         ],$C->toArray());
 
-        $A = $mo->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
-        $B = $mo->array([[1,0,0],[0,1,0]]);
+        $A = $la->array([[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]);
+        $B = $la->array([[1,0,0],[0,1,0]]);
 
-        $C = $mo->la()->matmul($A,$B,null,$transB=true);
+        $C = $la->matmul($A,$B,null,$transB=true);
         $this->assertEquals([
             [[1,2],
              [4,5]],
@@ -584,7 +748,7 @@ class Test extends TestCase
              [30,20]],
         ],$C->toArray());
 
-        $C = $mo->la()->matmul($B,$A,null,$transB=true);
+        $C = $la->matmul($B,$A,null,$transB=true);
         $this->assertEquals([
             [[1,4],
              [2,5]],
@@ -596,12 +760,13 @@ class Test extends TestCase
     public function testMatmul4d()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]],
+        $la = $this->newLA($mo);
+        $A = $la->array([[[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]],
                          [[[1,2,3],[4,5,6]],  [[60,50,40],[30,20,10]]]]);
-        $B = $mo->array([[[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]],
+        $B = $la->array([[[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]],
                          [[[1,0],[0,1],[0,0]],[[2,0],[0,2],[0,0]]]]);
 
-        $C = $mo->la()->matmul($A,$B);
+        $C = $la->matmul($A,$B);
         $this->assertEquals([
             [[[1,2],
               [4,5]],
@@ -617,56 +782,277 @@ class Test extends TestCase
     public function testMatmulUnmatchBroadcast()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
-        $B = $mo->array([[[1,0],[0,1]],[[1,0],[0,1]],[[1,0],[0,1]]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
+        $B = $la->array([[[1,0],[0,1]],[[1,0],[0,1]],[[1,0],[0,1]]]);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Matrix size-incompatible for broadcast:[2,3,2]<=>[3,2,2]');
-        $C = $mo->la()->matmul($A,$B);
+        $C = $la->matmul($A,$B);
     }
 
     public function testMatmulUnmatchBaseMatrix()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
-        $B = $mo->array([[[1,0],[0,1],[1,0]],[[1,0],[0,1],[1,0]]]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
+        $B = $la->array([[[1,0],[0,1],[1,0]],[[1,0],[0,1],[1,0]]]);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('The number of columns in "A" and the number of rows in "B" must be the same:[2,3,2]<=>[2,3,2]');
-        $C = $mo->la()->matmul($A,$B);
+        $C = $la->matmul($A,$B);
     }
 
     public function testMatmulUnmatchOutputShape()
     {
         $mo = $this->newMatrixOperator();
-        $A = $mo->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
-        $B = $mo->array([[[1,0],[0,1]],[[1,0],[0,1]]]);
-        $C = $mo->zeros([2,2,2]);
+        $la = $this->newLA($mo);
+        $A = $la->array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]]);
+        $B = $la->array([[[1,0],[0,1]],[[1,0],[0,1]]]);
+        $C = $la->array($mo->zeros([2,2,2]));
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns:[2,3,2] , [2,2,2] => [2,2,2]');
-        $C = $mo->la()->matmul($A,$B,null,null,$C);
+        $C = $la->matmul($A,$B,null,null,$C);
+    }
+
+    public function providerSumNormal()
+    {
+        return [
+            'float32' => [NDArray::float32],
+            'int32'   => [NDArray::int32],
+        ];
+    }
+    /**
+    *    ret := |x_1| + ... + |x_n|
+    *
+    * @dataProvider providerSumNormal
+    */
+    public function testSumNormal($dtype)
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,-3],[-4,5,-6]],$dtype);
+        $ret = $la->sum($x);
+        $this->assertEquals(1+2-3-4+5-6,$ret);
+
+        // 1
+        $x = $la->alloc([1],$dtype);
+        $la->fill(1,$x);
+        $ret = $la->sum($x);
+        $this->assertEquals(1,$ret);
+
+        // 2
+        $x = $la->alloc([2],$dtype);
+        $la->fill(1,$x);
+        $ret = $la->sum($x);
+        $this->assertEquals(2,$ret);
+
+        // 3
+        $x = $la->alloc([3],$dtype);
+        $la->fill(1,$x);
+        $ret = $la->sum($x);
+        $this->assertEquals(3,$ret);
+
+        // 4
+        $x = $la->alloc([4],$dtype);
+        $la->fill(1,$x);
+        $ret = $la->sum($x);
+        $this->assertEquals(4,$ret);
+
+        // 256
+        $x = $la->alloc([256],$dtype);
+        $la->fill(1,$x);
+        $ret = $la->sum($x);
+        $this->assertEquals(256,$ret);
+
+        // over 256
+        $x = $la->alloc([1000],$dtype);
+        $la->fill(1,$x);
+        $ret = $la->sum($x);
+        $this->assertEquals(1000,$ret);
+
+        // over 65536
+        $x = $la->alloc([70000],$dtype);
+        $la->fill(1,$x);
+        $ret = $la->sum($x);
+        $this->assertEquals(70000,$ret);
+    }
+
+    public function testSumIntegerAndBool()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,-3],[-4,5,-6]],NDArray::int32);
+        $ret = $la->sum($x);
+        $this->assertEquals(1+2-3-4+5-6,$ret);
+
+        $x = $la->array([[true,false,true],[false,true,false]],NDArray::bool);
+        $ret = $la->sum($x);
+        $this->assertEquals(3,$ret);
+    }
+
+    public function testSumLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+
+        // large size
+        $size = 2000000;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sum($x);
+        $this->assertLessThan(1e-3,$size-$sum);
+    }
+
+    public function testSumSpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        // large size
+        $size = 2000000;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sum($x);
+        $start = hrtime(true);
+        $sum = $la->sum($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        if(!is_scalar($sum)) {
+            $sum = $sum->toArray();
+        }
+        $this->assertLessThan(1e-3,$size-$sum);
+    }
+
+    public function testSumCompareSpeed()
+    {
+        // Comment out when compare speed
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        echo "small size\n";
+        $size = 256;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sum($x);
+        $start = hrtime(true);
+        $sum = $la->sum($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        if(!is_scalar($sum)) {
+            $sum = $sum->toArray();
+        }
+        $this->assertLessThan(1e-3,$size-$sum);
+
+        $size = 256;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sumTest($x);
+        $start = hrtime(true);
+        $sum = $la->sumTest($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        if(!is_scalar($sum)) {
+            $sum = $sum->toArray();
+        }
+        $this->assertLessThan(1e-3,$size-$sum);
+
+        echo "midle size\n";
+        $size = 131072;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sum($x);
+        $start = hrtime(true);
+        $sum = $la->sum($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        if(!is_scalar($sum)) {
+            $sum = $sum->toArray();
+        }
+        $this->assertLessThan(1e-3,$size-$sum);
+
+        $size = 131072;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sumTest($x);
+        $start = hrtime(true);
+        $sum = $la->sumTest($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        if(!is_scalar($sum)) {
+            $sum = $sum->toArray();
+        }
+        $this->assertLessThan(1e-3,$size-$sum);
+
+        echo "large size\n";
+        $size = 2000000;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sum($x);
+        $start = hrtime(true);
+        $sum = $la->sum($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        if(!is_scalar($sum)) {
+            $sum = $sum->toArray();
+        }
+        $this->assertLessThan(1e-3,$size-$sum);
+
+        $size = 2000000;
+        $x = $la->alloc([$size],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->sumTest($x);
+        $start = hrtime(true);
+        $sum = $la->sumTest($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        if(!is_scalar($sum)) {
+            $sum = $sum->toArray();
+        }
+        $this->assertLessThan(1e-3,$size-$sum);
     }
 
     public function testIncrement()
     {
         $mo = $this->newMatrixOperator();
-        $X = $mo->array([[1,2,3],[4,5,6]]);
+        $la = $this->newLA($mo);
+        $X = $la->array([[1,2,3],[4,5,6]]);
 
         // X := X + 1
-        $mo->la()->increment($X,1.0);
+        $la->increment($X,1.0);
         $this->assertEquals(
             [[2,3,4],[5,6,7]]
         ,$X->toArray());
 
         // X := 8 - X
-        $mo->la()->increment($X,8.0,-1.0);
+        $la->increment($X,8.0,-1.0);
         $this->assertEquals(
             [[6,5,4],[3,2,1]]
         ,$X->toArray());
 
         // X := 2 * X
-        $mo->la()->increment($X,null,2.0);
+        $la->increment($X,null,2.0);
         $this->assertEquals(
             [[12,10,8],[6,4,2]]
         ,$X->toArray());
@@ -675,24 +1061,25 @@ class Test extends TestCase
     public function testReciprocal()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := 1 / X
-        $X = $mo->array([[1,2,4],[8,16,32]]);
-        $mo->la()->reciprocal($X);
+        $X = $la->array([[1,2,4],[8,16,32]]);
+        $la->reciprocal($X);
         $this->assertEquals(
             [[1,0.5,0.25],[0.125,0.0625, 0.03125]]
         ,$X->toArray());
 
         // X := 1 / (X + 1)
-        $X = $mo->array([[0,1,3],[7,15,31]]);
-        $mo->la()->reciprocal($X,1.0);
+        $X = $la->array([[0,1,3],[7,15,31]]);
+        $la->reciprocal($X,1.0);
         $this->assertEquals(
             [[1,0.5,0.25],[0.125,0.0625, 0.03125]]
         ,$X->toArray());
 
         // X := 1 / (32 - X)
-        $X = $mo->array([[31,30,28],[24,16,0]]);
-        $mo->la()->reciprocal($X,32,-1.0);
+        $X = $la->array([[31,30,28],[24,16,0]]);
+        $la->reciprocal($X,32,-1.0);
         $this->assertEquals(
             [[1,0.5,0.25],[0.125,0.0625, 0.03125]]
         ,$X->toArray());
@@ -701,10 +1088,11 @@ class Test extends TestCase
     public function testMaximum()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := maximum(1,X)
-        $X = $mo->array([[-1,0,1],[2,3,4]]);
-        $mo->la()->maximum(1,$X);
+        $X = $la->array([[-1,0,1],[2,3,4]]);
+        $la->maximum(1,$X);
         $this->assertEquals(
             [[1,1,1],[2,3,4]]
         ,$X->toArray());
@@ -713,10 +1101,11 @@ class Test extends TestCase
     public function testMinimum()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := minimum(1,X)
-        $X = $mo->array([[-1,0,1],[2,3,4]]);
-        $mo->la()->minimum(1,$X);
+        $X = $la->array([[-1,0,1],[2,3,4]]);
+        $la->minimum(1,$X);
         $this->assertEquals(
             [[-1,0,1],[1,1,1]]
         ,$X->toArray());
@@ -725,10 +1114,11 @@ class Test extends TestCase
     public function testGreater()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := greater(1,X)
-        $X = $mo->array([[-1,0,1],[2,3,4]]);
-        $mo->la()->greater(1,$X);
+        $X = $la->array([[-1,0,1],[2,3,4]]);
+        $la->greater(1,$X);
         $this->assertEquals(
             [[0,0,0],[1,1,1]]
         ,$X->toArray());
@@ -737,23 +1127,25 @@ class Test extends TestCase
     public function testLess()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := less(1,X)
-        $X = $mo->array([[-1,0,1],[2,3,4]]);
-        $mo->la()->less(1,$X);
+        $X = $la->array([[-1,0,1],[2,3,4]]);
+        $la->less(1,$X);
         $this->assertEquals(
             [[1,1,0],[0,0,0]]
         ,$X->toArray());
     }
 
-    public function testMultiply()
+    public function testMultiplyNormal()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // Y := X(i) * Y(i)
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $Y = $mo->array([[1,10,100],[-1,-10,-100]]);
-        $mo->la()->multiply($X,$Y);
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $Y = $la->array([[1,10,100],[-1,-10,-100]]);
+        $la->multiply($X,$Y);
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
@@ -762,9 +1154,10 @@ class Test extends TestCase
         ,$Y->toArray());
 
         // broadcast
-        $X = $mo->array([1,2,3]);
-        $Y = $mo->array([[1,10,100],[-1,-10,-100]]);
-        $mo->la()->multiply($X,$Y);
+        $X = $la->array([1,2,3]);
+        $Y = $la->array([[1,10,100],[-1,-10,-100]]);
+        $this->assertEquals([[1,10,100],[-1,-10,-100]],$Y->toArray());
+        $la->multiply($X,$Y);
         $this->assertEquals(
             [1,2,3]
         ,$X->toArray());
@@ -773,25 +1166,82 @@ class Test extends TestCase
         ,$Y->toArray());
 
         // transpose and broadcast
-        $X = $mo->array([1,2,3]);
-        $Y = $mo->array([[1,10],[100,-1],[-10,-100]]);
-        $mo->la()->multiply($X,$Y,$trans=true);
+        $X = $la->array([1,2,3]);
+        $Y = $la->array([[1,10],[100,-1],[-10,-100]]);
+        $la->multiply($X,$Y,$trans=true);
         $this->assertEquals(
             [1,2,3]
         ,$X->toArray());
         $this->assertEquals(
             [[1,10],[200,-2],[-30,-300]]
         ,$Y->toArray());
+
+    }
+
+    public function testMultiplyLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+        // large size
+        $rows = 8000000;
+        $cols = 16;
+        $x = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(2.0,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(3.0,$y);
+        $r = $la->multiply($x,$y);
+        $trues = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(6,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$r,-1)));
+    }
+
+
+    public function testMultiplySpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+        // large size
+        $rows = 8000000;
+        $cols = 16;
+        $x = $la->alloc([$rows,$cols],NDArray::float32);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        fwrite(STDERR,"fill-x\n");
+        $la->fill(2.0,$x);
+        fwrite(STDERR,"fill-y\n");
+        $la->fill(3.0,$y);
+        fwrite(STDERR,"pre-execute\n");
+        $r = $la->multiply($x,$y);
+        fwrite(STDERR,"execute\n");
+        $start = hrtime(true);
+        $r = $la->multiply($x,$y);
+        $end = hrtime(true);
+        fwrite(STDERR,"done\n");
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        $this->assertTrue(true);
     }
 
     public function testAdd()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // Y := X(i) * Y(i)
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $Y = $mo->array([[1,10,100],[-1,-10,-100]]);
-        $mo->la()->add($X,$Y);
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $Y = $la->array([[1,10,100],[-1,-10,-100]]);
+        $la->add($X,$Y);
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
@@ -800,9 +1250,9 @@ class Test extends TestCase
         ,$Y->toArray());
 
         // broadcast and alpha = -1
-        $X = $mo->array([1,2,3]);
-        $Y = $mo->array([[1,10,100],[-1,-10,-100]]);
-        $mo->la()->add($X,$Y,-1);
+        $X = $la->array([1,2,3]);
+        $Y = $la->array([[1,10,100],[-1,-10,-100]]);
+        $la->add($X,$Y,-1);
         $this->assertEquals(
             [1,2,3]
         ,$X->toArray());
@@ -811,9 +1261,9 @@ class Test extends TestCase
         ,$Y->toArray());
 
         // transpose and broadcast
-        $X = $mo->array([1,2,3]);
-        $Y = $mo->array([[1,10],[100,-1],[-10,-100]]);
-        $mo->la()->add($X,$Y,null,$trans=true);
+        $X = $la->array([1,2,3]);
+        $Y = $la->array([[1,10],[100,-1],[-10,-100]]);
+        $la->add($X,$Y,null,$trans=true);
         $this->assertEquals(
             [1,2,3]
         ,$X->toArray());
@@ -822,13 +1272,36 @@ class Test extends TestCase
         ,$Y->toArray());
     }
 
+    public function testAddLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+        // large size
+        $rows = 8000000;
+        $cols = 16;
+        $x = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(2.0,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(3.0,$y);
+        $r = $la->add($x,$y);
+        $trues = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(5,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$r,-1)));
+    }
+
     public function testSquare()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := X ^ 2
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $mo->la()->square($X);
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $la->square($X);
         $this->assertEquals(
             [[1,4,9],[16,25,36]]
         ,$X->toArray());
@@ -837,10 +1310,11 @@ class Test extends TestCase
     public function testSqrt()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := sqrt(X)
-        $X = $mo->array([[1,4,9],[16,25,36]]);
-        $mo->la()->sqrt($X);
+        $X = $la->array([[1,4,9],[16,25,36]]);
+        $la->sqrt($X);
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
@@ -849,34 +1323,37 @@ class Test extends TestCase
     public function testRsqrt()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := 1 / sqrt(X)
-        $X = $mo->array([[1,4],[16,64]]);
-        $mo->la()->rsqrt($X);
+        $X = $la->array([[1,4],[16,64]]);
+        $la->rsqrt($X);
         $this->assertEquals(
             [[1/1,1/2],[1/4,1/8]]
         ,$X->toArray());
 
         // X := 1 / ( 1 - sqrt(X))
-        $X = $mo->array([[10,40],[80,160]]);
-        $mo->la()->rsqrt($X,1,-1);
+        $X = $la->array([[10,40],[80,160]]);
+        $la->rsqrt($X,1,-1);
 
-        $mo->la()->reciprocal($X);
-        $mo->la()->increment($X,1,-1);
-        $mo->la()->square($X);
+        $la->reciprocal($X);
+        $la->increment($X,1,-1);
+        $la->square($X);
 
-        $this->assertEquals(
-            [[10,40],[80,160]]
-        ,$X->toArray());
+        $this->assertLessThan(1e-4,$la->amax($la->axpy(
+            $X,
+            $la->array([[10,40],[80,160]]),-1
+        )));
     }
 
     public function testPow()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := sqrt(X)
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $mo->la()->pow($X,3);
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $la->pow($X,3);
         $this->assertEquals(
             [[1,8,27],[64,125,216]]
         ,$X->toArray());
@@ -885,48 +1362,56 @@ class Test extends TestCase
     public function testExp()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := exp(X)
         $X = $mo->array([[1,2,3],[4,5,6]]);
-        $X2 = $mo->copy($X);
-        $mo->la()->exp($X);
-        $Y = $mo->f(function ($x) { return log($x);},$X);
-        $this->assertLessThan(1e-5,$mo->asum($mo->op($X2,'-',$Y)));
+        $trues = $mo->f(function ($x) { return exp($x);},$X);
+
+        $X = $la->array($X);
+        $trues = $la->array($trues);
+        $la->exp($X);
+        $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
     }
 
     public function testLog()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := log(X)
         $X = $mo->array([[1,2,3],[4,5,6]]);
-        $X2 = $mo->copy($X);
-        $mo->la()->log($X);
-        $Y = $mo->f(function ($x) { return exp($x);},$X);
-        $this->assertLessThan(1e-5,$mo->asum($mo->op($X2,'-',$Y)));
+        $trues = $mo->f(function ($x) { return log($x);},$X);
+
+        $X = $la->array($X);
+        $trues = $la->array($trues);
+        $la->log($X);
+        $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
     }
 
     public function testTanh()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // X := tanh(X)
-        $X = $mo->array([[0.1,0.2,0.3],[0.4,0.5,0.6]]);
-        $X2 = $mo->copy($X);
-        $mo->la()->tanh($X);
-        $Y = $mo->f(function ($y) {
-            return 1/2 * log((1+$y)/(1-$y));
-        },$X);
-        $this->assertLessThan(1e-5,$mo->asum($mo->op($X2,'-',$Y)));
+        $X = $mo->array([[1,2,3],[4,5,6]]);
+        $trues = $mo->f(function ($x) { return tanh($x);},$X);
+
+        $X = $la->array($X);
+        $trues = $la->array($trues);
+        $la->tanh($X);
+        $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
     }
 
     public function testDuplicate()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         // Y := X (duplicate 2 times)
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $Y = $mo->la()->duplicate($X,2);
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $Y = $la->duplicate($X,2);
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
@@ -936,8 +1421,8 @@ class Test extends TestCase
         ],$Y->toArray());
 
         // 1 time
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $Y = $mo->la()->duplicate($X,1);
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $Y = $la->duplicate($X,1);
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
@@ -946,8 +1431,8 @@ class Test extends TestCase
         ,$Y->toArray());
 
         // transpose
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $Y = $mo->la()->duplicate($X,2,true);
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $Y = $la->duplicate($X,2,true);
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
@@ -957,270 +1442,166 @@ class Test extends TestCase
         ],$Y->toArray());
     }
 
-    public function testRepeat()
-    {
-        $mo = $this->newMatrixOperator();
-
-        // Y := X (duplicate 2 times)
-        $X = $mo->array([
-            [1,2,3],
-            [4,5,6]
-        ]);
-        $Y = $mo->la()->repeat($X,2);
-        $this->assertEquals([2,3],$X->shape());
-        $this->assertEquals([2,2,3],$Y->shape());
-        $this->assertEquals([
-            [1,2,3],
-            [4,5,6]
-        ],$X->toArray());
-        $this->assertEquals([
-            [[1,2,3],[1,2,3]],
-            [[4,5,6],[4,5,6]],
-        ],$Y->toArray());
-
-        // 1 time
-        $X = $mo->array([[1,2,3],[4,5,6]]);
-        $Y = $mo->la()->repeat($X,1);
-        $this->assertEquals(
-            [[1,2,3],[4,5,6]]
-        ,$X->toArray());
-        $this->assertEquals([2,3],$X->shape());
-        $this->assertEquals([2,1,3],$Y->shape());
-        $this->assertEquals(
-            [[[1,2,3]],[[4,5,6]]]
-        ,$Y->toArray());
-
-        //
-        $X = $mo->array([
-            [[1,2,3],[4,5,6]],
-            [[7,8,9],[10,11,12]]
-        ]);
-        $Y = $mo->la()->repeat($X,4);
-        $this->assertEquals([
-            [[1,2,3],[4,5,6]],
-            [[7,8,9],[10,11,12]]
-        ],$X->toArray());
-        $this->assertEquals([2,2,3],$X->shape());
-        $this->assertEquals([2,4,2,3],$Y->shape());
-        $this->assertEquals([
-            [[[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]]],
-            [[[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]]],
-        ],$Y->toArray());
-    }
-
-    public function testReduceSumRepeated()
-    {
-        $mo = $this->newMatrixOperator();
-
-        // Y := X (sum 2 times)
-        $Y = $mo->array([
-            [[1,2,3],[1,2,3]],
-            [[4,5,6],[4,5,6]],
-        ]);
-        $X = $mo->la()->reduceSumRepeated($Y);
-        $this->assertEquals([2,2,3],$Y->shape());
-        $this->assertEquals([2,3],$X->shape());
-        $this->assertEquals([
-            [[1,2,3],[1,2,3]],
-            [[4,5,6],[4,5,6]],
-        ],$Y->toArray());
-        $this->assertEquals([
-            [2,4,6],
-            [8,10,12]
-        ],$X->toArray());
-
-        // 1 time
-        $Y = $mo->array([
-            [[1,2,3]],
-            [[4,5,6]]
-        ]);
-        $X = $mo->la()->reduceSumRepeated($Y);
-        $this->assertEquals([2,1,3],$Y->shape());
-        $this->assertEquals([2,3],$X->shape());
-        $this->assertEquals([
-            [1,2,3],
-            [4,5,6]
-        ],$X->toArray());
-        $this->assertEquals([
-            [[1,2,3]],
-            [[4,5,6]]
-        ],$Y->toArray());
-
-        $Y = $mo->array([
-            [[[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]]],
-            [[[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]]],
-        ]);
-        $X = $mo->la()->reduceSumRepeated($Y);
-        $this->assertEquals([2,4,2,3],$Y->shape());
-        $this->assertEquals([2,2,3],$X->shape());
-        $this->assertEquals([
-            [[4,8,12],[16,20,24]],
-            [[28,32,36],[40,44,48]]
-        ],$X->toArray());
-        $this->assertEquals([
-            [[[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]],
-             [[1,2,3],[4,5,6]]],
-            [[[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]],
-             [[7,8,9],[10,11,12]]],
-        ],$Y->toArray());
-    }
-
     public function testZeros()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([1,2,3]);
-        $mo->la()->zeros($x);
+        $la = $this->newLA($mo);
+        $x = $la->array([1,2,3]);
+        $la->zeros($x);
         $this->assertEquals([0,0,0],$x->toArray());
     }
 
     public function testSelect()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $a = $mo->array([
+        $a = $la->array([
             [1,2,3],
             [4,5,6],
             [7,8,9],
             [10,11,12],
         ],NDArray::float32);
-        $x = $mo->array([0,2],NDArray::int32);
-        $y = $mo->la()->select($a,$x,$axis=0);
+        $x = $la->array([0,2],NDArray::int32);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
-        $y = $mo->la()->select($a,$x,$axis=0);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
-        $a = $mo->array([
+        $a = $la->array([
             [1,2,3],
             [4,5,6],
             [7,8,9],
             [10,11,12],
         ]);
-        $x = $mo->array([0,1,2,0],NDArray::int32);
-        $y = $mo->la()->select($a,$x,$axis=1);
+        $x = $la->array([0,1,2,0],NDArray::int32);
+        $y = $la->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
     }
 
     public function testSelectAxis0()
     {
         $mo = $this->newMatrixOperator();
-        $a = $mo->array([
+        $la = $this->newLA($mo);
+        $a = $la->array([
             [1,2,3],
             [4,5,6],
             [7,8,9],
             [10,11,12],
         ],NDArray::float32);
-        $x = $mo->array([0,2],NDArray::int32);
-        $y = $mo->la()->select($a,$x,$axis=0);
+        $x = $la->array([0,2],NDArray::int32);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
-        $a = $mo->array([
-            [1,2,3],
-            [4,5,6],
-            [7,8,9],
-            [10,11,12],
-        ],NDArray::float64);
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->la()->select($a,$x,$axis=0);
-        $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+        if($la->fp64()) {
+            $a = $la->array([
+                [1,2,3],
+                [4,5,6],
+                [7,8,9],
+                [10,11,12],
+            ],NDArray::float64);
+            $x = $la->array([0,2],NDArray::int64);
+            $y = $la->select($a,$x,$axis=0);
+            $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
+        }
 
-        $a = $mo->array([
+        $a = $la->array([
             [1,2,3],
             [4,5,6],
             [7,8,9],
             [10,11,12],
         ],NDArray::int64);
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->la()->select($a,$x,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
-        $a = $mo->array([
+        $a = $la->array([
             [1,2,3],
             [4,5,6],
             [7,8,9],
             [10,11,12],
         ],NDArray::uint8);
-        $x = $mo->array([0,2],NDArray::uint8);
-        $y = $mo->la()->select($a,$x,$axis=0);
+        $x = $la->array([0,2],NDArray::uint8);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
-        $a = $mo->array([1,2,3,4],NDArray::float32);
-        $x = $mo->array([0,2],NDArray::int32);
-        $y = $mo->la()->select($a,$x,$axis=0);
+        $a = $la->array([1,2,3,4],NDArray::float32);
+        $x = $la->array([0,2],NDArray::int32);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([1,3],$y->toArray());
 
-        $a = $mo->array([1,2,3,4],NDArray::float64);
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->la()->select($a,$x,$axis=0);
+        if($la->fp64()) {
+            $a = $la->array([1,2,3,4],NDArray::float64);
+            $x = $la->array([0,2],NDArray::int64);
+            $y = $la->select($a,$x,$axis=0);
+            $this->assertEquals([1,3],$y->toArray());
+        }
+
+        $a = $la->array([1,2,3,4],NDArray::int64);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([1,3],$y->toArray());
 
-        $a = $mo->array([1,2,3,4],NDArray::int64);
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->la()->select($a,$x,$axis=0);
-        $this->assertEquals([1,3],$y->toArray());
-
-        $a = $mo->array([252,253,254,255],NDArray::uint8);
-        $x = $mo->array([0,2],NDArray::uint8);
-        $y = $mo->la()->select($a,$x,$axis=0);
+        $a = $la->array([252,253,254,255],NDArray::uint8);
+        $x = $la->array([0,2],NDArray::uint8);
+        $y = $la->select($a,$x,$axis=0);
         $this->assertEquals([252,254],$y->toArray());
 
-        $a = $mo->full([256],255,NDArray::uint8);
-        $x = $mo->array([0,2],NDArray::uint8);
-        $y = $mo->la()->select($a,$x,$axis=0);
-        $a2 = $mo->full([256],255,NDArray::uint8);
-        $x2 = $mo->array([0,2],NDArray::uint8);
-        $y2 = $mo->la()->select($a2,$x2,$axis=0);
+        $a = $la->array($mo->full([256],255,NDArray::uint8));
+        $x = $la->array([0,2],NDArray::uint8);
+        $y = $la->select($a,$x,$axis=0);
+        $a2 = $la->array($mo->full([256],255,NDArray::uint8));
+        $x2 = $la->array([0,2],NDArray::uint8);
+        $y2 = $la->select($a2,$x2,$axis=0);
 
     }
 
     public function testSelectAxis1()
     {
         $mo = $this->newMatrixOperator();
-        $a = $mo->array([
+        $la = $this->newLA($mo);
+        $a = $la->array([
             [1,2,3],
             [4,5,6],
             [7,8,9],
             [10,11,12],
         ]);
-        $x = $mo->array([0,1,2,0],NDArray::int32);
-        $y = $mo->la()->select($a,$x,$axis=1);
+        $x = $la->array([0,1,2,0],NDArray::int32);
+        $y = $la->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
-        $x = $mo->array([0,1,2,0],NDArray::int64);
-        $y = $mo->la()->select($a,$x,$axis=1);
+        $x = $la->array([0,1,2,0],NDArray::int64);
+        $y = $la->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
-        $x = $mo->array([0,1,2,0],NDArray::float32);
-        $y = $mo->la()->select($a,$x,$axis=1);
+        $x = $la->array([0,1,2,0],NDArray::float32);
+        $y = $la->select($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
-        $x = $mo->array([0,1,2,0],NDArray::float64);
-        $y = $mo->la()->select($a,$x,$axis=1);
-        $this->assertEquals([1,5,9,10],$y->toArray());
+        if($la->fp64()) {
+            $x = $la->array([0,1,2,0],NDArray::float64);
+            $y = $la->select($a,$x,$axis=1);
+            $this->assertEquals([1,5,9,10],$y->toArray());
+        }
     }
 
     public function testScatterAxis0()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
         // float32
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::float32);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        //foreach($a->toArray() as $pr) {
+        //    echo "\n";
+        //    foreach($pr as $value) {
+        //        echo $value.",";
+        //    }
+        //}
+        //echo "\n";
+        //$this->assertTrue(false);
         $this->assertEquals(
            [[1,2,3],
             [0,0,0],
@@ -1229,20 +1610,22 @@ class Test extends TestCase
             $a->toArray()
         );
         // float64
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::float64);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
-        $this->assertEquals(
-           [[1,2,3],
-            [0,0,0],
-            [7,8,9],
-            [0,0,0]],
-            $a->toArray()
-        );
+        if($la->fp64()) {
+            $x = $la->array([0,2],NDArray::int64);
+            $y = $la->array([[1,2,3],[7,8,9]],NDArray::float64);
+            $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+            $this->assertEquals(
+                [[1,2,3],
+                [0,0,0],
+                [7,8,9],
+                [0,0,0]],
+                $a->toArray()
+            );
+        }
         // int64
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::int64);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::int64);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
         $this->assertEquals(
            [[1,2,3],
             [0,0,0],
@@ -1251,9 +1634,9 @@ class Test extends TestCase
             $a->toArray()
         );
         // uint8
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::uint8);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::uint8);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
         $this->assertEquals(
            [[1,2,3],
             [0,0,0],
@@ -1261,60 +1644,79 @@ class Test extends TestCase
             [0,0,0]],
             $a->toArray()
         );
+
         // float32
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([1,3],NDArray::float32);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([1,3],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
         $this->assertEquals(
            [1,0,3,0],
             $a->toArray()
         );
+
         // int32
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([1,3],NDArray::int32);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([1,3],NDArray::int32);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
         $this->assertEquals(
            [1,0,3,0],
             $a->toArray()
         );
+
         // float64
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([1,3],NDArray::float64);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
-        $this->assertEquals(
-           [1,0,3,0],
-            $a->toArray()
-        );
+        if($la->fp64()) {
+            $x = $la->array([0,2],NDArray::int64);
+            $y = $la->array([1,3],NDArray::float64);
+            $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+            $this->assertEquals(
+                [1,0,3,0],
+                $a->toArray()
+            );
+        }
         // int64
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([1,3],NDArray::int64);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([1,3],NDArray::int64);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
         $this->assertEquals(
            [1,0,3,0],
             $a->toArray()
         );
         // uint8
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([252,254],NDArray::uint8);
-        $a = $mo->la()->scatter($x,$y,$numClass=4,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([252,254],NDArray::uint8);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
         $this->assertEquals(
            [252,0,254,0],
             $a->toArray()
         );
         // x=uint8
-        $x = $mo->array([0,255],NDArray::uint8);
-        $y = $mo->array([252,254],NDArray::uint8);
-        $a = $mo->la()->scatter($x,$y,$numClass=256,$axis=0);
-        $this->assertEquals(252,$a[0]);
-        $this->assertEquals(254,$a[255]);
+        $x = $la->array([0,255],NDArray::uint8);
+        $y = $la->array([252,254],NDArray::uint8);
+        $a = $la->scatter($x,$y,$numClass=256,$axis=0);
+        if(is_scalar($a[0])) {
+            $this->assertEquals(252,$a[0]);
+            $this->assertEquals(254,$a[255]);
+        } else {
+            $this->assertEquals(252,$a[0]->toArray());
+            $this->assertEquals(254,$a[255]->toArray());
+        }
     }
 
     public function testScatterAxis1()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([0,1,2,0],NDArray::int32);
-        $y = $mo->array([1,5,9,10],NDArray::float32);
-        $a = $mo->la()->scatter($x,$y,$numClass=3,$axis=1);
+        $la = $this->newLA($mo);
+        $x = $la->array([0,1,2,0],NDArray::int32);
+        $y = $la->array([1,5,9,10],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=3,$axis=1);
+        //foreach($a->toArray() as $pr) {
+        //    echo "\n";
+        //    foreach($pr as $value) {
+        //        echo $value.",";
+        //    }
+        //}
+        //echo "\n";
+        //$this->assertTrue(false);
         $this->assertEquals(
            [[1,0,0],
             [0,5,0],
@@ -1322,8 +1724,8 @@ class Test extends TestCase
             [10,0,0]],
             $a->toArray());
 
-        $x = $mo->array([0,1,2,0],NDArray::int64);
-        $a = $mo->la()->scatter($x,$y,$numClass=3,$axis=1);
+        $x = $la->array([0,1,2,0],NDArray::int64);
+        $a = $la->scatter($x,$y,$numClass=3,$axis=1);
         $this->assertEquals(
            [[1,0,0],
             [0,5,0],
@@ -1331,8 +1733,8 @@ class Test extends TestCase
             [10,0,0]],
             $a->toArray());
 
-        $x = $mo->array([0,1,2,0],NDArray:: float32);
-        $a = $mo->la()->scatter($x,$y,$numClass=3,$axis=1);
+        $x = $la->array([0,1,2,0],NDArray:: float32);
+        $a = $la->scatter($x,$y,$numClass=3,$axis=1);
         $this->assertEquals(
            [[1,0,0],
             [0,5,0],
@@ -1340,24 +1742,36 @@ class Test extends TestCase
             [10,0,0]],
             $a->toArray());
 
-        $x = $mo->array([0,1,2,0],NDArray:: float64);
-        $a = $mo->la()->scatter($x,$y,$numClass=3,$axis=1);
-        $this->assertEquals(
-           [[1,0,0],
-            [0,5,0],
-            [0,0,9],
-            [10,0,0]],
-            $a->toArray());
+        if($la->fp64()) {
+            $x = $la->array([0,1,2,0],NDArray:: float64);
+            $a = $la->scatter($x,$y,$numClass=3,$axis=1);
+            $this->assertEquals(
+                [[1,0,0],
+                [0,5,0],
+                [0,0,9],
+                [10,0,0]],
+                $a->toArray());
+        }
+
     }
 
-    public function testScatterAddAxis0()
+    public function testScatterAddAxis0Normal()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
         // float32
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::float32);
-        $a = $mo->ones([4,3],NDArray::float32);
-        $mo->la()->scatterAdd($x,$y,$a,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::float32);
+        $a = $la->array($mo->ones([4,3],NDArray::float32));
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        #foreach($a->toArray() as $pr) {
+        #    echo "\n";
+        #    foreach($pr as $value) {
+        #        echo $value.",";
+        #    }
+        #}
+        #echo "\n";
+        #$this->assertTrue(false);
         $this->assertEquals(
            [[2,3,4],
             [1,1,1],
@@ -1366,22 +1780,24 @@ class Test extends TestCase
             $a->toArray()
         );
         // float64
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::float64);
-        $a = $mo->ones([4,3],NDArray::float64);
-        $mo->la()->scatterAdd($x,$y,$a,$axis=0);
-        $this->assertEquals(
-           [[2,3,4],
-            [1,1,1],
-            [8,9,10],
-            [1,1,1]],
-            $a->toArray()
-        );
+        if($la->fp64()) {
+            $x = $la->array([0,2],NDArray::int64);
+            $y = $la->array([[1,2,3],[7,8,9]],NDArray::float64);
+            $a = $la->array($mo->ones([4,3],NDArray::float64));
+            $la->scatterAdd($x,$y,$a,$axis=0);
+            $this->assertEquals(
+                [[2,3,4],
+                [1,1,1],
+                [8,9,10],
+                [1,1,1]],
+                $a->toArray()
+            );
+        }
         // int64
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::int64);
-        $a = $mo->ones([4,3],NDArray::int64);
-        $mo->la()->scatterAdd($x,$y,$a,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::int64);
+        $a = $la->array($mo->ones([4,3],NDArray::int64));
+        $la->scatterAdd($x,$y,$a,$axis=0);
         $this->assertEquals(
            [[2,3,4],
             [1,1,1],
@@ -1390,10 +1806,10 @@ class Test extends TestCase
             $a->toArray()
         );
         // uint8
-        $x = $mo->array([0,2],NDArray::int64);
-        $y = $mo->array([[1,2,3],[7,8,9]],NDArray::uint8);
-        $a = $mo->ones([4,3],NDArray::uint8);
-        $mo->la()->scatterAdd($x,$y,$a,$axis=0);
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::uint8);
+        $a = $la->array($mo->ones([4,3],NDArray::uint8));
+        $la->scatterAdd($x,$y,$a,$axis=0);
         $this->assertEquals(
            [[2,3,4],
             [1,1,1],
@@ -1403,13 +1819,217 @@ class Test extends TestCase
         );
     }
 
+    public function testScatterAddAxis0Large()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+
+        // medium size
+        $rows = 8;
+        $cols = 8;
+        $numClass = 65536;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $trues = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill($rows,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$a,-1)));
+        // large size
+        $rows = 8;
+        $cols = 8;
+        $numClass = 1000000;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $trues = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill($rows,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$a,-1)));
+    }
+
+    public function testScatterAddAxis0Speed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        echo "small rows\n";
+        // small
+        $rows = 256;
+        $cols = 8;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $start = hrtime(true);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "medium rows\n";
+        // medium
+        $rows = 65536;#131072;
+        $cols = 8;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $start = hrtime(true);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "large rows\n";
+        // large
+        $rows = 1000000;
+        $cols = 8;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $start = hrtime(true);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "medium cols\n";
+        // medium cols
+        $rows = 8;
+        $cols = 65536;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $start = hrtime(true);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "large cols\n";
+        // large cols
+        $rows = 8;
+        $cols = 1000000;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $start = hrtime(true);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "medium class\n";
+        // medium class
+        $rows = 8;
+        $cols = 8;
+        $numClass = 131072;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $start = hrtime(true);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "large class\n";
+        // large class
+        $rows = 8;
+        $cols = 8;
+        $numClass = 1000000;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $start = hrtime(true);
+        $la->scatterAdd($x,$y,$a,$axis=0);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        //echo "mode4\n";
+        // small
+        //
+        //$rows = 131072;
+        //$cols = 8;
+        //$numClass = 8;
+        //$x = $la->alloc([$rows],NDArray::int32);
+        //$la->fill(1,$x);
+        //$y = $la->alloc([$rows,$cols],NDArray::float32);
+        //$la->fill(1.0,$y);
+        //$a = $la->alloc([$numClass,$cols],NDArray::float32);
+        //$la->fill(0.0,$a);
+        //$la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode=4);
+        //$start = hrtime(true);
+        //$la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode=4);
+        //$end = hrtime(true);
+        //echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        //echo "\n";
+
+
+        $this->assertTrue(true);
+    }
+
     public function testScatterAddAxis1()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([0,1,2,0],NDArray::int32);
-        $y = $mo->array([1,5,9,10],NDArray::float32);
-        $a = $mo->ones([4,3],NDArray::float32);
-        $mo->la()->scatterAdd($x,$y,$a,$axis=1);
+        $la = $this->newLA($mo);
+        $x = $la->array([0,1,2,0],NDArray::int32);
+        $y = $la->array([1,5,9,10],NDArray::float32);
+        $a = $la->array($mo->ones([4,3],NDArray::float32));
+        $la->scatterAdd($x,$y,$a,$axis=1);
         $this->assertEquals(
            [[2,1,1],
             [1,6,1],
@@ -1417,140 +2037,562 @@ class Test extends TestCase
             [11,1,1]],
             $a->toArray());
 
-        $x = $mo->array([0,1,2,0],NDArray::int32);
-        $y = $mo->array([1,5,9,10],NDArray::float64);
-        $a = $mo->ones([4,3],NDArray::float64);
-        $mo->la()->scatterAdd($x,$y,$a,$axis=1);
-        $this->assertEquals(
-           [[2,1,1],
-            [1,6,1],
-            [1,1,10],
-            [11,1,1]],
-            $a->toArray());
+        if($la->fp64()) {
+            $x = $la->array([0,1,2,0],NDArray::int32);
+            $y = $la->array([1,5,9,10],NDArray::float64);
+            $a = $la->array($mo->ones([4,3],NDArray::float64));
+            $la->scatterAdd($x,$y,$a,$axis=1);
+            $this->assertEquals(
+                [[2,1,1],
+                [1,6,1],
+                [1,1,10],
+                [11,1,1]],
+                $a->toArray());
+        }
     }
 
     public function testOnehot()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([0,1,2,0]);
+        $la = $this->newLA($mo);
+        $x = $la->array([0,1,2,0]);
 
         $this->assertEquals([
             [1,0,0],
             [0,1,0],
             [0,0,1],
             [1,0,0],
-        ],$mo->la()->onehot($x,3)->toArray());
+        ],$la->onehot($x,3)->toArray());
 
-        $y = $mo->ones([4,3]);
+        $y = $la->array($mo->ones([4,3]));
         $this->assertEquals([
             [-1, 1, 1],
             [ 1,-1, 1],
             [ 1, 1,-1],
             [-1, 1, 1],
-        ],$mo->la()->onehot($x,3,-2,$y)->toArray());
+        ],$la->onehot($x,3,-2,$y)->toArray());
     }
 
-    public function testReduceSum()
+    public function testReduceSumNormal()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2,3],[4,5,6]]);
-        $this->assertEquals([5,7,9],$mo->la()->reduceSum($x,$axis=0)->toArray());
-        $this->assertEquals([6,15],$mo->la()->reduceSum($x,$axis=1)->toArray());
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6]]);
+        $y = $la->reduceSum($x,$axis=0);
+        $this->assertEquals([5,7,9],$y->toArray());
+        $y = $la->reduceSum($x,$axis=1);
+        $this->assertEquals([6,15],$y->toArray());
+
+        // ***** CAUTION ******
+        // 3d array as 2d array
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceSum($x,$axis=0);
+        $this->assertEquals([6,8,10,12],$y->toArray());
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceSum($x,$axis=1);
+        $this->assertEquals([3,7,11,15],$y->toArray());
 
         // with offset
-        $x = $mo->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
+        $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
         $x = $x[1];
-        $this->assertEquals([5,7,9],$mo->la()->reduceSum($x,$axis=0)->toArray());
-        $this->assertEquals([6,15],$mo->la()->reduceSum($x,$axis=1)->toArray());
+        $this->assertEquals([5,7,9],$la->reduceSum($x,$axis=0)->toArray());
+        $this->assertEquals([6,15],$la->reduceSum($x,$axis=1)->toArray());
+    }
+
+    public function testReduceSumLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+        // large size
+        $colsize = 1000000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSum($x,$axis=1);
+        $trues = $la->alloc([$rowsize],NDArray::float32);
+        $la->fill($colsize,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$sum,-1)));
+
+        // large size
+        $colsize = 64;
+        $rowsize = 10000;#00;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSum($x,$axis=1);
+        $trues = $la->alloc([$rowsize],NDArray::float32);
+        $la->fill($colsize,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$sum,-1)));
+    }
+
+    public function testReduceSumSpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        $colsize = 1000000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSum($x,$axis=1);
+        $start = hrtime(true);
+        $sum = $la->reduceSum($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSum($x,$axis=1);
+        $start = hrtime(true);
+        $sum = $la->reduceSum($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 4096;
+        $rowsize = 12500;#0;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSum($x,$axis=1);
+        $start = hrtime(true);
+        $sum = $la->reduceSum($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+    }
+
+    public function testReduceSumCompareSpeed()
+    {
+        // Comment out when compare speed
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+        echo "==large cols==\n";
+        echo "mode=2\n";
+        $colsize = 131072;#0;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
+        $start = hrtime(true);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        echo "mode=3\n";
+        $colsize = 131072;#0;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
+        $start = hrtime(true);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        echo "==large rows==\n";
+        echo "mode=1\n";
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,1);
+        $start = hrtime(true);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,1);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        echo "mode=2\n";
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
+        $start = hrtime(true);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        echo "==midle rows,cols==\n";
+        echo "mode=2\n";
+        $colsize = 4096;
+        $rowsize = 12500;#0;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
+        $start = hrtime(true);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        echo "mode=2\n";
+        $colsize = 4096;
+        $rowsize = 12500;#0;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
+        $start = hrtime(true);
+        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+    }
+
+    public function testReduceMaxNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6]]);
+        $this->assertEquals([4,5,6],$la->reduceMax($x,$axis=0)->toArray());
+        $this->assertEquals([3,6],$la->reduceMax($x,$axis=1)->toArray());
+
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array([[-1,-2,-3],[-4,-5,-6]]);
+        $this->assertEquals([-1,-2,-3],$la->reduceMax($x,$axis=0)->toArray());
+        $this->assertEquals([-1,-4],$la->reduceMax($x,$axis=1)->toArray());
+
+
+        // ***** CAUTION ******
+        // 3d array as 2d array
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceMax($x,$axis=0);
+        $this->assertEquals([5,6,7,8],$y->toArray());
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceMax($x,$axis=1);
+        $this->assertEquals([2,4,6,8],$y->toArray());
+
+        // with offset
+        $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
+        $x = $x[1];
+        $this->assertEquals([4,5,6],$la->reduceMax($x,$axis=0)->toArray());
+        $this->assertEquals([3,6],$la->reduceMax($x,$axis=1)->toArray());
 
     }
 
-    public function testArgReduceMax()
+    public function testReduceMaxLarge()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2,3],[4,5,6]]);
-        $this->assertEquals([1,1,1],$mo->la()->reduceArgMax($x,$axis=0)->toArray());
-        $this->assertEquals([2,2],$mo->la()->reduceArgMax($x,$axis=1)->toArray());
-
-        // with offset
-        $x = $mo->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
-        $x = $x[1];
-        $this->assertEquals([1,1,1],$mo->la()->reduceArgMax($x,$axis=0)->toArray());
-        $this->assertEquals([2,2],$mo->la()->reduceArgMax($x,$axis=1)->toArray());
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+        // large size
+        $colsize = 1000000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $r = $la->reduceMax($x,$axis=1);
+        $trues = $la->alloc([$rowsize],NDArray::float32);
+        $la->fill(1.0,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$r,-1)));
     }
 
-    public function testReduceMax()
+    public function testReduceMaxSpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        $colsize = 1000000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $max = $la->reduceMax($x,$axis=1);
+        $start = hrtime(true);
+        $max = $la->reduceMax($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals(1,$la->amax($max));
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $max = $la->reduceMax($x,$axis=1);
+        $start = hrtime(true);
+        $max = $la->reduceMax($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals(1,$la->amax($max));
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 4096;
+        $rowsize = 12500;#0;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $max = $la->reduceMax($x,$axis=1);
+        $start = hrtime(true);
+        $max = $la->reduceMax($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals(1,$la->amax($max));
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+    }
+
+    public function testReduceArgMaxNormal()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2,3],[4,5,6]]);
-        $this->assertEquals([4,5,6],$mo->la()->reduceMax($x,$axis=0)->toArray());
-        $this->assertEquals([3,6],$mo->la()->reduceMax($x,$axis=1)->toArray());
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6]]);
+        $this->assertEquals([1,1,1],$la->reduceArgMax($x,$axis=0)->toArray());
+        $this->assertEquals([2,2],$la->reduceArgMax($x,$axis=1)->toArray());
+
+        // ***** CAUTION ******
+        // 3d array as 2d array
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceArgMax($x,$axis=0);
+        $this->assertEquals([1,1,1,1],$y->toArray());
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceArgMax($x,$axis=1);
+        $this->assertEquals([1,1,1,1],$y->toArray());
 
         // with offset
-        $x = $mo->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
+        $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
         $x = $x[1];
-        $this->assertEquals([4,5,6],$mo->la()->reduceMax($x,$axis=0)->toArray());
-        $this->assertEquals([3,6],$mo->la()->reduceMax($x,$axis=1)->toArray());
+        $this->assertEquals([1,1,1],$la->reduceArgMax($x,$axis=0)->toArray());
+        $this->assertEquals([2,2],$la->reduceArgMax($x,$axis=1)->toArray());
 
+    }
+
+    public function testReduceArgMaxLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+        // large size
+        $colsize = 500000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $max = $la->reduceArgMax($x,$axis=1);
+        $trues = $la->alloc([$rowsize],NDArray::int32);
+        $this->assertTrue($la->sum($max)==0);
+    }
+
+    public function testReduceArgMaxSpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        $colsize = 1000000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $max = $la->reduceArgMax($x,$axis=1);
+        $start = hrtime(true);
+        $max = $la->reduceArgMax($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertTrue($la->sum($max)==0);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $max = $la->reduceArgMax($x,$axis=1);
+        $start = hrtime(true);
+        $max = $la->reduceArgMax($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertTrue($la->sum($max)==0);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 4096;
+        $rowsize = 12500;#0;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $max = $la->reduceArgMax($x,$axis=1);
+        $start = hrtime(true);
+        $max = $la->reduceArgMax($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertTrue($la->sum($max)==0);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
     }
 
     public function testReduceMean()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->array([[1,2,3],[4,5,6]]);
-        $this->assertEquals([2.5,3.5,4.5],$mo->la()->reduceMean($x,$axis=0)->toArray());
-        $this->assertEquals([2,5],$mo->la()->reduceMean($x,$axis=1)->toArray());
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6]]);
+        $this->assertEquals([2.5,3.5,4.5],$la->reduceMean($x,$axis=0)->toArray());
+        $this->assertEquals([2,5],$la->reduceMean($x,$axis=1)->toArray());
 
         // with offset
-        $x = $mo->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
+        $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
         $x = $x[1];
-        $this->assertEquals([2.5,3.5,4.5],$mo->la()->reduceMean($x,$axis=0)->toArray());
-        $this->assertEquals([2,5],$mo->la()->reduceMean($x,$axis=1)->toArray());
+        $this->assertEquals([2.5,3.5,4.5],$la->reduceMean($x,$axis=0)->toArray());
+        $this->assertEquals([2,5],$la->reduceMean($x,$axis=1)->toArray());
     }
 
     public function testEqualNormal()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $X = $mo->array([100,10,-1000]);
-        $Y = $mo->array([100,-10,-1000]);
-        $this->assertEquals([1,0,1],$mo->la()->equal($X,$Y)->toArray());
+        $X = $la->array([100,10,-1000]);
+        $Y = $la->array([100,-10,-1000]);
+        $this->assertEquals([1,0,1],$la->equal($X,$Y)->toArray());
     }
 
     public function testSoftmax()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $x = $mo->array([
+        $x = $la->array([
             [-1.0,-0.5,0.0,0.5,1.0],
             [-1.0,-0.5,0.0,0.5,1.0],
             [-1.0,-0.5,0.0,0.5,1.0],
             [-1.0,-0.5,0.0,0.5,1.0],
             [-1.0,-0.5,0.0,0.5,1.0],
         ]);
-        $y = $mo->la()->softmax($x);
-        $this->assertTrue($this->equalTest(0.05801,$y[0][0]));
-        $this->assertTrue($this->equalTest(0.09564,$y[0][1]));
-        $this->assertTrue($this->equalTest(0.15769,$y[0][2]));
-        $this->assertTrue($this->equalTest(0.25999,$y[0][3]));
-        $this->assertTrue($this->equalTest(0.42865,$y[0][4]));
+        $y = $la->softmax($x);
+        if(is_scalar($y[0][0])) {
+            $this->assertTrue($this->equalTest(0.05801,$y[0][0]));
+            $this->assertTrue($this->equalTest(0.09564,$y[0][1]));
+            $this->assertTrue($this->equalTest(0.15769,$y[0][2]));
+            $this->assertTrue($this->equalTest(0.25999,$y[0][3]));
+            $this->assertTrue($this->equalTest(0.42865,$y[0][4]));
+        } else {
+            $this->assertTrue($this->equalTest(0.05801,$y[0][0]->toArray()));
+            $this->assertTrue($this->equalTest(0.09564,$y[0][1]->toArray()));
+            $this->assertTrue($this->equalTest(0.15769,$y[0][2]->toArray()));
+            $this->assertTrue($this->equalTest(0.25999,$y[0][3]->toArray()));
+            $this->assertTrue($this->equalTest(0.42865,$y[0][4]->toArray()));
+        }
+    }
+
+    public function testSoftmaxLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+            // large size
+        $colsize = 600000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $r = $la->softmax($x);
+        $trues = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$r,-1)));
+
+        // large size
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $r = $la->softmax($x);
+        $trues = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$r,-1)));
+    }
+
+    public function testSoftmaxSpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        // large size
+        $colsize = 600000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $r = $la->softmax($x);
+        $start = hrtime(true);
+        $r = $la->softmax($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        // large size
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $r = $la->softmax($x);
+        $start = hrtime(true);
+        $r = $la->softmax($x);
+        $end = hrtime(true);
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
     }
 
     public function testastype()
     {
         $mo = $this->newMatrixOperator();
-        $math = $mo->la();
+        $la = $this->newLA($mo);
+        $math = $la;
 
         #### int to any
-        $X = $mo->array([-1,0,1,2,3],NDArray::int32);
+        $X = $la->array([-1,0,1,2,3],NDArray::int32);
         $dtype = NDArray::float32;
         $Y = $math->astype($X, $dtype);
         $this->assertEquals(NDArray::float32,$Y->dtype());
         $this->assertEquals([-1,0,1,2,3],$Y->toArray());
 
-        $dtype = NDArray::float64;
-        $Y = $math->astype($X, $dtype);
-        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+        if($la->fp64()) {
+            $dtype = NDArray::float64;
+            $Y = $math->astype($X, $dtype);
+            $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+        }
 
         $dtype = NDArray::int8;
         $Y = $math->astype($X, $dtype);
@@ -1573,14 +2615,16 @@ class Test extends TestCase
         $this->assertEquals([true,false,true,true,true],$Y->toArray());
 
         #### float to any ######
-        $X = $mo->array([-1,0,1,2,3],NDArray::float32);
+        $X = $la->array([-1,0,1,2,3],NDArray::float32);
         $dtype = NDArray::float32;
         $Y = $math->astype($X, $dtype);
         $this->assertEquals([-1,0,1,2,3],$Y->toArray());
 
-        $dtype = NDArray::float64;
-        $Y = $math->astype($X, $dtype);
-        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+        if($la->fp64()) {
+            $dtype = NDArray::float64;
+            $Y = $math->astype($X, $dtype);
+            $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+        }
 
         $dtype = NDArray::int8;
         $Y = $math->astype($X, $dtype);
@@ -1603,14 +2647,16 @@ class Test extends TestCase
         $this->assertEquals([true,false,true,true,true],$Y->toArray());
 
         #### bool to any ######
-        $X = $mo->array([true,false,true,true,true],NDArray::bool);
+        $X = $la->array([true,false,true,true,true],NDArray::bool);
         $dtype = NDArray::float32;
         $Y = $math->astype($X, $dtype);
         $this->assertEquals([1,0,1,1,1],$Y->toArray());
 
-        $dtype = NDArray::float64;
-        $Y = $math->astype($X, $dtype);
-        $this->assertEquals([1,0,1,1,1],$Y->toArray());
+        if($la->fp64()) {
+            $dtype = NDArray::float64;
+            $Y = $math->astype($X, $dtype);
+            $this->assertEquals([1,0,1,1,1],$Y->toArray());
+        }
 
         $dtype = NDArray::int8;
         $Y = $math->astype($X, $dtype);
@@ -1633,7 +2679,7 @@ class Test extends TestCase
         $this->assertEquals([true,false,true,true,true],$Y->toArray());
 
         #### float to unsigned ######
-        $X = $mo->array([-1,0,1,2,3],NDArray::float32);
+        $X = $la->array([-1,0,1,2,3],NDArray::float32);
         $dtype = NDArray::uint8;
         $Y = $math->astype($X, $dtype);
         $this->assertEquals([255,0,1,2,3],$Y->toArray());
@@ -1642,45 +2688,513 @@ class Test extends TestCase
         $Y = $math->astype($X, $dtype);
         $this->assertEquals([65535,0,1,2,3],$Y->toArray());
 
-        $dtype = NDArray::uint32;
-        $Y = $math->astype($X, $dtype);
-        $this->assertEquals([4294967295,0,1,2,3],$Y->toArray());
+        // ***** CAUTION ******
+        $X = $la->array([-1000,0,1,2,4294967295],NDArray::float32);
+        if($la->accelerated()) {
+            // GPU
+            $dtype = NDArray::uint32;
+            $Y = $math->astype($X, $dtype);
+            $this->assertEquals([0,0,1,2,4294967295],$Y->toArray());
+        } else {
+            // CPU
+            $dtype = NDArray::uint32;
+            $Y = $math->astype($X, $dtype);
+            if(extension_loaded('rindow_openblas')) {
+                $this->assertEquals([4294966296,0,1,2,0],$Y->toArray());
+            } else {
+                $this->assertEquals([4294966296,0,1,2,4294967295],$Y->toArray());
+            }
+        }
 
-        $dtype = NDArray::uint64;
-        $Y = $math->astype($X, $dtype);
-        $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+        // ***** CAUTION ******
+        $X = $la->array([-1000,0,1,2,3],NDArray::float32);
+        if($la->accelerated()) {
+            // GPU
+            $dtype = NDArray::uint64;
+            $Y = $math->astype($X, $dtype);
+            $this->assertEquals([0,0,1,2,3],$Y->toArray());
+        } elseif($la->getConfig()=='PhpBlas') {
+            // CPU
+            $dtype = NDArray::uint64;
+            $Y = $math->astype($X, $dtype);
+            $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
+        }
     }
 
-    public function testIm2col2dNormal()
+
+    public function providerIm2col2dNormal()
+    {
+        return [
+            'normal' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_h' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_h' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_h' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => null,
+            ]],
+            'normal channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_h channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_h channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_h channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => null,
+            ]],
+            'normal padding' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_h padding' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w padding' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_h padding' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w padding' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_h padding' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w padding' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => null,
+            ]],
+            'normal cols_channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'kernel_h cols_channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'kernel_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'stride_h cols_channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'stride_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'dilation_h cols_channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'dilation_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => true,
+            ]],
+        ];
+    }
+    /**
+    * @dataProvider providerIm2col2dNormal
+    */
+    public function testIm2col2dNormal($params)
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $batches = 1;
-        $im_h = 4;
-        $im_w = 4;
-        $channels = 3;
-        $kernel_h = 3;
-        $kernel_w = 3;
-        $stride_h = 1;
-        $stride_w = 1;
-        $padding = null;
-        $channels_first = null;
-        $cols_channels_first=null;
+        extract($params);
+
+        //$batches = 1;
+        //$im_h = 4;
+        //$im_w = 4;
+        //$channels = 3;
+        //$kernel_h = 3;
+        //$kernel_w = 3;
+        //$stride_h = 1;
+        //$stride_w = 1;
+        //$padding = null;
+        //$channels_first = null;
+        //$dilation_h = 1;
+        //$dilation_w = 1;
+        //$cols_channels_first=null;
         $cols = null;
 
-        $images = $mo->arange(
+        $images = $la->array($mo->arange(
             $batches*
             $im_h*$im_w*
             $channels,
             null,null,
             NDArray::float32
-        )->reshape([
-            $batches,
-            $im_h,
-            $im_w,
-            $channels
-        ]);
-        $cols = $mo->la()->im2col(
+        ));
+        if($channels_first) {
+            $images = $images->reshape([
+                $batches,
+                $channels,
+                $im_h,
+                $im_w
+            ]);
+        } else {
+            $images = $images->reshape([
+                $batches,
+                $im_h,
+                $im_w,
+                $channels
+            ]);
+        }
+        $cols = $la->im2col(
             $images,
             $filterSize=[
                 $kernel_h,$kernel_w],
@@ -1688,44 +3202,187 @@ class Test extends TestCase
                 $stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
             $cols_channels_first
         );
-        $out_h = 2;
-        $out_w = 2;
+        $out_h = intval(floor(($im_h-($kernel_h-1)*$dilation_h-1)/$stride_h)+1);
+        $out_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        if($padding) {
+            $padding_h = (int)floor((($im_h-1)*$stride_h-$im_h+($kernel_h-1)*$dilation_h+1)/2);
+            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1)/2);
+            $out_h = $im_h;
+            $out_w = $im_w;
+        } else {
+            $padding_h = 0;
+            $padding_w = 0;
+        }
 
-        $this->assertEquals(
-            [
-                $batches,
-                $out_h,$out_w,
-                $kernel_h,$kernel_w,
-                $channels,
-            ],
-            $cols->shape()
-        );
-        $this->assertEquals(
-        [[
-          [
-           [[[0,1,2],[3,4,5],[6,7,8]],
-            [[12,13,14],[15,16,17],[18,19,20]],
-            [[24,25,26],[27,28,29],[30,31,32]],],
-           [[[3,4,5],[6,7,8],[9,10,11]],
-            [[15,16,17],[18,19,20],[21,22,23]],
-            [[27,28,29],[30,31,32],[33,34,35]],],
-          ],
-          [
-           [[[12,13,14],[15,16,17],[18,19,20]],
-            [[24,25,26],[27,28,29],[30,31,32]],
-            [[36,37,38],[39,40,41],[42,43,44]],],
-           [[[15,16,17],[18,19,20],[21,22,23]],
-            [[27,28,29],[30,31,32],[33,34,35]],
-            [[39,40,41],[42,43,44],[45,46,47]],],
-          ],
-        ]],
-        $cols->toArray()
-        );
+        if($cols_channels_first) {
+            $this->assertEquals(
+                [
+                    $batches,
+                    $out_h,$out_w,
+                    $channels,
+                    $kernel_h,$kernel_w,
+                ],
+                $cols->shape()
+            );
+        } else {
+            $this->assertEquals(
+                [
+                    $batches,
+                    $out_h,$out_w,
+                    $kernel_h,$kernel_w,
+                    $channels,
+                ],
+                $cols->shape()
+            );
+        }
+        $trues = $this->newArray($cols->shape());
+        $truesBuffer = $trues->buffer();
+        for($batch_id=0;$batch_id<$batches;$batch_id++) {
+            for($channel_id=0;$channel_id<$channels;$channel_id++) {
+                for($im_y=0;$im_y<$out_h;$im_y++) {
+                    for($im_x=0;$im_x<$out_w;$im_x++) {
+                        for($kernel_y=0;$kernel_y<$kernel_h;$kernel_y++) {
+                            for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+                                $input_y = $im_y*$stride_h+$kernel_y*$dilation_h-$padding_h;
+                                $input_x = $im_x*$stride_w+$kernel_x*$dilation_w-$padding_w;
+                                if($channels_first) {
+                                    $input_id = ((($batch_id*$channels+$channel_id)*$im_h+$input_y)*$im_w+$input_x);
+                                } else {
+                                    $input_id = ((($batch_id*$im_h+$input_y)*$im_w+$input_x)*$channels+$channel_id);
+                                }
+                                if($cols_channels_first) {
+                                    $cols_id = ((((($batch_id*$out_h+$im_y)*$out_w+$im_x)
+                                                *$channels+$channel_id)*$kernel_h+$kernel_y)*$kernel_w+$kernel_x);
+                                } else {
+                                    $cols_id = ((((($batch_id*$out_h+$im_y)*$out_w+$im_x)
+                                                *$kernel_h+$kernel_y)*$kernel_w+$kernel_x)*$channels+$channel_id);
+                                }
+                                if($input_y>=0 && $input_y<$im_h && $input_x>=0 && $input_x<$im_w) {
+                                    $truesBuffer[$cols_id] = $input_id;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $this->assertEquals($trues->toArray(),$cols->toArray());
+        // channels_first kernel stride
+        //for($batch_id=0;$batch_id<$batches;$batch_id++) {
+        //    for($kernel_y=0;$kernel_y<$kernel_h;$kernel_y++) {
+        //        echo "kernel_h=$kernel_y\n";
+        //        for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+        //            echo "kernel_w=$kernel_x\n";
+        //            for($channel_id=0;$channel_id<$channels;$channel_id++) {
+        //                echo "channel=$channel_id\n";
+        //                for($out_y=0;$out_y<$out_h;$out_y++) {
+        //                    echo "[";
+        //                    for($out_x=0;$out_x<$out_w;$out_x++) {
+        //                        $value = $cols[$batch_id][$out_y][$out_x][$kernel_y][$kernel_x][$channel_id];
+        //                        if(!is_scalar($value)) { $value = $value->toArray(); }
+        //                        echo sprintf('%2d',intval($value)).",";
+        //                    }
+        //                    echo "],\n";
+        //                }
+        //                echo "\n";
+        //            }
+        //        }
+        //    }
+        //}
 
-        $newImages = $mo->zerosLike($images);
-        $mo->la()->col2im(
+        // channels_first kernel last
+        //for($batch_id=0;$batch_id<$batches;$batch_id++) {
+        //    for($channel_id=0;$channel_id<$channels;$channel_id++) {
+        //        for($out_y=0;$out_y<$out_h;$out_y++) {
+        //            echo "col_h=$out_y\n";
+        //            for($out_x=0;$out_x<$out_w;$out_x++) {
+        //                echo "col_w=$out_x\n";
+        //                for($kernel_y=0;$kernel_y<$kernel_h;$kernel_y++) {
+        //                    echo "[";
+        //                    for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+        //                        $value = $cols[$batch_id][$out_y][$out_x][$kernel_y][$kernel_x][$channel_id];
+        //                        if(!is_scalar($value))
+        //                            $value = $value->toArray();
+        //                        echo sprintf('%3d',$value).",";
+        //                    }
+        //                    echo "],";
+        //                    echo "\n";
+        //                }
+        //            }
+        //        }
+        //    }
+        //}
+
+        //foreach ($cols->toArray() as $batch) {
+        //    foreach ($batch as $col_h_id => $col_h_value) {
+        //        echo "stride_h=$col_h_id\n";
+        //        foreach ($col_h_value as $col_w_id => $col_w_value) {
+        //            echo "stride($col_h_id,$col_w_id)\n";
+        //            foreach ($col_w_value as $key => $kernel_h_value) {
+        //                #echo "kernel_h=$key\n";
+        //                foreach ($kernel_h_value as $key => $kernel_w_value) {
+        //                    #echo "kernel_w=$key\n";
+        //                    echo "[";
+        //                    foreach ($kernel_w_value as $key => $channel_value) {
+        //                            echo sprintf('%2d',$channel_value).",";
+        //                    }
+        //                    echo "],";
+        //                }
+        //                echo "\n";
+        //            }
+        //        }
+        //    }
+        //}
+        //echo "==== cols trues ======\n";
+        //foreach ($trues->toArray() as $batch) {
+        //    foreach ($batch as $col_h_id => $col_h_value) {
+        //        echo "stride_h=$col_h_id\n";
+        //        foreach ($col_h_value as $col_w_id => $col_w_value) {
+        //            echo "stride($col_h_id,$col_w_id)\n";
+        //            foreach ($col_w_value as $key => $kernel_h_value) {
+        //                #echo "kernel_h=$key\n";
+        //                foreach ($kernel_h_value as $key => $kernel_w_value) {
+        //                    #echo "kernel_w=$key\n";
+        //                    echo "[";
+        //                    foreach ($kernel_w_value as $key => $channel_value) {
+        //                            echo sprintf('%2d',$channel_value).",";
+        //                    }
+        //                    echo "],";
+        //                }
+        //                echo "\n";
+        //            }
+        //        }
+        //    }
+        //}
+        //$this->assertTrue(false);
+        //$this->assertEquals(
+        //[[
+        //  [
+        //   [[[ 0, 1, 2],[ 3, 4, 5],[ 6, 7, 8]],
+        //    [[12,13,14],[15,16,17],[18,19,20]],
+        //    [[24,25,26],[27,28,29],[30,31,32]],],
+        //   [[[ 3, 4, 5],[ 6, 7, 8],[ 9,10,11]],
+        //    [[15,16,17],[18,19,20],[21,22,23]],
+        //    [[27,28,29],[30,31,32],[33,34,35]],],
+        //  ],
+        //  [
+        //   [[[12,13,14],[15,16,17],[18,19,20]],
+        //    [[24,25,26],[27,28,29],[30,31,32]],
+        //    [[36,37,38],[39,40,41],[42,43,44]],],
+        //   [[[15,16,17],[18,19,20],[21,22,23]],
+        //    [[27,28,29],[30,31,32],[33,34,35]],
+        //    [[39,40,41],[42,43,44],[45,46,47]],],
+        //  ],
+        //]],
+        //$cols->toArray()
+        //);
+
+        $newImages = $la->zerosLike($images);
+        $la->col2im(
             $cols,
             $newImages,
             $filterSize=[
@@ -1734,6 +3391,8 @@ class Test extends TestCase
                 $stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
             $cols_channels_first
         );
         // result is Not equal to original
@@ -1742,11 +3401,175 @@ class Test extends TestCase
         //    $images->toArray(),
         //    $newImages->toArray()
         //);
+        //foreach ($newImages->toArray() as $batch) {
+        //    foreach ($batch as $key => $im_y) {
+        //        #echo "kernel_h=$key\n";
+        //        foreach ($im_y as $key => $im_x) {
+        //            #echo "kernel_w=$key\n";
+        //            echo "[";
+        //            foreach ($im_x as $key => $channel) {
+        //                    echo sprintf('%3d',$channel).",";
+        //            }
+        //            echo "],";
+        //        }
+        //        echo "\n";
+        //    }
+        //}
+        // channels_first
+        //for($batch_id=0;$batch_id<$batches;$batch_id++) {
+        //    for($channel_id=0;$channel_id<$channels;$channel_id++) {
+        //        echo "channel=$channel_id\n";
+        //        for($im_y=0;$im_y<$im_h;$im_y++) {
+        //            echo "[";
+        //            for($im_x=0;$im_x<$im_w;$im_x++) {
+        //                echo sprintf('%3d',intval($newImages[$batch_id][$im_y][$im_x][$channel_id]->toArray())).",";
+        //            }
+        //            echo "],\n";
+        //        }
+        //        echo "\n";
+        //    }
+        //}
+
+        $imagesTrues = $this->newArray($images->shape());
+        $imageBuffer = $imagesTrues->buffer();
+        for($batch_id=0;$batch_id<$batches;$batch_id++) {
+            for($channel_id=0;$channel_id<$channels;$channel_id++) {
+                for($im_y=0;$im_y<$out_h;$im_y++) {
+                    for($im_x=0;$im_x<$out_w;$im_x++) {
+                        for($kernel_y=0;$kernel_y<$kernel_h;$kernel_y++) {
+                            for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+                                $input_y = $im_y*$stride_h+$kernel_y*$dilation_h-$padding_h;
+                                $input_x = $im_x*$stride_w+$kernel_x*$dilation_w-$padding_w;
+                                if($channels_first) {
+                                    $input_id = ((($batch_id*$channels+$channel_id)*$im_h+$input_y)*$im_w+$input_x);
+                                } else {
+                                    $input_id = ((($batch_id*$im_h+$input_y)*$im_w+$input_x)*$channels+$channel_id);
+                                }
+                                if($cols_channels_first) {
+                                    $cols_id = ((((($batch_id*$out_h+$im_y)*$out_w+$im_x)
+                                                *$channels+$channel_id)*$kernel_h+$kernel_y)*$kernel_w+$kernel_x);
+                                } else {
+                                    $cols_id = ((((($batch_id*$out_h+$im_y)*$out_w+$im_x)
+                                                *$kernel_h+$kernel_y)*$kernel_w+$kernel_x)*$channels+$channel_id);
+                                }
+                                if($input_y>=0 && $input_y<$im_h && $input_x>=0 && $input_x<$im_w) {
+                                    $value = $imageBuffer[$input_id];
+                                    $imageBuffer[$input_id] = $value + $truesBuffer[$cols_id];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $this->assertEquals($imagesTrues->toArray(),$newImages->toArray());
+        //echo "==== reverse trues ======\n";
+        //foreach ($imagesTrues->toArray() as $batch) {
+        //    foreach ($batch as $key => $im_y) {
+        //        #echo "kernel_h=$key\n";
+        //        foreach ($im_y as $key => $im_x) {
+        //            #echo "kernel_w=$key\n";
+        //            echo "[";
+        //            foreach ($im_x as $key => $channel) {
+        //                    echo sprintf('%3d',$channel).",";
+        //            }
+        //            echo "],";
+        //        }
+        //        echo "\n";
+        //    }
+        //}
+    }
+
+    public function testIm2col2dLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+
+        $batches = 1;
+        $im_h = 1024;
+        $im_w = 1024;
+        $channels = 3;
+        $kernel_h = 3;
+        $kernel_w = 3;
+        $stride_h = 1;
+        $stride_w = 1;
+        $padding = null;
+        $channels_first = null;
+        $dilation_h = 1;
+        $dilation_w = 1;
+        $cols_channels_first=null;
+        $cols = null;
+
+        $images = $la->array($mo->arange(
+            $batches*
+            $im_h*$im_w*
+            $channels,
+            null,null,
+            NDArray::float32
+        ));
+        //$images = $la->array($mo->ones(
+        //    [$batches*
+        //    $im_h*$im_w*
+        //    $channels],
+        //    NDArray::float32
+        //));
+        if($channels_first) {
+            $images = $images->reshape([
+                $batches,
+                $channels,
+                $im_h,
+                $im_w
+            ]);
+        } else {
+            $images = $images->reshape([
+                $batches,
+                $im_h,
+                $im_w,
+                $channels
+            ]);
+        }
+        $cols = $la->im2col(
+            $images,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $out_h = intval(floor(($im_h-($kernel_h-1)*$dilation_h-1)/$stride_h)+1);
+        $out_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        //var_dump($cols->shape());
+        #echo "===== cols =====\n";
+        #echo $mo->toString($cols->toNDArray(),'%2d',true);
+        $newImages = $la->zerosLike($images);
+        $la->col2im(
+            $cols,
+            $newImages,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $this->assertTrue(true);
     }
 
     public function testIm2col2dForPool()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         $batches = 1;
         $im_h = 4;
@@ -1758,22 +3581,24 @@ class Test extends TestCase
         $stride_w = 2;
         $padding = null;
         $channels_first = null;
+        $dilation_h = 1;
+        $dilation_w = 1;
         $cols_channels_first=true;
         $cols = null;
 
-        $images = $mo->arange(
+        $images = $la->array($mo->arange(
             $batches*
             $im_h*$im_w*
             $channels,
             null,null,
             NDArray::float32
-        )->reshape([
+        ))->reshape([
             $batches,
             $im_h,
             $im_w,
             $channels
         ]);
-        $cols = $mo->la()->im2col(
+        $cols = $la->im2col(
             $images,
             $filterSize=[
                 $kernel_h,$kernel_w],
@@ -1781,10 +3606,16 @@ class Test extends TestCase
                 $stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
             $cols_channels_first
         );
-        $out_h = 2;
-        $out_w = 2;
+        $out_h = intval(floor(($im_h-($kernel_h-1)*$dilation_h-1)/$stride_h)+1);
+        $out_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        if($padding) {
+            $out_h = $im_h;
+            $out_w = $im_w;
+        }
 
         $this->assertEquals(
             [
@@ -1817,8 +3648,8 @@ class Test extends TestCase
         $cols->toArray()
         );
 
-        $newImages = $mo->zerosLike($images);
-        $mo->la()->col2im(
+        $newImages = $la->zerosLike($images);
+        $la->col2im(
             $cols,
             $newImages,
             $filterSize=[
@@ -1827,6 +3658,8 @@ class Test extends TestCase
                 $stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
             $cols_channels_first
         );
 
@@ -1837,32 +3670,230 @@ class Test extends TestCase
         //    $newImages->toArray()
         //);
     }
-    public function testIm2col1dNormal()
+
+    public function providerIm2col1dNormal()
+    {
+        return [
+            'normal' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 2,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'normal padding' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w padding' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 2,
+                'stride_w' => 1,
+                'padding' => true,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w padding' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 2,
+                'padding' => true,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w padding' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'dilation_w' => 2,
+                'channels_first' => null,
+                'cols_channels_first' => null,
+            ]],
+            'normal channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => true,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => true,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => true,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 2,
+                'channels_first' => true,
+                'cols_channels_first' => null,
+            ]],
+            'normal cols_channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => true,
+            ]],
+            'kernel_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => true,
+            ]],
+            'stride_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'dilation_w' => 1,
+                'channels_first' => null,
+                'cols_channels_first' => true,
+            ]],
+            'dilation_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_w' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'dilation_w' => 2,
+                'channels_first' => null,
+                'cols_channels_first' => true,
+            ]],
+        ];
+    }
+    /**
+    * @dataProvider providerIm2col1dNormal
+    */
+    public function testIm2col1dNormal($params)
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $batches = 1;
-        $im_w = 4;
-        $channels = 3;
-        $kernel_w = 3;
-        $stride_w = 1;
-        $padding = null;
-        $channels_first = null;
-        $cols_channels_first=null;
+        extract($params);
+
+        //$batches = 1;
+        //$im_w = 4;
+        //$channels = 3;
+        //$kernel_w = 3;
+        //$stride_w = 1;
+        //$padding = null;
+        //$dilation_w = 1;
+        //$channels_first = null;
+        //$cols_channels_first = null;
         $cols = null;
 
-        $images = $mo->arange(
+        $images = $la->array($mo->arange(
             $batches*
             $im_w*
             $channels,
             null,null,
             NDArray::float32
-        )->reshape([
-            $batches,
-            $im_w,
-            $channels
-        ]);
-        $cols = $mo->la()->im2col(
+        ));
+        if($channels_first) {
+            $images = $images->reshape([
+                $batches,
+                $channels,
+                $im_w,
+            ]);
+        } else {
+            $images = $images->reshape([
+                $batches,
+                $im_w,
+                $channels,
+            ]);
+        }
+        $cols = $la->im2col(
             $images,
             $filterSize=[
                 $kernel_w],
@@ -1870,29 +3901,76 @@ class Test extends TestCase
                 $stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_w],
             $cols_channels_first
         );
-        $out_w = 2;
+        $out_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        if($padding) {
+            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1)/2);
+            $out_w = $im_w;
+        } else {
+            $padding_w = 0;
+        }
 
-        $this->assertEquals(
-            [
-                $batches,
-                $out_w,
-                $kernel_w,
-                $channels,
-            ],
-            $cols->shape()
-        );
-        $this->assertEquals(
-        [[
-           [[0,1,2],[3,4,5],[6,7,8]],
-           [[3,4,5],[6,7,8],[9,10,11]],
-        ]],
-        $cols->toArray()
-        );
+        if($cols_channels_first) {
+            $this->assertEquals(
+                [
+                    $batches,
+                    $out_w,
+                    $channels,
+                    $kernel_w,
+                ],
+                $cols->shape()
+            );
+        } else {
+            $this->assertEquals(
+                [
+                    $batches,
+                    $out_w,
+                    $kernel_w,
+                    $channels,
+                ],
+                $cols->shape()
+            );
+        }
+        //$this->assertEquals(
+        //[[
+        //   [[0,1,2],[3,4,5],[6,7,8]],
+        //   [[3,4,5],[6,7,8],[9,10,11]],
+        //]],
+        //$cols->toArray()
+        //);
+        $trues = $this->newArray($cols->shape());
+        $truesBuffer = $trues->buffer();
+        for($batch_id=0;$batch_id<$batches;$batch_id++) {
+            for($channel_id=0;$channel_id<$channels;$channel_id++) {
+                for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+                    for($im_x=0;$im_x<$out_w;$im_x++) {
+                        $input_x = $im_x*$stride_w+$kernel_x*$dilation_w-$padding_w;
+                        if($channels_first) {
+                            $input_id = (($batch_id*$channels+$channel_id)*$im_w+$input_x);
+                        } else {
+                            $input_id = (($batch_id*$im_w+$input_x)*$channels+$channel_id);
+                        }
+                        if($cols_channels_first) {
+                            $cols_id = ((($batch_id*$out_w+$im_x)
+                                *$channels+$channel_id)*$kernel_w+$kernel_x);
+                        } else {
+                            $cols_id = ((($batch_id*$out_w+$im_x)
+                                *$kernel_w+$kernel_x)*$channels+$channel_id);
+                        }
+                        if($input_x>=0 && $input_x<$im_w) {
+                            $truesBuffer[$cols_id] = $input_id;
+                        }
+                    }
+                }
+            }
+        }
+        $this->assertEquals($trues->toArray(),$cols->toArray());
 
-        $newImages = $mo->zerosLike($images);
-        $mo->la()->col2im(
+        $newImages = $la->zerosLike($images);
+        $la->col2im(
             $cols,
             $newImages,
             $filterSize=[
@@ -1901,6 +3979,8 @@ class Test extends TestCase
                 $stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_w],
             $cols_channels_first
         );
 
@@ -1910,11 +3990,41 @@ class Test extends TestCase
         //    $images->toArray(),
         //    $newImages->toArray()
         //);
+
+        $imagesTrues = $this->newArray($images->shape());
+        $imageBuffer = $imagesTrues->buffer();
+        for($batch_id=0;$batch_id<$batches;$batch_id++) {
+            for($channel_id=0;$channel_id<$channels;$channel_id++) {
+                for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+                    for($im_x=0;$im_x<$out_w;$im_x++) {
+                        $input_x = $im_x*$stride_w+$kernel_x*$dilation_w-$padding_w;
+                        if($channels_first) {
+                            $input_id = (($batch_id*$channels+$channel_id)*$im_w+$input_x);
+                        } else {
+                            $input_id = (($batch_id*$im_w+$input_x)*$channels+$channel_id);
+                        }
+                        if($cols_channels_first) {
+                            $cols_id = ((($batch_id*$out_w+$im_x)
+                                *$channels+$channel_id)*$kernel_w+$kernel_x);
+                        } else {
+                            $cols_id = ((($batch_id*$out_w+$im_x)
+                                *$kernel_w+$kernel_x)*$channels+$channel_id);
+                        }
+                        if($input_x>=0 && $input_x<$im_w) {
+                            $value = $imageBuffer[$input_id];
+                            $imageBuffer[$input_id] = $value + $truesBuffer[$cols_id];
+                        }
+                    }
+                }
+            }
+        }
+        $this->assertEquals($imagesTrues->toArray(),$newImages->toArray());
     }
 
     public function testIm2col1dForPool()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         $batches = 1;
         $im_w = 4;
@@ -1923,21 +4033,22 @@ class Test extends TestCase
         $stride_w = 2;
         $padding = null;
         $channels_first = null;
+        $dilation_w = 1;
         $cols_channels_first=true;
         $cols = null;
 
-        $images = $mo->arange(
+        $images = $la->array($mo->arange(
             $batches*
             $im_w*
             $channels,
             null,null,
             NDArray::float32
-        )->reshape([
+        ))->reshape([
             $batches,
             $im_w,
             $channels
         ]);
-        $cols = $mo->la()->im2col(
+        $cols = $la->im2col(
             $images,
             $filterSize=[
                 $kernel_w],
@@ -1945,6 +4056,8 @@ class Test extends TestCase
                 $stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_w],
             $cols_channels_first
         );
         $out_w = 2;
@@ -1966,8 +4079,8 @@ class Test extends TestCase
         $cols->toArray()
         );
 
-        $newImages = $mo->zerosLike($images);
-        $mo->la()->col2im(
+        $newImages = $la->zerosLike($images);
+        $la->col2im(
             $cols,
             $newImages,
             $filterSize=[
@@ -1976,6 +4089,8 @@ class Test extends TestCase
                 $stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_w],
             $cols_channels_first
         );
 
@@ -1986,40 +4101,827 @@ class Test extends TestCase
         //    $newImages->toArray()
         //);
     }
-    public function testIm2col3dNormal()
+
+    public function providerIm2col3dNormal()
+    {
+        return [
+            'normal' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_d' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 4,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_h' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_d' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 2,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_h' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_d' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 2,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_h' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => null,
+            ]],
+            'normal channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_d channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 4,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_h channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_d channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 2,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_h channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_d channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 2,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_h channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => true,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => null,
+            ]],
+            'normal padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_d padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 4,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_h padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'kernel_w padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_d padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 2,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_h padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'stride_w padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_d padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 2,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_h padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+            'dilation_w padding' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => true,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => null,
+            ]],
+            'normal cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'kernel_d cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 4,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'kernel_h cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'kernel_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 4,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'stride_d cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 2,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'stride_h cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 2,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'stride_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 2,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'dilation_d cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 2,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'dilation_h cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 2,
+                'dilation_w' => 1,
+                'cols_channels_first' => true,
+            ]],
+            'dilation_w cols_channels_first' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 3,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 2,
+                'cols_channels_first' => true,
+            ]],
+        ];
+    }
+
+    /**
+    * @dataProvider providerIm2col3dNormal
+    */
+    public function testIm2col3dNormal($params)
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $batches = 1;
-        $im_d = 4;
-        $im_h = 4;
-        $im_w = 4;
-        $channels = 3;
-        $kernel_d = 3;
-        $kernel_h = 3;
-        $kernel_w = 3;
-        $stride_d = 1;
-        $stride_h = 1;
-        $stride_w = 1;
-        $padding = null;
-        $channels_first = null;
-        $cols_channels_first=null;
+        extract($params);
+
+        //$batches = 1;
+        //$im_d = 5;
+        //$im_h = 5;
+        //$im_w = 5;
+        //$channels = 3;
+        //$kernel_d = 3;
+        //$kernel_h = 3;
+        //$kernel_w = 3;
+        //$stride_d = 1;
+        //$stride_h = 1;
+        //$stride_w = 1;
+        //$padding = null;
+        //$channels_first = null;
+        //$dilation_d = 2;
+        //$dilation_h = 1;
+        //$dilation_w = 1;
+        //$cols_channels_first=null;
         $cols = null;
 
-        $images = $mo->arange(
+        $images = $la->array($mo->arange(
             $batches*
             $im_d*$im_h*$im_w*
             $channels,
             null,null,
             NDArray::float32
-        )->reshape([
-            $batches,
-            $im_d,
-            $im_h,
-            $im_w,
-            $channels
-        ]);
-        $cols = $mo->la()->im2col(
+        ));
+        if($channels_first) {
+            $images = $images->reshape([
+                $batches,
+                $channels,
+                $im_d,
+                $im_h,
+                $im_w,
+            ]);
+        } else {
+            $images = $images->reshape([
+                $batches,
+                $im_d,
+                $im_h,
+                $im_w,
+                $channels,
+            ]);
+        }
+        $cols = $la->im2col(
             $images,
             $filterSize=[
                 $kernel_d,$kernel_h,$kernel_w],
@@ -2027,31 +4929,118 @@ class Test extends TestCase
                 $stride_d,$stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_d,$dilation_h,$dilation_w],
             $cols_channels_first
         );
-        $out_d = 2;
-        $out_h = 2;
-        $out_w = 2;
+        $out_d = intval(floor(($im_d-($kernel_d-1)*$dilation_d-1)/$stride_d)+1);
+        $out_h = intval(floor(($im_h-($kernel_h-1)*$dilation_h-1)/$stride_h)+1);
+        $out_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        if($padding) {
+            $padding_d = (int)floor((($im_d-1)*$stride_d-$im_d+($kernel_d-1)*$dilation_d+1)/2);
+            $padding_h = (int)floor((($im_h-1)*$stride_h-$im_h+($kernel_h-1)*$dilation_h+1)/2);
+            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1)/2);
+            $out_d = $im_d;
+            $out_h = $im_h;
+            $out_w = $im_w;
+        } else {
+            $padding_d = 0;
+            $padding_h = 0;
+            $padding_w = 0;
+        }
 
-        $this->assertEquals(
-            [
-                $batches,
-                $out_d,$out_h,$out_w,
-                $kernel_d,$kernel_h,$kernel_w,
-                $channels,
-            ],
-            $cols->shape()
-        );
+        if($cols_channels_first) {
+            $this->assertEquals(
+                [
+                    $batches,
+                    $out_d,$out_h,$out_w,
+                    $channels,
+                    $kernel_d,$kernel_h,$kernel_w,
+                ],
+                $cols->shape()
+            );
+        } else {
+            $this->assertEquals(
+                [
+                    $batches,
+                    $out_d,$out_h,$out_w,
+                    $kernel_d,$kernel_h,$kernel_w,
+                    $channels,
+                ],
+                $cols->shape()
+            );
+        }
+        $trues = $this->newArray($cols->shape());
+        $truesBuffer = $trues->buffer();
+        for($batch_id=0;$batch_id<$batches;$batch_id++) {
+            for($channel_id=0;$channel_id<$channels;$channel_id++) {
+                for($im_z=0;$im_z<$out_d;$im_z++) {
+                    for($im_y=0;$im_y<$out_h;$im_y++) {
+                        for($im_x=0;$im_x<$out_w;$im_x++) {
+                            for($kernel_z=0;$kernel_z<$kernel_d;$kernel_z++) {
+                                for($kernel_y=0;$kernel_y<$kernel_h;$kernel_y++) {
+                                    for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+                                        $input_z = $im_z*$stride_d+$kernel_z*$dilation_d-$padding_d;
+                                        $input_y = $im_y*$stride_h+$kernel_y*$dilation_h-$padding_h;
+                                        $input_x = $im_x*$stride_w+$kernel_x*$dilation_w-$padding_w;
+                                        if($channels_first) {
+                                            $input_id = (((($batch_id*$channels+$channel_id)*$im_d+$input_z)*$im_h+$input_y)*$im_w+$input_x);
+                                        } else {
+                                            $input_id = (((($batch_id*$im_d+$input_z)*$im_h+$input_y)*$im_w+$input_x)*$channels+$channel_id);
+                                        }
+                                        if($cols_channels_first) {
+                                            $cols_id = ((((((($batch_id*$out_d+$im_z)*$out_h+$im_y)*$out_w+$im_x)
+                                                        *$channels+$channel_id)*$kernel_d+$kernel_z)*$kernel_h+$kernel_y)*$kernel_w+$kernel_x);
+                                        } else {
+                                            $cols_id = ((((((($batch_id*$out_d+$im_z)*$out_h+$im_y)*$out_w+$im_x)
+                                                        *$kernel_d+$kernel_z)*$kernel_h+$kernel_y)*$kernel_w+$kernel_x)*$channels+$channel_id);
+                                        }
+                                        if($input_z>=0 && $input_z<$im_d && $input_y>=0 && $input_y<$im_h && $input_x>=0 && $input_x<$im_w) {
+                                            $truesBuffer[$cols_id] = $input_id;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $this->assertEquals($trues->toArray(),$cols->toArray());
         //$this->assertEquals(
         //    [],$cols->toArray()
         //);
-        $this->assertNotEquals(
-            $mo->zerosLike($cols)->toArray(),
-            $cols->toArray()
-        );
+        //$this->assertNotEquals(
+        //    $la->zerosLike($cols)->toArray(),
+        //    $cols->toArray()
+        //);
+        //foreach ($cols->toArray() as $batch) {
+        //    foreach ($batch as $im_z => $im_z_value) {
+        //        echo "im_z=$im_z\n";
+        //        foreach ($im_z_value as $im_y => $im_y_value) {
+        //            echo "im_y=$im_y\n";
+        //            foreach ($im_y_value as $im_x => $im_x_value) {
+        //                echo "im($im_z,$im_y,$im_x)\n";
+        //                foreach ($im_x_value as $kernel_z => $kernel_z_value) {
+        //                    foreach ($kernel_z_value as $kernel_y => $kernel_y_value) {
+        //                        foreach ($kernel_y_value as $kernel_x => $kernel_x_value) {
+        //                            echo "[";
+        //                            foreach ($kernel_x_value as $channel_id => $channel_value) {
+        //                                    echo sprintf('%3d',$channel_value).",";
+        //                            }
+        //                            echo "],";
+        //                        }
+        //                        echo "\n";
+        //                    }
+        //                    echo "\n";
+        //                }
+        //            }
+        //        }
+        //    }
+        //}
 
-        $newImages = $mo->zerosLike($images);
-        $mo->la()->col2im(
+        $newImages = $la->zerosLike($images);
+        $la->col2im(
             $cols,
             $newImages,
             $filterSize=[
@@ -2060,6 +5049,8 @@ class Test extends TestCase
                 $stride_d,$stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_d,$dilation_h,$dilation_w],
             $cols_channels_first
         );
 
@@ -2069,11 +5060,50 @@ class Test extends TestCase
         //    $images->toArray(),
         //    $newImages->toArray()
         //);
+        $imagesTrues = $this->newArray($images->shape());
+        $imageBuffer = $imagesTrues->buffer();
+        for($batch_id=0;$batch_id<$batches;$batch_id++) {
+            for($channel_id=0;$channel_id<$channels;$channel_id++) {
+                for($im_z=0;$im_z<$out_d;$im_z++) {
+                    for($im_y=0;$im_y<$out_h;$im_y++) {
+                        for($im_x=0;$im_x<$out_w;$im_x++) {
+                            for($kernel_z=0;$kernel_z<$kernel_d;$kernel_z++) {
+                                for($kernel_y=0;$kernel_y<$kernel_h;$kernel_y++) {
+                                    for($kernel_x=0;$kernel_x<$kernel_w;$kernel_x++) {
+                                        $input_z = $im_z*$stride_d+$kernel_z*$dilation_d-$padding_d;
+                                        $input_y = $im_y*$stride_h+$kernel_y*$dilation_h-$padding_h;
+                                        $input_x = $im_x*$stride_w+$kernel_x*$dilation_w-$padding_w;
+                                        if($channels_first) {
+                                            $input_id = (((($batch_id*$channels+$channel_id)*$im_d+$input_z)*$im_h+$input_y)*$im_w+$input_x);
+                                        } else {
+                                            $input_id = (((($batch_id*$im_d+$input_z)*$im_h+$input_y)*$im_w+$input_x)*$channels+$channel_id);
+                                        }
+                                        if($cols_channels_first) {
+                                            $cols_id = ((((((($batch_id*$out_d+$im_z)*$out_h+$im_y)*$out_w+$im_x)
+                                                        *$channels+$channel_id)*$kernel_d+$kernel_z)*$kernel_h+$kernel_y)*$kernel_w+$kernel_x);
+                                        } else {
+                                            $cols_id = ((((((($batch_id*$out_d+$im_z)*$out_h+$im_y)*$out_w+$im_x)
+                                                        *$kernel_d+$kernel_z)*$kernel_h+$kernel_y)*$kernel_w+$kernel_x)*$channels+$channel_id);
+                                        }
+                                        if($input_z>=0 && $input_z<$im_d && $input_y>=0 && $input_y<$im_h && $input_x>=0 && $input_x<$im_w) {
+                                            $value = $imageBuffer[$input_id];
+                                            $imageBuffer[$input_id] = $value + $truesBuffer[$cols_id];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $this->assertEquals($imagesTrues->toArray(),$newImages->toArray());
     }
 
     public function testIm2col3dForPool()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
         $batches = 1;
         $im_d = 4;
@@ -2088,23 +5118,26 @@ class Test extends TestCase
         $stride_w = 2;
         $padding = null;
         $channels_first = null;
+        $dilation_d = 1;
+        $dilation_h = 1;
+        $dilation_w = 1;
         $cols_channels_first=true;
         $cols = null;
 
-        $images = $mo->arange(
+        $images = $la->array($mo->arange(
             $batches*
             $im_d*$im_h*$im_w*
             $channels,
             null,null,
             NDArray::float32
-        )->reshape([
+        ))->reshape([
             $batches,
             $im_d,
             $im_h,
             $im_w,
             $channels
         ]);
-        $cols = $mo->la()->im2col(
+        $cols = $la->im2col(
             $images,
             $filterSize=[
                 $kernel_d,$kernel_h,$kernel_w],
@@ -2112,11 +5145,13 @@ class Test extends TestCase
                 $stride_d,$stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_d,$dilation_h,$dilation_w],
             $cols_channels_first
         );
-        $out_d = 2;
-        $out_h = 2;
-        $out_w = 2;
+        $out_d = intval(floor(($im_d-($kernel_d-1)*$dilation_d-1)/$stride_d)+1);
+        $out_h = intval(floor(($im_h-($kernel_h-1)*$dilation_h-1)/$stride_h)+1);
+        $out_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
 
         $this->assertEquals(
             [
@@ -2132,12 +5167,12 @@ class Test extends TestCase
         //$cols->toArray()
         //);
         $this->assertNotEquals(
-            $mo->zerosLike($cols)->toArray(),
+            $la->zerosLike($cols)->toArray(),
             $cols->toArray()
         );
 
-        $newImages = $mo->zerosLike($images);
-        $mo->la()->col2im(
+        $newImages = $la->zerosLike($images);
+        $la->col2im(
             $cols,
             $newImages,
             $filterSize=[
@@ -2146,6 +5181,8 @@ class Test extends TestCase
                 $stride_d,$stride_h,$stride_w],
             $padding,
             $channels_first,
+            $dilation_rate=[
+                $dilation_d,$dilation_h,$dilation_w],
             $cols_channels_first
         );
 
@@ -2160,12 +5197,13 @@ class Test extends TestCase
     public function testRandomUniform()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $x = $mo->la()->randomUniform(
+        $x = $la->randomUniform(
             $shape=[20,30],
             $low=-1.0,
             $high=1.0);
-        $y = $mo->la()->randomUniform(
+        $y = $la->randomUniform(
             $shape=[20,30],
             $low=-1,
             $high=1);
@@ -2174,16 +5212,16 @@ class Test extends TestCase
         $this->assertNotEquals(
             $x->toArray(),
             $y->toArray());
-        $this->assertLessThanOrEqual(1,$mo->max($x));
-        $this->assertGreaterThanOrEqual(-1,$mo->min($x));
+        $this->assertLessThanOrEqual(1,$la->max($x));
+        $this->assertGreaterThanOrEqual(-1,$la->min($x));
 
-        $x = $mo->la()->randomUniform(
+        $x = $la->randomUniform(
             $shape=[20,30],
             $low=-1,
             $high=1,
             $dtype=NDArray::int32
             );
-        $y = $mo->la()->randomUniform(
+        $y = $la->randomUniform(
             $shape=[20,30],
             $low=-1,
             $high=1,
@@ -2192,21 +5230,22 @@ class Test extends TestCase
             NDArray::int32,$x->dtype());
         $this->assertNotEquals(
             $x->toArray(),
-            $y->toArray());;
-        $mop = new MatrixOperator();
-        $this->assertLessThanOrEqual(1,$mop->max($x));
-        $this->assertGreaterThanOrEqual(-1,$mop->min($x));
+            $y->toArray());
+        $x = $la->astype($x,NDArray::float32);
+        $this->assertLessThanOrEqual(1,$la->max($x));
+        $this->assertGreaterThanOrEqual(-1,$la->min($x));
     }
 
     public function testRandomNormal()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $x = $mo->la()->randomNormal(
+        $x = $la->randomNormal(
             $shape=[20,30],
             $mean=0.0,
             $scale=1.0);
-        $y = $mo->la()->randomNormal(
+        $y = $la->randomNormal(
             $shape=[20,30],
             $mean=0.0,
             $scale=1.0);
@@ -2215,25 +5254,31 @@ class Test extends TestCase
         $this->assertNotEquals(
             $x->toArray(),
             $y->toArray());
-        $this->assertLessThanOrEqual(4,$mo->max($x));
-        $this->assertGreaterThanOrEqual(-4,$mo->min($x));
+        $this->assertLessThanOrEqual(5,$la->max($x));
+        $this->assertGreaterThanOrEqual(-5,$la->min($x));
 
     }
 
     public function testRandomSequence()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $x = $mo->la()->randomSequence(
+        $x = $la->randomSequence(
             $base=500,
             $size=100
             );
-        $y = $mo->la()->randomSequence(
+        $y = $la->randomSequence(
             $base=500,
             $size=100
             );
-        $this->assertEquals(
-            NDArray::int64,$x->dtype());
+        if($la->accelerated()) {
+            $this->assertEquals(
+                NDArray::int32,$x->dtype());
+        } else {
+            $this->assertEquals(
+                NDArray::int64,$x->dtype());
+        }
         $this->assertEquals(
             [100],$x->shape());
         $this->assertNotEquals(
@@ -2244,10 +5289,10 @@ class Test extends TestCase
     public function testSlice()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $x = $mo->arange(24,null,null,NDArray::float32)->reshape([2,4,3]);
-
-        $y = $mo->la()->slice(
+        $x = $la->array($mo->arange(24,null,null,NDArray::float32)->reshape([2,4,3]));
+        $y = $la->slice(
             $x,
             $start=[0,1],
             $size=[-1,2]
@@ -2259,7 +5304,7 @@ class Test extends TestCase
              [18,19,20],],
         ],$y->toArray());
 
-        $y = $mo->la()->slice(
+        $y = $la->slice(
             $x,
             $start=[0,1],
             $size=[-1,1]
@@ -2269,7 +5314,7 @@ class Test extends TestCase
             [[15,16,17],]
         ],$y->toArray());
 
-        $y = $mo->la()->slice(
+        $y = $la->slice(
             $x,
             $start=[0,-1],
             $size=[-1,1]
@@ -2279,7 +5324,7 @@ class Test extends TestCase
             [[21,22,23],]
         ],$y->toArray());
 
-        $y = $mo->la()->slice(
+        $y = $la->slice(
             $x,
             $start=[1],
             $size=[1]
@@ -2291,8 +5336,8 @@ class Test extends TestCase
              [21,22,23],],
         ],$y->toArray());
 
-        $x = $mo->arange(8,null,null,NDArray::float32)->reshape([2,4]);
-        $y = $mo->la()->slice(
+        $x = $la->array($mo->arange(8,null,null,NDArray::float32)->reshape([2,4]));
+        $y = $la->slice(
             $x,
             $start=[0,1],
             $size=[-1,2]
@@ -2306,10 +5351,11 @@ class Test extends TestCase
     public function testStick()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $x = $mo->arange(12,null,null,NDArray::float32)->reshape([2,2,3]);
-        $y = $mo->zeros([2,4,3]);
-        $mo->la()->stick(
+        $x = $la->array($mo->arange(12,null,null,NDArray::float32)->reshape([2,2,3]));
+        $y = $la->array($mo->zeros([2,4,3]));
+        $la->stick(
             $x,
             $y,
             $start=[0,1],
@@ -2326,9 +5372,9 @@ class Test extends TestCase
              [0,0,0]],
         ],$y->toArray());
 
-        $x = $mo->arange(6,null,null,NDArray::float32)->reshape([2,1,3]);
-        $y = $mo->zeros([2,4,3]);
-        $mo->la()->stick(
+        $x = $la->array($mo->arange(6,null,null,NDArray::float32)->reshape([2,1,3]));
+        $y = $la->array($mo->zeros([2,4,3]));
+        $la->stick(
             $x,
             $y,
             $start=[0,1],
@@ -2345,9 +5391,9 @@ class Test extends TestCase
              [0,0,0]],
         ],$y->toArray());
 
-        $x = $mo->arange(6,null,null,NDArray::float32)->reshape([2,1,3]);
-        $y = $mo->zeros([2,4,3]);
-        $mo->la()->stick(
+        $x = $la->array($mo->arange(6,null,null,NDArray::float32)->reshape([2,1,3]));
+        $y = $la->array($mo->zeros([2,4,3]));
+        $la->stick(
             $x,
             $y,
             $start=[0,-1],
@@ -2364,9 +5410,9 @@ class Test extends TestCase
              [3,4,5]],
         ],$y->toArray());
 
-        $x = $mo->arange(12,null,null,NDArray::float32)->reshape([1,4,3]);
-        $y = $mo->zeros([2,4,3]);
-        $mo->la()->stick(
+        $x = $la->array($mo->arange(12,null,null,NDArray::float32)->reshape([1,4,3]));
+        $y = $la->array($mo->zeros([2,4,3]));
+        $la->stick(
             $x,
             $y,
             $start=[1],
@@ -2383,9 +5429,9 @@ class Test extends TestCase
              [9,10,11]],
         ],$y->toArray());
 
-        $x = $mo->arange(4,null,null,NDArray::float32)->reshape([2,2]);
-        $y = $mo->zeros([2,4]);
-        $mo->la()->stick(
+        $x = $la->array($mo->arange(4,null,null,NDArray::float32)->reshape([2,2]));
+        $y = $la->array($mo->zeros([2,4]));
+        $la->stick(
             $x,
             $y,
             $start=[0,1],
@@ -2400,10 +5446,11 @@ class Test extends TestCase
     public function testStack()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $a = $mo->arange(6,0,null,NDArray::float32)->reshape([2,3]);
-        $b = $mo->arange(6,6,null,NDArray::float32)->reshape([2,3]);
-        $y = $mo->la()->stack(
+        $a = $la->array($mo->arange(6,0,null,NDArray::float32)->reshape([2,3]));
+        $b = $la->array($mo->arange(6,6,null,NDArray::float32)->reshape([2,3]));
+        $y = $la->stack(
             [$a,$b],
             $axis=0
             );
@@ -2414,9 +5461,9 @@ class Test extends TestCase
              [9,10,11]],
         ],$y->toArray());
 
-        $a = $mo->arange(6,0,null,NDArray::float32)->reshape([2,3]);
-        $b = $mo->arange(6,6,null,NDArray::float32)->reshape([2,3]);
-        $y = $mo->la()->stack(
+        $a = $la->array($mo->arange(6,0,null,NDArray::float32)->reshape([2,3]));
+        $b = $la->array($mo->arange(6,6,null,NDArray::float32)->reshape([2,3]));
+        $y = $la->stack(
             [$a,$b],
             $axis=1
             );
@@ -2427,9 +5474,9 @@ class Test extends TestCase
              [9,10,11]],
         ],$y->toArray());
 
-        $a = $mo->arange(12,0,null,NDArray::float32)->reshape([2, 2,3]);
-        $b = $mo->arange(12,12,null,NDArray::float32)->reshape([2,2,3]);
-        $y = $mo->la()->stack(
+        $a = $la->array($mo->arange(12,0,null,NDArray::float32)->reshape([2, 2,3]));
+        $b = $la->array($mo->arange(12,12,null,NDArray::float32)->reshape([2,2,3]));
+        $y = $la->stack(
             [$a,$b],
             $axis=0
             );
@@ -2444,9 +5491,9 @@ class Test extends TestCase
              [21,22,23]]],
         ],$y->toArray());
 
-        $a = $mo->arange(12,0,null,NDArray::float32)->reshape([2, 2,3]);
-        $b = $mo->arange(12,12,null,NDArray::float32)->reshape([2,2,3]);
-        $y = $mo->la()->stack(
+        $a = $la->array($mo->arange(12,0,null,NDArray::float32)->reshape([2, 2,3]));
+        $b = $la->array($mo->arange(12,12,null,NDArray::float32)->reshape([2,2,3]));
+        $y = $la->stack(
             [$a,$b],
             $axis=1
             );
@@ -2465,12 +5512,17 @@ class Test extends TestCase
     public function testAnytypeSlice()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $dtypes = [NDArray::float32,NDArray::float64,NDArray::uint8,NDArray::int32,NDArray::int64];
+        if($la->fp64()) {
+            $dtypes = [NDArray::float32,NDArray::float64,NDArray::uint8,NDArray::int32,NDArray::int64];
+        } else {
+            $dtypes = [NDArray::float32,NDArray::uint8,NDArray::int32,NDArray::int64];
+        }
         foreach($dtypes as $dtype) {
             // forward slice
-            $x = $mo->arange(24,null,null,$dtype)->reshape([2,4,3]);
-            $y = $mo->la()->slice(
+            $x = $la->array($mo->arange(24,null,null,$dtype)->reshape([2,4,3]));
+            $y = $la->slice(
                 $x,
                 $start=[0,1],
                 $size=[-1,2]
@@ -2483,9 +5535,9 @@ class Test extends TestCase
             ],$y->toArray());
 
             // reverse slice
-            $x = $mo->arange(12,null,null,$dtype)->reshape([2,2,3]);
-            $y = $mo->zeros([2,4,3],$dtype);
-            $mo->la()->stick(
+            $x = $la->array($mo->arange(12,null,null,$dtype)->reshape([2,2,3]));
+            $y = $la->array($mo->zeros([2,4,3],$dtype));
+            $la->stick(
                 $x,
                 $y,
                 $start=[0,1],
@@ -2503,11 +5555,11 @@ class Test extends TestCase
             ],$y->toArray());
 
             // reverse and add
-            $Y = $mo->array([
+            $Y = $la->array([
                 [[1,2,3],[1,2,3]],
                 [[4,5,6],[4,5,6]],
             ],$dtype);
-            $X = $mo->la()->reduceSumRepeated($Y);
+            $X = $la->reduceSumRepeated($Y);
             $this->assertEquals([2,2,3],$Y->shape());
             $this->assertEquals([2,3],$X->shape());
             $this->assertEquals([
@@ -2522,14 +5574,140 @@ class Test extends TestCase
         }
     }
 
+    public function testRepeat()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Y := X (duplicate 2 times)
+        $X = $la->array([
+            [1,2,3],
+            [4,5,6]
+        ]);
+        $Y = $la->repeat($X,2);
+        $this->assertEquals([2,3],$X->shape());
+        $this->assertEquals([2,2,3],$Y->shape());
+        $this->assertEquals([
+            [1,2,3],
+            [4,5,6]
+        ],$X->toArray());
+        $this->assertEquals([
+            [[1,2,3],[1,2,3]],
+            [[4,5,6],[4,5,6]],
+        ],$Y->toArray());
+
+        // 1 time
+        $X = $la->array([[1,2,3],[4,5,6]]);
+        $Y = $la->repeat($X,1);
+        $this->assertEquals(
+            [[1,2,3],[4,5,6]]
+        ,$X->toArray());
+        $this->assertEquals([2,3],$X->shape());
+        $this->assertEquals([2,1,3],$Y->shape());
+        $this->assertEquals(
+            [[[1,2,3]],[[4,5,6]]]
+        ,$Y->toArray());
+
+        //
+        $X = $la->array([
+            [[1,2,3],[4,5,6]],
+            [[7,8,9],[10,11,12]]
+        ]);
+        $Y = $la->repeat($X,4);
+        $this->assertEquals([
+            [[1,2,3],[4,5,6]],
+            [[7,8,9],[10,11,12]]
+        ],$X->toArray());
+        $this->assertEquals([2,2,3],$X->shape());
+        $this->assertEquals([2,4,2,3],$Y->shape());
+        $this->assertEquals([
+            [[[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]]],
+            [[[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]]],
+        ],$Y->toArray());
+    }
+
+    public function testReduceSumRepeated()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Y := X (sum 2 times)
+        $Y = $la->array([
+            [[1,2,3],[1,2,3]],
+            [[4,5,6],[4,5,6]],
+        ]);
+        $X = $la->reduceSumRepeated($Y);
+        $this->assertEquals([2,2,3],$Y->shape());
+        $this->assertEquals([2,3],$X->shape());
+        $this->assertEquals([
+            [[1,2,3],[1,2,3]],
+            [[4,5,6],[4,5,6]],
+        ],$Y->toArray());
+        $this->assertEquals([
+            [2,4,6],
+            [8,10,12]
+        ],$X->toArray());
+
+        // 1 time
+        $Y = $la->array([
+            [[1,2,3]],
+            [[4,5,6]]
+        ]);
+        $X = $la->reduceSumRepeated($Y);
+        $this->assertEquals([2,1,3],$Y->shape());
+        $this->assertEquals([2,3],$X->shape());
+        $this->assertEquals([
+            [1,2,3],
+            [4,5,6]
+        ],$X->toArray());
+        $this->assertEquals([
+            [[1,2,3]],
+            [[4,5,6]]
+        ],$Y->toArray());
+
+        $Y = $la->array([
+            [[[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]]],
+            [[[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]]],
+        ]);
+        $X = $la->reduceSumRepeated($Y);
+        $this->assertEquals([2,4,2,3],$Y->shape());
+        $this->assertEquals([2,2,3],$X->shape());
+        $this->assertEquals([
+            [[4,8,12],[16,20,24]],
+            [[28,32,36],[40,44,48]]
+        ],$X->toArray());
+        $this->assertEquals([
+            [[[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]],
+             [[1,2,3],[4,5,6]]],
+            [[[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]],
+             [[7,8,9],[10,11,12]]],
+        ],$Y->toArray());
+    }
 
     public function testConcat()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]);
-        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
-        $y = $mo->la()->concat(
+        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]));
+        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
+        $y = $la->concat(
             [$a,$b],
             $axis=0
             );
@@ -2541,9 +5719,9 @@ class Test extends TestCase
             [8,9],
         ],$y->toArray());
 
-        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]);
-        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
-        $y = $mo->la()->concat(
+        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]));
+        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
+        $y = $la->concat(
             [$a,$b],
             $axis=1
             );
@@ -2552,9 +5730,9 @@ class Test extends TestCase
             [3,4,5,8,9],
         ],$y->toArray());
 
-        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]);
-        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
-        $y = $mo->la()->concat(
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
+        $y = $la->concat(
             [$a,$b],
             $axis=0
             );
@@ -2566,9 +5744,9 @@ class Test extends TestCase
             [[16,17],[18,19]],
         ],$y->toArray());
 
-        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]);
-        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
-        $y = $mo->la()->concat(
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
+        $y = $la->concat(
             [$a,$b],
             $axis=1
             );
@@ -2584,9 +5762,9 @@ class Test extends TestCase
              [16,17],[18,19]],
         ],$y->toArray());
 
-        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]);
-        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
-        $y = $mo->la()->concat(
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
+        $y = $la->concat(
             [$a,$b],
             $axis=2
             );
@@ -2597,7 +5775,7 @@ class Test extends TestCase
              [9,10,11,18,19]],
         ],$y->toArray());
 
-        $y = $mo->la()->concat(
+        $y = $la->concat(
             [$a,$b],
             $axis=-1
             );
@@ -2612,59 +5790,60 @@ class Test extends TestCase
     public function testSplit()
     {
         $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
 
-        $x = $mo->array([
+        $x = $la->array([
             [0,1],
             [2,3],
             [4,5],
             [6,7],
             [8,9],
         ]);
-        $y = $mo->la()->split(
+        $y = $la->split(
             $x,
             [3,2],
             $axis=0
         );
-        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]);
-        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
+        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]));
+        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
         $this->assertCount(2,$y);
         $this->assertEquals($a->toArray(),$y[0]->toArray());
         $this->assertEquals($b->toArray(),$y[1]->toArray());
 
-        $x = $mo->array([
+        $x = $la->array([
             [0,1,2,6,7],
             [3,4,5,8,9],
         ]);
-        $y = $mo->la()->split(
+        $y = $la->split(
             $x,
             [3,2],
             $axis=1
             );
-        $a = $mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]);
-        $b = $mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]);
+        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]));
+        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
         $this->assertCount(2,$y);
         $this->assertEquals($a->toArray(),$y[0]->toArray());
         $this->assertEquals($b->toArray(),$y[1]->toArray());
 
-        $x = $mo->array([
+        $x = $la->array([
             [[0,1],[2,3]],
             [[4,5],[6,7]],
             [[8,9],[10,11]],
             [[12,13],[14,15]],
             [[16,17],[18,19]],
         ]);
-        $y = $mo->la()->split(
+        $y = $la->split(
             $x,
             [3,2],
             $axis=0
             );
-        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]);
-        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
         $this->assertCount(2,$y);
         $this->assertEquals($a->toArray(),$y[0]->toArray());
         $this->assertEquals($b->toArray(),$y[1]->toArray());
 
-        $x = $mo->array([
+        $x = $la->array([
             [[0,1],
              [2,3],
              [4,5],
@@ -2675,35 +5854,35 @@ class Test extends TestCase
              [10,11],
              [16,17],[18,19]],
         ]);
-        $y = $mo->la()->split(
+        $y = $la->split(
             $x,
             [3,2],
             $axis=1
             );
-        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]);
-        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
         $this->assertCount(2,$y);
         $this->assertEquals($a->toArray(),$y[0]->toArray());
         $this->assertEquals($b->toArray(),$y[1]->toArray());
 
-        $x = $mo->array([
+        $x = $la->array([
             [[0,1,2,12,13],
              [3,4,5,14,15]],
             [[6,7,8,16,17],
              [9,10,11,18,19]],
         ]);
-        $y = $mo->la()->split(
+        $y = $la->split(
             $x,
             [3,2],
             $axis=2
             );
-        $a = $mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]);
-        $b = $mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]);
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
         $this->assertCount(2,$y);
         $this->assertEquals($a->toArray(),$y[0]->toArray());
         $this->assertEquals($b->toArray(),$y[1]->toArray());
 
-        $y = $mo->la()->split(
+        $y = $la->split(
             $x,
             [3,2],
             $axis=-1
@@ -2713,10 +5892,53 @@ class Test extends TestCase
         $this->assertEquals($b->toArray(),$y[1]->toArray());
     }
 
+    public function testTranspose()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $a = $la->array([
+            [0,1,2],
+            [3,4,5],
+        ]);
+        $b = $la->transpose($a);
+        $this->assertEquals([
+            [0,3],
+            [1,4],
+            [2,5]
+        ],$b->toArray());
+    }
+
+    public function testfill()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->alloc([2,3],NDArray::float32);
+        $b = $la->fill(123,$x);
+        $this->assertEquals([
+            [123,123,123],
+            [123,123,123],
+        ],$b->toArray());
+
+        $x = $la->alloc([2,3],NDArray::int64);
+        $b = $la->fill(123,$x);
+        $this->assertEquals([
+            [123,123,123],
+            [123,123,123],
+        ],$b->toArray());
+
+        $x = $la->alloc([2,3],NDArray::int8);
+        $b = $la->fill(123,$x);
+        $this->assertEquals([
+            [123,123,123],
+            [123,123,123],
+        ],$b->toArray());
+    }
+
     public function testSvdFull1()
     {
         $mo = $this->newMatrixOperator();
-        $a = $mo->array([
+        $la = $this->newLA($mo);
+        $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
             [-9.15, -7.93,  4.86,  4.85,  3.01,],
@@ -2725,7 +5947,7 @@ class Test extends TestCase
             [ 9.84,  0.15, -8.99, -6.02, -5.31,],
         ]);
         $this->assertEquals([6,5],$a->shape());
-        [$u,$s,$vt] = $mo->la()->svd($a);
+        [$u,$s,$vt] = $la->svd($a);
         $this->assertEquals([6,6],$u->shape());
         $this->assertEquals([5],$s->shape());
         $this->assertEquals([5,5],$vt->shape());
@@ -2740,7 +5962,7 @@ class Test extends TestCase
         #     echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
 
         # ---- u ----
-        $correctU = $mo->array([
+        $correctU = $la->array([
             [-0.59, 0.26, 0.36, 0.31, 0.23, 0.55],
             [-0.40, 0.24,-0.22,-0.75,-0.36, 0.18],
             [-0.03,-0.60,-0.45, 0.23,-0.31, 0.54],
@@ -2748,21 +5970,22 @@ class Test extends TestCase
             [-0.47,-0.35, 0.39, 0.16,-0.52,-0.46],
             [ 0.29, 0.58,-0.02, 0.38,-0.65, 0.11],
         ]);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($u,'-',$correctU))));
+        //$this->assertTrue(false);
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
         # ---- s ----
-        $correctS = $mo->array(
+        $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($s,'-',$correctS))));
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
         # ---- vt ----
-        $correctVT = $mo->array([
+        $correctVT = $la->array([
             [-0.25,-0.40,-0.69,-0.37,-0.41],
             [ 0.81, 0.36,-0.25,-0.37,-0.10],
             [-0.26, 0.70,-0.22, 0.39,-0.49],
             [ 0.40,-0.45, 0.25, 0.43,-0.62],
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($vt,'-',$correctVT))));
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
         $this->assertTrue(true);
     }
 
@@ -2772,7 +5995,8 @@ class Test extends TestCase
     public function testSvdFull2()
     {
         $mo = $this->newMatrixOperator();
-        $a = $mo->array([
+        $la = $this->newLA($mo);
+        $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
             [-9.15, -7.93,  4.86,  4.85,  3.01,],
@@ -2780,9 +6004,9 @@ class Test extends TestCase
             [-3.49,  4.02,  9.80, 10.00,  4.27,],
             [ 9.84,  0.15, -8.99, -6.02, -5.31,],
         ]);
-        $a = $mo->transpose($a);
+        $a = $la->transpose($a);
         $this->assertEquals([5,6],$a->shape());
-        [$u,$s,$vt] = $mo->la()->svd($a);
+        [$u,$s,$vt] = $la->svd($a);
         $this->assertEquals([5,5],$u->shape());
         $this->assertEquals([5],$s->shape());
         $this->assertEquals([6,6],$vt->shape());
@@ -2797,22 +6021,22 @@ class Test extends TestCase
         #     echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
 
         # ---- u ----
-        $correctU = $mo->array([
+        $correctU = $la->array([
             [ 0.25, 0.40, 0.69, 0.37, 0.41],
             [ 0.81, 0.36,-0.25,-0.37,-0.10],
             [-0.26, 0.70,-0.22, 0.39,-0.49],
             [ 0.40,-0.45, 0.25, 0.43,-0.62],
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
-        $correctU = $mo->transpose($correctU);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($u,'-',$correctU))));
+        $correctU = $la->transpose($correctU);
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
         # ---- s ----
-        $correctS = $mo->array(
+        $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($s,'-',$correctS))));
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
         # ---- vt ----
-        $correctVT = $mo->array([
+        $correctVT = $la->array([
             [ 0.59, 0.26, 0.36, 0.31, 0.23, 0.55],
             [ 0.40, 0.24,-0.22,-0.75,-0.36, 0.18],
             [ 0.03,-0.60,-0.45, 0.23,-0.31, 0.54],
@@ -2820,15 +6044,16 @@ class Test extends TestCase
             [ 0.47,-0.35, 0.39, 0.16,-0.52,-0.46],
             [-0.29, 0.58,-0.02, 0.38,-0.65, 0.11],
         ]);
-        $correctVT = $mo->transpose($correctVT);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($vt,'-',$correctVT))));
+        $correctVT = $la->transpose($correctVT);
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
         $this->assertTrue(true);
     }
 
     public function testSvdSmallU()
     {
         $mo = $this->newMatrixOperator();
-        $a = $mo->array([
+        $la = $this->newLA($mo);
+        $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
             [-9.15, -7.93,  4.86,  4.85,  3.01,],
@@ -2836,7 +6061,7 @@ class Test extends TestCase
             [-3.49,  4.02,  9.80, 10.00,  4.27,],
             [ 9.84,  0.15, -8.99, -6.02, -5.31,],
         ]);
-        [$u,$s,$vt] = $mo->la()->svd($a,$full_matrices=false);
+        [$u,$s,$vt] = $la->svd($a,$full_matrices=false);
 
         # echo "---- u ----\n";
         # foreach($u->toArray() as $array)
@@ -2848,7 +6073,7 @@ class Test extends TestCase
         #     echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
 
         # ---- u ----
-        $correctU = $mo->array([
+        $correctU = $la->array([
             [-0.59, 0.26, 0.36, 0.31, 0.23],
             [-0.40, 0.24,-0.22,-0.75,-0.36],
             [-0.03,-0.60,-0.45, 0.23,-0.31],
@@ -2856,21 +6081,21 @@ class Test extends TestCase
             [-0.47,-0.35, 0.39, 0.16,-0.52],
             [ 0.29, 0.58,-0.02, 0.38,-0.65],
         ]);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($u,'-',$correctU))));
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
         # ---- s ----
-        $correctS = $mo->array(
+        $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($s,'-',$correctS))));
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
         # ---- vt ----
-        $correctVT = $mo->array([
+        $correctVT = $la->array([
             [-0.25,-0.40,-0.69,-0.37,-0.41],
             [ 0.81, 0.36,-0.25,-0.37,-0.10],
             [-0.26, 0.70,-0.22, 0.39,-0.49],
             [ 0.40,-0.45, 0.25, 0.43,-0.62],
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($vt,'-',$correctVT))));
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
         $this->assertTrue(true);
     }
 
@@ -2880,7 +6105,8 @@ class Test extends TestCase
     public function testSvdSmallVT()
     {
         $mo = $this->newMatrixOperator();
-        $a = $mo->array([
+        $la = $this->newLA($mo);
+        $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
             [-9.15, -7.93,  4.86,  4.85,  3.01,],
@@ -2888,8 +6114,8 @@ class Test extends TestCase
             [-3.49,  4.02,  9.80, 10.00,  4.27,],
             [ 9.84,  0.15, -8.99, -6.02, -5.31,],
         ]);
-        $a = $mo->transpose($a);
-        [$u,$s,$vt] = $mo->la()->svd($a,$full_matrices=false);
+        $a = $la->transpose($a);
+        [$u,$s,$vt] = $la->svd($a,$full_matrices=false);
 
         # echo "---- u ----\n";
         # foreach($u->toArray() as $array)
@@ -2901,22 +6127,22 @@ class Test extends TestCase
         #  echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
 
         # ---- u ----
-        $correctU = $mo->array([
+        $correctU = $la->array([
             [ 0.25, 0.40, 0.69, 0.37, 0.41],
             [ 0.81, 0.36,-0.25,-0.37,-0.10],
             [-0.26, 0.70,-0.22, 0.39,-0.49],
             [ 0.40,-0.45, 0.25, 0.43,-0.62],
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
-        $correctU = $mo->transpose($correctU);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($u,'-',$correctU))));
+        $correctU = $la->transpose($correctU);
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
         # ---- s ----
-        $correctS = $mo->array(
+        $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($s,'-',$correctS))));
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
         # ---- vt ----
-        $correctVT = $mo->array([
+        $correctVT = $la->array([
             [ 0.59, 0.26, 0.36, 0.31, 0.23,],
             [ 0.40, 0.24,-0.22,-0.75,-0.36,],
             [ 0.03,-0.60,-0.45, 0.23,-0.31,],
@@ -2924,8 +6150,25 @@ class Test extends TestCase
             [ 0.47,-0.35, 0.39, 0.16,-0.52,],
             [-0.29, 0.58,-0.02, 0.38,-0.65,],
         ]);
-        $correctVT = $mo->transpose($correctVT);
-        $this->assertLessThan(0.01,abs($mo->amax($mo->op($vt,'-',$correctVT))));
+        $correctVT = $la->transpose($correctVT);
+        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
         $this->assertTrue(true);
+    }
+
+    public function testSolve()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $a = $la->array([
+            [1, 1, 1],
+            [2, 4, 6],
+            [2, 0, 4],
+        ]);
+        $b = $la->array(
+             [10, 38, 14]
+        );
+        $solve = $la->solve($a,$b);
+        //echo $mo->toString($solve,'%f',true);
+        $this->assertEquals([3,5,2],$solve->toArray());
     }
 }

@@ -75,14 +75,14 @@ class Test extends TestCase
     {
         $array = 123;
         $nd = new NDArrayPhp($array);
-        $this->assertEquals([1],$nd->shape());
+        $this->assertEquals([],$nd->shape());
         $this->assertEquals(1,$nd->size());
         $this->assertEquals(NDArray::float32,$nd->dtype());
         $this->assertEquals(0,$nd->offset());
         $buffer = $nd->buffer();
         $this->assertEquals(1,count($buffer));
         $this->assertEquals([123],$this->bufferToArray($buffer));
-        $this->assertEquals([123],$nd->toArray());
+        $this->assertEquals(123,$nd->toArray());
     }
 
     public function testCreateNoInitialize()

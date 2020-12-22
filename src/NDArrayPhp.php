@@ -11,7 +11,6 @@ use OutOfRangeException;
 use LogicException;
 use RuntimeException;
 use Serializable;
-use Rindow\OpenBLAS\Buffer;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 
@@ -47,12 +46,12 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
             $this->_buffer[0] = $array;
             $this->_offset = 0;
             if($shape==null) {
-                $shape = [1];
+                $shape = [];
             }
             $this->assertShape($shape);
             if(array_product($shape)!=1)
                 throw new InvalidArgumentException("Invalid dimension size");
-        } elseif($array===null && $shape) {
+        } elseif($array===null && $shape!==null) {
             $this->assertShape($shape);
             $size = (int)array_product($shape);
             $this->_buffer = $this->newBuffer($size,$dtype);
@@ -80,7 +79,7 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
     protected function newBuffer($size,$dtype)
     {
         if(extension_loaded('rindow_openblas')) {
-            return new Buffer($size,$dtype);
+            return new OpenBlasBuffer($size,$dtype);
         } else {
             return new SplFixedArray($size);
         }
@@ -88,7 +87,7 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
 
     protected function isBuffer($buffer)
     {
-        if($buffer instanceof SplFixedArray || $buffer instanceof Buffer) {
+        if($buffer instanceof SplFixedArray || $buffer instanceof OpenBlasBuffer) {
             return true;
         } else {
             return false;
@@ -209,14 +208,19 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
         return $newArray;
     }
 
-    public function toArray() : array
+    public function toArray()
     {
+        if(count($this->_shape)==0) {
+            return $this->_buffer[$this->_offset];
+        }
         $idx = $this->_offset;
         return $this->flat2Array($this->_buffer, $idx, $this->_shape);
     }
 
     public function offsetExists( $offset )
     {
+        if(count($this->_shape)==0)
+            return false;
         if(is_array($offset)) {
             if(count($offset)!=2 ||
                 !array_key_exists(0,$offset) || !array_key_exists(1,$offset) ||
@@ -311,11 +315,15 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
 
     public function count()
     {
+        if(count($this->_shape)==0)
+            return 0;
         return $this->_shape[0];
     }
 
     public function  getIterator()
     {
+        if(count($this->_shape)==0)
+            return [];
         $count = $this->_shape[0];
         for($i=0;$i<$count;$i++) {
             yield $i => $this->offsetGet($i);
@@ -382,14 +390,14 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
             if(!extension_loaded('rindow_openblas')) {
                 throw new RuntimeException('"rindow_openblas" extension is not loaded.');
             }
-            $this->_buffer = new Buffer($data['z'],$data['t']);
+            $this->_buffer = new OpenBlasBuffer($data['z'],$data['t']);
             $this->_buffer->load($data['b']);
         } elseif($mode=='linear-array') {
             if(!extension_loaded('rindow_openblas')) {
                 $this->_buffer = SplFixedArray::fromArray($data['b']);
                 return;
             }
-            $this->_buffer = new Buffer($data['z'],$data['t']);
+            $this->_buffer = new OpenBlasBuffer($data['z'],$data['t']);
             foreach($data['b'] as $key => $value) {
                 $this->_buffer[$key] = $value;
             }

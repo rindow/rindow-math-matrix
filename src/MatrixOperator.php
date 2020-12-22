@@ -5,9 +5,14 @@ use ArrayObject;
 use InvalidArgumentException;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\Math\Matrix\OpenCL;
 use Rindow\OpenBLAS\Blas as OpenBLAS;
 use Rindow\OpenBLAS\Lapack as OpenBLASLapack;
 use Rindow\OpenBLAS\Math as OpenBLASMath;
+use Rindow\CLBlast\Blas as CLBlastBlas;
+use Rindow\CLBlast\Math as CLBlastMath;
+use Rindow\OpenCL\Context;
+use Rindow\OpenCL\CommandQueue;
 
 class MatrixOperator
 {
@@ -20,6 +25,7 @@ class MatrixOperator
     protected $random;
     protected $la;
     protected $laRawMode;
+    protected $clblastLA;
     protected $broadCastOperators;
     protected $updateOperators;
     protected $intTypes= [
@@ -78,31 +84,37 @@ class MatrixOperator
         }
 
         $this->broadCastOperators = [
-           '+' =>  [null,  function($x,$y) { return $x + $y; }],
-           '-' =>  [null,  function($x,$y) { return $x - $y; }],
-           '*' =>  [null,  function($x,$y) { return $x * $y; }],
-           '/' =>  [null,  function($x,$y) { return $x / $y; }],
-           '%' =>  [null,  function($x,$y) { return $x % $y; }],
-           '**' => [null,  function($x,$y) { return $x ** $y; }],
-           '==' => [NDArray::bool,function($x,$y) { return ($x == $y); }],
-           '!=' => [NDArray::bool,function($x,$y) { return $x != $y; }],
-           '>' =>  [NDArray::bool,function($x,$y) { return $x > $y; }],
-           '>=' => [NDArray::bool,function($x,$y) { return $x >= $y; }],
-           '<' =>  [NDArray::bool,function($x,$y) { return $x < $y; }],
-           '<=' => [NDArray::bool,function($x,$y) { return $x <= $y; }],
+           '+' =>  [null, 'add'], //   function($x,$y) { return $x + $y; }],
+           '-' =>  [null, 'sub'], //   function($x,$y) { return $x - $y; }],
+           '*' =>  [null, 'mul'], //   function($x,$y) { return $x * $y; }],
+           '/' =>  [null, 'div'], //   function($x,$y) { return $x / $y; }],
+           '%' =>  [null, 'mod'], //   function($x,$y) { return $x % $y; }],
+           '**' => [null, 'pow'], //   function($x,$y) { return $x ** $y; }],
+           '==' => [NDArray::bool, 'is_equal'],     // function($x,$y) { return ($x == $y); }],
+           '!=' => [NDArray::bool, 'is_not_equal'], // function($x,$y) { return $x != $y; }],
+           '>' =>  [NDArray::bool, 'greater'],      // function($x,$y) { return $x > $y; }],
+           '>=' => [NDArray::bool, 'greater_or_equal'], // function($x,$y) { return $x >= $y; }],
+           '<' =>  [NDArray::bool, 'smaller'],      // function($x,$y) { return $x < $y; }],
+           '<=' => [NDArray::bool, 'smaller_or_equal'], // function($x,$y) { return $x <= $y; }],
        ];
 
        $this->updateOperators = [
-          '='  =>  [null,  function($x,$y) { return $y; }],
-          '+=' =>  [null,  function($x,$y) { return $x + $y; }],
-          '-=' =>  [null,  function($x,$y) { return ($x - $y); }],
-          '*=' =>  [null,  function($x,$y) { return $x * $y; }],
-          '/=' =>  [null,  function($x,$y) { return $x / $y; }],
-          '%=' =>  [null,  function($x,$y) { return $x % $y; }],
-          '**=' => [null,  function($x,$y) { return $x ** $y; }],
+          '='  =>  [null, 'assign'], // function($x,$y) { return $y; }],
+          '+=' =>  [null, 'assign_add'], // function($x,$y) { return $x + $y; }],
+          '-=' =>  [null, 'assign_sub'], // function($x,$y) { return ($x - $y); }],
+          '*=' =>  [null, 'assign_mul'], // function($x,$y) { return $x * $y; }],
+          '/=' =>  [null, 'assign_div'], // function($x,$y) { return $x / $y; }],
+          '%=' =>  [null, 'assign_mod'], // function($x,$y) { return $x % $y; }],
+          '**=' => [null, 'assign_pow'], // function($x,$y) { return $x ** $y; }],
       ];
-
+      $this->operatorFunctions = new MatrixOpelatorFunctions();
     }
+
+    //public function close()
+    //{
+    //    $this->broadCastOperators = null;
+    //    $this->updateOperators = null;
+    //}
 
     protected function alloc($array,$dtype=null,$shape=null)
     {
@@ -157,6 +169,8 @@ class MatrixOperator
         if(is_array($array)) {
             return $this->alloc($array,$dtype);
         } elseif($array instanceof ArrayObject) {
+            return $this->alloc($array,$dtype);
+        } elseif(is_numeric($array)) {
             return $this->alloc($array,$dtype);
         } else {
             throw new InvalidArgumentException("Must be array or ArrayObject");
@@ -834,11 +848,11 @@ class MatrixOperator
                 $YY = $Y->buffer();
                 $offY = $Y->offset();
                 for($i=0; $i<$N; $i++) {
-                    $RR[$offR+$i] = call_user_func($func, $XX[$offX+$i], $YY[$offY+$i]);
+                    $RR[$offR+$i] = $this->operatorFunctions->$func($XX[$offX+$i], $YY[$offY+$i]);
                 }
             } else {
                 for($i=0; $i<$N; $i++) {
-                    $RR[$offR+$i] = call_user_func($func, $XX[$offX+$i], $Y);
+                    $RR[$offR+$i] = $this->operatorFunctions->$func($XX[$offX+$i], $Y);
                 }
             }
         } else {
@@ -846,7 +860,7 @@ class MatrixOperator
             $YY = $Y->buffer();
             $offY = $Y->offset();
             for($i=0; $i<$N; $i++) {
-                $RR[$offR+$i] = call_user_func($func, $X, $YY[$offY+$i]);
+                $RR[$offR+$i] = $this->operatorFunctions->$func($X, $YY[$offY+$i]);
             }
         }
 
@@ -934,7 +948,7 @@ class MatrixOperator
         return $X;
     }
 
-    protected function selectByMask(NDArray $X, array $MASKs, NDArray $R=null, callable $func=null, $updateValue=null)
+    protected function selectByMask(NDArray $X, array $MASKs, NDArray $R=null, string $func=null, $updateValue=null)
     {
         if(count($MASKs)!=1) {
             throw new InvalidArgumentException('The bool Matrix must be only one.');
@@ -958,14 +972,14 @@ class MatrixOperator
                     $RR[$count] = $XX[$offX+$i];
                     $count++;
                 } else {
-                    $XX[$offX+$i] = $func($XX[$offX+$i],$updateValue);
+                    $XX[$offX+$i] = $this->operatorFunctions->$func($XX[$offX+$i],$updateValue);
                 }
             }
         }
 
     }
 
-    protected function selectByMatrix(NDArray $X, array $MASKs, NDArray $R=null, callable $func=null, $updateValue=null)
+    protected function selectByMatrix(NDArray $X, array $MASKs, NDArray $R=null, string $func=null, $updateValue=null)
     {
         $N = $MASKs[0]->shape()[0];
         // nested mask
@@ -1023,7 +1037,7 @@ class MatrixOperator
                         throw $e;
                     }
                 } else {
-                    $XX[$offX+$idx] = $func($XX[$offX+$idx],$updateValue);
+                    $XX[$offX+$idx] = $this->operatorFunctions->$func($XX[$offX+$idx],$updateValue);
                 }
             }
 
@@ -1066,7 +1080,7 @@ class MatrixOperator
             } else {
                 $offset = $offX+$size*$idx;
                 for($j=0;$j<$size;$j++) {
-                    $XX[$offset+$j] = $func($XX[$offset+$j],$updateValue);
+                    $XX[$offset+$j] = $this->operatorFunctions->$func($XX[$offset+$j],$updateValue);
                 }
             }
         }
@@ -1161,6 +1175,33 @@ class MatrixOperator
                 $this->openblas,$this->openblaslapack,$this->openblasmath);
         }
         return $this->laRawMode;
+    }
+
+    public function laAccelerated($mode,array $options=null)
+    {
+        if($mode=='clblast') {
+            if($this->clblastLA) {
+                return $this->clblastLA;
+            }
+            if(!extension_loaded('rindow_clblast')) {
+                throw new InvalidArgumentException('extension is not loaded');
+            }
+            if(isset($options['deviceType'])) {
+                $deviceType = $options['deviceType'];
+            } else {
+                $deviceType = OpenCL::CL_DEVICE_TYPE_DEFAULT;
+            }
+            $context = new Context($deviceType);
+            $queue = new CommandQueue($context);
+            $clblastblas = new CLBlastBlas();
+            $openclmath = new OpenCLMath($context,$queue);
+            $clblastmath = new CLBlastMath();
+            $la = new LinearAlgebraCL($context,$queue,
+                $clblastblas,$openclmath,$clblastmath,
+                $this->openblasmath,$this->openblaslapack);
+            $this->clblastLA = $la;
+            return $la;
+        }
     }
 
     public function blas($raw=null)

@@ -10,3 +10,4 @@ if (file_exists(__DIR__.'/../vendor/autoload.php')) {
     }
 }
 //$loader->add('Rindow\\Module\\Monolog\\', __DIR__.'/../../module-monolog/src');
+$loader->addPsr4('Rindow\\Math\\Plot\\', __DIR__.'/../../rindow-math-plot/src');

@@ -232,6 +232,68 @@ class PhpBlas //implements BLASLevel1
         return $Y;
     }
 
+    public function rotg(
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        Buffer $C, int $offsetC,
+        Buffer $S, int $offsetS
+        ) : void
+    {
+        if($this->useBlas($A)) {
+            $this->blas->rotg($A,$offsetA,$B,$offsetB,$C,$offsetC,$S,$offsetS);
+            return;
+        }
+        throw new RuntimeException("Unsupported function yet without rindow_openblas");
+    }
+
+    public function rot(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY,
+        Buffer $C, int $offsetC,
+        Buffer $S, int $offsetS
+        ) : void
+    {
+        if($this->useBlas($X)) {
+            $this->blas->rot($n,$X,$offsetX,$incX,$Y,$offsetY,$incY,$C,$offsetC,$S,$offsetS);
+            return;
+        }
+        $cc = $C[$offsetC];
+        $ss = $S[$offsetS];
+        $idX = $offsetX;
+        $idY = $offsetY;
+        for($i=0;$i<$n;$i++,$idX+=$incX,$idY+=$incY) {
+            $xx = $X[$idX];
+            $yy = $Y[$idY];
+            $X[$idX] =  $cc * $xx + $ss * $yy;
+            $Y[$idY] = -$ss * $xx + $cc * $yy;
+        }
+    }
+
+    public function swap(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY ) : void
+    {
+        if($this->useBlas($X)) {
+            $this->blas->swap($n,$X,$offsetX,$incX,$Y,$offsetY,$incY);
+            return;
+        }
+
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new RuntimeException('Vector X specification too large for buffer.');
+        if($offsetY+($n-1)*$incY>=count($Y))
+            throw new RuntimeException('Vector Y specification too large for buffer.');
+
+        $idxX = $offsetX;
+        $idxY = $offsetY;
+        for($i=0; $i<$n; $i++,$idxX+=$incX,$idxY+=$incY) {
+            $tmp = $Y[$idxY];
+            $Y[$idxY] = $X[$idxX];
+            $X[$idxX] = $tmp;
+        }
+    }
+
     public function gemv(
         int $order,
         int $trans,

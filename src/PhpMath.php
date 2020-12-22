@@ -306,7 +306,7 @@ class PhpMath
     }
 
     /**
-     *     Y(m,n) := alpha * X(n) + Y(m,n)
+     *     A(m,n) := alpha * X(n) + A(m,n)
      */
     public function add(
         bool $trans,
@@ -857,10 +857,10 @@ class PhpMath
             return;
         }
 
-        if(!$trans) {
-            $rows = $m; $cols = $n;
-        } else {
+        if($trans) {
             $rows = $n; $cols = $m;
+        } else {
+            $rows = $m; $cols = $n;
         }
 
         if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
@@ -868,8 +868,8 @@ class PhpMath
         if($offsetX+($rows-1)*$incX>=count($X))
             throw new RuntimeException('Vector specification too large for buffer.');
 
-        if(!$trans) { $incAj = $ldA; $incAi = 1;}
-        else        { $incAj = 1;    $incAi = $ldA;}
+        if($trans) { $incAj = 1;    $incAi = $ldA;}
+        else       { $incAj = $ldA; $incAi = 1;}
 
         $idAj = $offsetA;
         $idX = $offsetX;
@@ -1088,12 +1088,13 @@ class PhpMath
         bool $reverse,
         Buffer $images,
         int $images_pos,
-        int $filter_w,
+        int $im_w,
         int $channels,
         int $channel_step,
         int $filter_w_step,
         int $vim_x,
-        int $vim_w,
+        int $vfilter_w,
+        int $dilation_w,
         Buffer $out,
         int $out_pos,
         int $out_filter_step,
@@ -1103,13 +1104,13 @@ class PhpMath
         #print('v=%d,%d,%d,%d' % (vin_y,vin_x,vin_h,vin_w))
         $filter_w_pos = $images_pos;
         $out_filter_pos = $out_pos;
-        for($x=0; $x<$filter_w; $x++) {
+        for($vfilter_x=0; $vfilter_x<$vfilter_w; $vfilter_x+=$dilation_w) {
             $channel_pos = $filter_w_pos;
             $out_channel_pos = $out_filter_pos;
-            $xx = $x+$vim_x;
             #print('yx=%d,%d' % (yy,xx))
+            $input_x = $vim_x+$vfilter_x;
             for($c=0; $c<$channels; $c++) {
-                if($xx<0 || $xx>=$vim_w) {
+                if($input_x<0 || $input_x>=$im_w) {
                     #print('pad')
                     if(!$reverse) {
                         $out[$out_channel_pos] = 0;
@@ -1124,8 +1125,8 @@ class PhpMath
                 }
                 $out_channel_pos += $out_channel_step;
                 $channel_pos += $channel_step;
-                }
-                $out_filter_pos += $out_filter_step;
+            }
+            $out_filter_pos += $out_filter_step;
             $filter_w_pos += $filter_w_step;
         }
     }
@@ -1150,6 +1151,7 @@ class PhpMath
         int $stride_w,
         bool $padding,
         bool $channels_first,
+        int $dilation_w,
         bool $cols_channels_first,
         Buffer $cols,
         int $cols_offset,
@@ -1169,6 +1171,7 @@ class PhpMath
                 $stride_w,
                 $padding,
                 $channels_first,
+                $dilation_w,
                 $cols_channels_first,
                 $cols,
                 $cols_offset,
@@ -1181,42 +1184,41 @@ class PhpMath
             count($images)-$images_offset<$images_buf_size) {
             throw new InvalidArgumentException('images buffer size is invalid');
         }
-        $out_w = (int)floor(($im_w-$filter_w)/$stride_w)+1;
+        //$out_w = (int)floor(($im_w-$filter_w)/$stride_w)+1;
+        $out_w = intval(floor(($im_w-($filter_w-1)*$dilation_w-1)/$stride_w)+1);
+        if($out_w<=0) {
+            throw new InvalidArgumentException('Invalid shape or parameters.');
+        }
         if($padding) {
             $out_buf_size =
                 $batches*
                 $im_w*$filter_w*
                 $channels;
             #print('outsz=',out.shape)
-            $start_w = -floor(($im_w-$out_w)/2);
-            $end_w = $start_w+$im_w;
-            #print('start-end=(%d,%d)-(%d,%d)'%(start_h,start_w,end_h,end_w))
+            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1)/2);
+            $out_w = $im_w;
         } else {
-            $start_w = 0;
-            $end_w = $out_w;
             $out_buf_size = $batches*
                 $out_w*$filter_w*
                 $channels;
+            $padding_w = 0;
         }
         if($cols_size!=$out_buf_size ||
             count($cols)-$cols_offset>$out_buf_size) {
             throw new InvalidArgumentException('output buffer size is invalid');
         }
         if($channels_first) {
-            # stride parameters
-            $stride_w_step = $stride_w;
-            $batch_step = $channels*$im_w;
-            # copy parameters
+            $im_w_step = 1;
             $channel_step = $im_w;
-            $filter_w_step = 1;
+            $batch_step =   $im_w*$channels;
         } else {
-            # stride parameters
-            $stride_w_step = $channels*$stride_w;
-            $batch_step = $channels*$im_w;
-            # copy parameters
             $channel_step = 1;
-            $filter_w_step = $channels;
+            $im_w_step =  $channels;
+            $batch_step = $channels*$im_w;
         }
+        $stride_w_step = $im_w_step*$stride_w;
+        $filter_w_step = $im_w_step*$dilation_w;
+
         if($cols_channels_first) {
             $out_filter_step = 1;
             $out_channel_step = $filter_w;
@@ -1226,34 +1228,32 @@ class PhpMath
         }
         $out_cell_step = $filter_w*$channels;
 
+        $batch_pos = $images_offset-$im_w_step*$padding_w;
         $out_pos = $cols_offset;
-        $batch_pos = $images_offset;
 
-        $start_vim_x = $start_w*$stride_w;
-        $vim_w = ($out_w-1)*$stride_w+$filter_w;
-
+        $vim_w = $out_w*$stride_w;
+        $vfilter_w = $filter_w*$dilation_w;
         for($batch=0; $batch<$batches;$batch++) {
-            $stride_w_pos = $batch_pos+ $start_w*$stride_w_step;
-            $vim_x = $start_vim_x;
-            for($x=$start_w;$x<$end_w;$x++) {
+            $stride_w_pos = $batch_pos;
+            for($vim_x=0;$vim_x<$vim_w;$vim_x+=$stride_w) {//stride_x
                 #print('osf=%d,%d,%d'%(out_h,stride_h,filter_h))
                 $this->copyCell1d(
                     $reverse,
                     $images,
                     $stride_w_pos,
-                    $filter_w,
+                    $im_w,
                     $channels,
                     $channel_step,
                     $filter_w_step,
-                    $vim_x,
-                    $vim_w,
+                    $vim_x-$padding_w,
+                    $vfilter_w,
+                    $dilation_w,
                     $cols,
                     $out_pos,
                     $out_filter_step,
                     $out_channel_step
                 );
                 $stride_w_pos += $stride_w_step;
-                $vim_x += $stride_w;
                 $out_pos += $out_cell_step;
             }
             $batch_pos += $batch_step;
@@ -1267,16 +1267,18 @@ class PhpMath
         bool $reverse,
         Buffer $images,
         int $images_pos,
-        int $filter_h,
-        int $filter_w,
+        int $im_h,
+        int $im_w,
         int $channels,
         int $channel_step,
         int $filter_h_step,
         int $filter_w_step,
         int $vim_y,
         int $vim_x,
-        int $vim_h,
-        int $vim_w,
+        int $vfilter_h,
+        int $vfilter_w,
+        int $dilation_h,
+        int $dilation_w,
         Buffer $out,
         int $out_pos,
         int $out_filter_step,
@@ -1286,17 +1288,17 @@ class PhpMath
         #print('v=%d,%d,%d,%d' % (vin_y,vin_x,vin_h,vin_w))
         $filter_h_pos = $images_pos;
         $out_filter_pos = $out_pos;
-        for($y=0; $y<$filter_h; $y++) {
-            $yy = $y+$vim_y;
+        for($vfilter_y=0; $vfilter_y<$vfilter_h; $vfilter_y+=$dilation_h) {
             $filter_w_pos = $filter_h_pos;
-            for($x=0; $x<$filter_w; $x++) {
+            for($vfilter_x=0; $vfilter_x<$vfilter_w; $vfilter_x+=$dilation_w) {
                 $channel_pos = $filter_w_pos;
                 $out_channel_pos = $out_filter_pos;
-                $xx = $x+$vim_x;
                 #print('yx=%d,%d' % (yy,xx))
+                $input_y = $vim_y+$vfilter_y;
+                $input_x = $vim_x+$vfilter_x;
                 for($c=0; $c<$channels; $c++) {
-                    if($yy<0 || $yy>=$vim_h ||
-                       $xx<0 || $xx>=$vim_w) {
+                    if($input_y<0 || $input_y>=$im_h ||
+                       $input_x<0 || $input_x>=$im_w) {
                         #print('pad')
                         if(!$reverse) {
                             $out[$out_channel_pos] = 0;
@@ -1334,15 +1336,20 @@ class PhpMath
         int $images_offset,
         int $images_size,
         int $batches,
+
         int $im_h,
         int $im_w,
         int $channels,
         int $filter_h,
         int $filter_w,
+
         int $stride_h,
         int $stride_w,
         bool $padding,
         bool $channels_first,
+        int $dilation_h,
+
+        int $dilation_w,
         bool $cols_channels_first,
         Buffer $cols,
         int $cols_offset,
@@ -1356,15 +1363,20 @@ class PhpMath
                 $images_offset,
                 $images_size,
                 $batches,
+
                 $im_h,
                 $im_w,
                 $channels,
                 $filter_h,
                 $filter_w,
+
                 $stride_h,
                 $stride_w,
                 $padding,
                 $channels_first,
+                $dilation_h,
+
+                $dilation_w,
                 $cols_channels_first,
                 $cols,
                 $cols_offset,
@@ -1377,8 +1389,11 @@ class PhpMath
             count($images)-$images_offset<$images_buf_size) {
             throw new InvalidArgumentException('images buffer size is invalid');
         }
-        $out_h = floor(($im_h-$filter_h)/$stride_h)+1;
-        $out_w = floor(($im_w-$filter_w)/$stride_w)+1;
+        $out_h = intval(floor(($im_h-($filter_h-1)*$dilation_h-1)/$stride_h)+1);
+        $out_w = intval(floor(($im_w-($filter_w-1)*$dilation_w-1)/$stride_w)+1);
+        if($out_h<=0 || $out_w<=0) {
+            throw new InvalidArgumentException('Invalid shape or parameters.');
+        }
         if($padding) {
             $out_buf_size =
                 $batches*
@@ -1386,43 +1401,39 @@ class PhpMath
                 $im_w*$filter_w*
                 $channels;
             #print('outsz=',out.shape)
-            $start_h = -floor(($im_h-$out_h)/2);
-            $start_w = -floor(($im_w-$out_w)/2);
-            $end_h = $start_h+$im_h;
-            $end_w = $start_w+$im_w;
             #print('start-end=(%d,%d)-(%d,%d)'%(start_h,start_w,end_h,end_w))
+            $padding_h = (int)floor((($im_h-1)*$stride_h-$im_h+($filter_h-1)*$dilation_h+1)/2);
+            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1)/2);
+            $out_h = $im_h;
+            $out_w = $im_w;
         } else {
-            $start_h = $start_w = 0;
-            $end_h = $out_h;
-            $end_w = $out_w;
             $out_buf_size = $batches*
                 $out_h*$filter_h*
                 $out_w*$filter_w*
                 $channels;
+            $padding_h = 0;
+            $padding_w = 0;
         }
         if($cols_size!=$out_buf_size ||
             count($cols)-$cols_offset>$out_buf_size) {
             throw new InvalidArgumentException('output buffer size is invalid');
         }
         if($channels_first) {
-            # stride parameters
-            $stride_w_step = $stride_w;
-            $stride_h_step = $im_w*$stride_h;
-            $batch_step = $channels*$im_w*$im_h;
-            # copy parameters
-            $channel_step = $im_h*$im_w;
-            $filter_w_step = 1;
-            $filter_h_step = $im_w;
+            $im_w_step = 1;
+            $im_h_step =    $im_w;
+            $channel_step = $im_w*$im_h;
+            $batch_step =   $im_w*$im_h*$channels;
         } else {
-            # stride parameters
-            $stride_w_step = $channels*$stride_w;
-            $stride_h_step = $channels*$im_w*$stride_h;
-            $batch_step = $channels*$im_w*$im_h;
-            # copy parameters
             $channel_step = 1;
-            $filter_w_step = $channels;
-            $filter_h_step = $filter_w_step*$im_w;
+            $im_w_step =  $channels;
+            $im_h_step =  $channels*$im_w;
+            $batch_step = $channels*$im_w*$im_h;
         }
+        $stride_w_step = $im_w_step*$stride_w;
+        $stride_h_step = $im_h_step*$stride_h;
+        $filter_w_step = $im_w_step*$dilation_w;
+        $filter_h_step = $im_h_step*$dilation_h;
+
         if($cols_channels_first) {
             $out_filter_step = 1;
             $out_channel_step = $filter_h*$filter_w;
@@ -1432,47 +1443,46 @@ class PhpMath
         }
         $out_cell_step = $filter_h*$filter_w*$channels;
 
+        $batch_pos = $images_offset-$im_h_step*$padding_h-$im_w_step*$padding_w;
         $out_pos = $cols_offset;
-        $batch_pos = $images_offset;
 
-        $start_vim_y = $start_h*$stride_h;
-        $start_vim_x = $start_w*$stride_w;
-        $vim_h = ($out_h-1)*$stride_h+$filter_h;
-        $vim_w = ($out_w-1)*$stride_w+$filter_w;
-
+        $vim_h = $out_h*$stride_h;
+        $vim_w = $out_w*$stride_w;
+        $vfilter_h = $filter_h*$dilation_h;
+        $vfilter_w = $filter_w*$dilation_w;
         for($batch=0; $batch<$batches;$batch++) {
-            $stride_h_pos = $batch_pos+($start_h*$stride_h_step);
-            $vim_y = $start_vim_y;
-            for ($y=$start_h;$y<$end_h;$y++){
-                $stride_w_pos = $stride_h_pos+($start_w*$stride_w_step);
-                $vim_x = $start_vim_x;
-                for($x=$start_w;$x<$end_w;$x++) {
+            $stride_h_pos = $batch_pos;
+            for($vim_y=0;$vim_y<$vim_h;$vim_y+=$stride_h){//stride_y
+                $stride_w_pos = $stride_h_pos;
+                for($vim_x=0;$vim_x<$vim_w;$vim_x+=$stride_w) {//stride_x
                     #print('osf=%d,%d,%d'%(out_h,stride_h,filter_h))
                     $this->copyCell2d(
                         $reverse,
                         $images,
                         $stride_w_pos,
-                        $filter_h,
-                        $filter_w,
+                        $im_h,
+                        $im_w,
                         $channels,
                         $channel_step,
                         $filter_h_step,
                         $filter_w_step,
-                        $vim_y,
-                        $vim_x,
-                        $vim_h,
-                        $vim_w,
+                        $vim_y-$padding_h,
+                        $vim_x-$padding_w,
+                        $vfilter_h,
+                        $vfilter_w,
+                        $dilation_h,
+                        $dilation_w,
                         $cols,
                         $out_pos,
                         $out_filter_step,
                         $out_channel_step
                     );
                     $stride_w_pos += $stride_w_step;
-                    $vim_x += $stride_w;
+                    //$vim_x += $stride_w;
                     $out_pos += $out_cell_step;
                 }
                 $stride_h_pos += $stride_h_step;
-                $vim_y += $stride_h;
+                //$vim_y += $stride_h;
             }
             $batch_pos += $batch_step;
         }
@@ -1485,9 +1495,9 @@ class PhpMath
         bool $reverse,
         Buffer $images,
         int $images_pos,
-        int $filter_d,
-        int $filter_h,
-        int $filter_w,
+        int $im_d,
+        int $im_h,
+        int $im_w,
         int $channels,
         int $channel_step,
         int $filter_d_step,
@@ -1496,9 +1506,12 @@ class PhpMath
         int $vim_z,
         int $vim_y,
         int $vim_x,
-        int $vim_d,
-        int $vim_h,
-        int $vim_w,
+        int $vfilter_d,
+        int $vfilter_h,
+        int $vfilter_w,
+        int $dilation_d,
+        int $dilation_h,
+        int $dilation_w,
         Buffer $out,
         int $out_pos,
         int $out_filter_step,
@@ -1508,21 +1521,21 @@ class PhpMath
         #print('v=%d,%d,%d,%d' % (vin_y,vin_x,vin_h,vin_w))
         $filter_d_pos = $images_pos;
         $out_filter_pos = $out_pos;
-        for($z=0; $z<$filter_d; $z++) {
-            $zz = $z+$vim_z;
+        for($vfilter_z=0; $vfilter_z<$vfilter_d; $vfilter_z+=$dilation_d) {
             $filter_h_pos = $filter_d_pos;
-            for($y=0; $y<$filter_h; $y++) {
-                $yy = $y+$vim_y;
+            for($vfilter_y=0; $vfilter_y<$vfilter_h; $vfilter_y+=$dilation_h) {
                 $filter_w_pos = $filter_h_pos;
-                for($x=0; $x<$filter_w; $x++) {
+                for($vfilter_x=0; $vfilter_x<$vfilter_w; $vfilter_x+=$dilation_w) {
                     $channel_pos = $filter_w_pos;
                     $out_channel_pos = $out_filter_pos;
-                    $xx = $x+$vim_x;
                     #print('yx=%d,%d' % (yy,xx))
+                    $input_z = $vim_z+$vfilter_z;
+                    $input_y = $vim_y+$vfilter_y;
+                    $input_x = $vim_x+$vfilter_x;
                     for($c=0; $c<$channels; $c++) {
-                        if($zz<0 || $zz>=$vim_d ||
-                            $yy<0 || $yy>=$vim_h ||
-                           $xx<0 || $xx>=$vim_w) {
+                        if($input_z<0 || $input_z>=$im_d ||
+                           $input_y<0 || $input_y>=$im_h ||
+                           $input_x<0 || $input_x>=$im_w) {
                             #print('pad')
                             if(!$reverse) {
                                 $out[$out_channel_pos] = 0;
@@ -1573,6 +1586,9 @@ class PhpMath
         int $stride_w,
         bool $padding,
         bool $channels_first,
+        int $dilation_d,
+        int $dilation_h,
+        int $dilation_w,
         bool $cols_channels_first,
         Buffer $cols,
         int $cols_offset,
@@ -1598,6 +1614,9 @@ class PhpMath
                 $stride_w,
                 $padding,
                 $channels_first,
+                $dilation_d,
+                $dilation_h,
+                $dilation_w,
                 $cols_channels_first,
                 $cols,
                 $cols_offset,
@@ -1610,9 +1629,12 @@ class PhpMath
             count($images)-$images_offset<$images_buf_size) {
             throw new InvalidArgumentException('images buffer size is invalid');
         }
-        $out_d = floor(($im_d-$filter_d)/$stride_d)+1;
-        $out_h = floor(($im_h-$filter_h)/$stride_h)+1;
-        $out_w = floor(($im_w-$filter_w)/$stride_w)+1;
+        $out_d = intval(floor(($im_d-($filter_d-1)*$dilation_d-1)/$stride_d)+1);
+        $out_h = intval(floor(($im_h-($filter_h-1)*$dilation_h-1)/$stride_h)+1);
+        $out_w = intval(floor(($im_w-($filter_w-1)*$dilation_w-1)/$stride_w)+1);
+        if($out_h<=0 || $out_w<=0) {
+            throw new InvalidArgumentException('Invalid shape or parameters.');
+        }
         if($padding) {
             $out_buf_size =
                 $batches*
@@ -1621,51 +1643,46 @@ class PhpMath
                 $im_w*$filter_w*
                 $channels;
             #print('outsz=',out.shape)
-            $start_d = -floor(($im_d-$out_d)/2);
-            $start_h = -floor(($im_h-$out_h)/2);
-            $start_w = -floor(($im_w-$out_w)/2);
-            $end_d = $start_d+$im_d;
-            $end_h = $start_h+$im_h;
-            $end_w = $start_w+$im_w;
-            #print('start-end=(%d,%d)-(%d,%d)'%(start_h,start_w,end_h,end_w))
+            $padding_d = (int)floor((($im_d-1)*$stride_d-$im_h+($filter_d-1)*$dilation_d+1)/2);
+            $padding_h = (int)floor((($im_h-1)*$stride_h-$im_h+($filter_h-1)*$dilation_h+1)/2);
+            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1)/2);
+            $out_d = $im_d;
+            $out_h = $im_h;
+            $out_w = $im_w;
         } else {
-            $start_d = $start_h = $start_w = 0;
-            $end_d = $out_d;
-            $end_h = $out_h;
-            $end_w = $out_w;
             $out_buf_size = $batches*
                 $out_d*$filter_d*
                 $out_h*$filter_h*
                 $out_w*$filter_w*
                 $channels;
+            $padding_d = 0;
+            $padding_h = 0;
+            $padding_w = 0;
         }
         if($cols_size!=$out_buf_size ||
             count($cols)-$cols_offset>$out_buf_size) {
             throw new InvalidArgumentException('output buffer size is invalid');
         }
         if($channels_first) {
-            # stride parameters
-            $stride_w_step = $stride_w;
-            $stride_h_step = $im_w*$stride_h;
-            $stride_d_step = $im_w*$im_h*$stride_d;
-            $batch_step = $channels*$im_w*$im_h*$im_d;
-            # copy parameters
-            $channel_step = $im_h*$im_w*$im_d;
-            $filter_w_step = 1;
-            $filter_h_step = $im_w;
-            $filter_d_step = $im_w*$im_h;
+            $im_w_step =    1;
+            $im_h_step =    $im_w;
+            $im_d_step =    $im_w*$im_h;
+            $channel_step = $im_w*$im_h*$im_d;
+            $batch_step =   $im_w*$im_h*$im_d*$channels;
         } else {
-            # stride parameters
-            $stride_w_step = $channels*$stride_w;
-            $stride_h_step = $channels*$im_w*$stride_h;
-            $stride_d_step = $channels*$im_w*$im_h*$stride_d;
-            $batch_step = $channels*$im_w*$im_h*$im_d;
-            # copy parameters
             $channel_step = 1;
-            $filter_w_step = $channels;
-            $filter_h_step = $filter_w_step*$im_w;
-            $filter_d_step = $filter_h_step*$im_h;
+            $im_w_step =  $channels;
+            $im_h_step =  $channels*$im_w;
+            $im_d_step =  $channels*$im_w*$im_h;
+            $batch_step = $channels*$im_w*$im_h*$im_d;
         }
+        $stride_w_step = $im_w_step*$stride_w;
+        $stride_h_step = $im_h_step*$stride_h;
+        $stride_d_step = $im_d_step*$stride_d;
+        $filter_w_step = $im_w_step*$dilation_w;
+        $filter_h_step = $im_h_step*$dilation_h;
+        $filter_d_step = $im_d_step*$dilation_d;
+
         if($cols_channels_first) {
             $out_filter_step = 1;
             $out_channel_step = $filter_d*$filter_h*$filter_w;
@@ -1675,59 +1692,56 @@ class PhpMath
         }
         $out_cell_step = $filter_d*$filter_h*$filter_w*$channels;
 
+        $batch_pos = $images_offset-$im_d_step*$padding_d-$im_h_step*$padding_h-$im_w_step*$padding_w;
         $out_pos = $cols_offset;
-        $batch_pos = $images_offset;
 
-        $start_vim_z = $start_d*$stride_d;
-        $start_vim_y = $start_h*$stride_h;
-        $start_vim_x = $start_w*$stride_w;
-        $vim_d = ($out_d-1)*$stride_d+$filter_d;
-        $vim_h = ($out_h-1)*$stride_h+$filter_h;
-        $vim_w = ($out_w-1)*$stride_w+$filter_w;
-
+        $vim_d = $out_d*$stride_d;
+        $vim_h = $out_h*$stride_h;
+        $vim_w = $out_w*$stride_w;
+        $vfilter_d = $filter_d*$dilation_d;
+        $vfilter_h = $filter_h*$dilation_h;
+        $vfilter_w = $filter_w*$dilation_w;
         for($batch=0; $batch<$batches;$batch++) {
-            $stride_d_pos = $batch_pos+($start_d*$stride_d_step);
-            $vim_z = $start_vim_z;
-            for($z=$start_d;$z<$end_d;$z++){
-                $stride_h_pos = $stride_d_pos+($start_h*$stride_h_step);
-                $vim_y = $start_vim_y;
-                for ($y=$start_h;$y<$end_h;$y++){
-                    $stride_w_pos = $stride_h_pos+($start_w*$stride_w_step);
-                    $vim_x = $start_vim_x;
-                    for($x=$start_w;$x<$end_w;$x++) {
+            $stride_d_pos = $batch_pos;
+            for($vim_z=0;$vim_z<$vim_d;$vim_z+=$stride_d){//stride_z
+                $stride_h_pos = $stride_d_pos;
+                for($vim_y=0;$vim_y<$vim_h;$vim_y+=$stride_h){//stride_y
+                    $stride_w_pos = $stride_h_pos;
+                    for($vim_x=0;$vim_x<$vim_w;$vim_x+=$stride_w) {//stride_x
                         #print('osf=%d,%d,%d'%(out_h,stride_h,filter_h))
                         $this->copyCell3d(
                             $reverse,
                             $images,
                             $stride_w_pos,
-                            $filter_d,
-                            $filter_h,
-                            $filter_w,
+                            $im_d,
+                            $im_h,
+                            $im_w,
                             $channels,
                             $channel_step,
                             $filter_d_step,
                             $filter_h_step,
                             $filter_w_step,
-                            $vim_z,
-                            $vim_y,
-                            $vim_x,
-                            $vim_d,
-                            $vim_h,
-                            $vim_w,
+                            $vim_z-$padding_d,
+                            $vim_y-$padding_h,
+                            $vim_x-$padding_w,
+                            $vfilter_d,
+                            $vfilter_h,
+                            $vfilter_w,
+                            $dilation_d,
+                            $dilation_h,
+                            $dilation_w,
                             $cols,
                             $out_pos,
                             $out_filter_step,
                             $out_channel_step
+
                         );
                         $stride_w_pos += $stride_w_step;
-                        $vim_x += $stride_w;
                         $out_pos += $out_cell_step;
                     }
                     $stride_h_pos += $stride_h_step;
-                    $vim_y += $stride_h;
                 }
                 $stride_d_pos += $stride_d_step;
-                $vim_z += $stride_d;
             }
             $batch_pos += $batch_step;
         }
@@ -1757,8 +1771,25 @@ class PhpMath
         }
         mt_srand($seed);
         $px = $offsetX;
-        for($i=0; $i<$n; $i++,$px+=$incX) {
-            $X[$px] = ($high-$low)*mt_rand()/mt_getrandmax()+$low;
+        if(method_exists($X,'dtype')) {
+            $isInt = array_key_exists($X->dtype(),$this->intTypes);
+        } else {
+            $isInt = false;
+        }
+        if($isInt) {
+            $origHigh = $high;
+            $high += 1;
+            for($i=0; $i<$n; $i++,$px+=$incX) {
+                $value = ((int)floor(($high-$low)*mt_rand()/mt_getrandmax()))+$low;
+                if($value>$origHigh) {
+                    $value = $origHigh;
+                }
+                $X[$px] = $value;
+            }
+        } else {
+            for($i=0; $i<$n; $i++,$px+=$incX) {
+                $X[$px] = ($high-$low)*mt_rand()/mt_getrandmax()+$low;
+            }
         }
     }
 
@@ -1903,6 +1934,56 @@ class PhpMath
                     }
                 }
             }
+        }
+    }
+
+    public function matrixcopy(
+        bool $trans,
+        int $m,
+        int $n,
+        float $alpha,
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $B, int $offsetB, int $ldB)
+    {
+        if($this->math) {
+            $this->math->matrixcopy(
+                $trans,
+                $m,
+                $n,
+                $alpha,
+                $A, $offsetA, $ldA,
+                $B, $offsetB, $ldB);
+        }
+        if(!$trans) {
+            for($i=0;$i<$m;$i++) {
+                for($j=0;$j<$n;$j++) {
+                    $B[$i*$ldB+$j+$offsetB] = $alpha * $A[$i*$ldA+$j+$offsetA];
+                }
+            }
+        } else {
+            for($i=0;$i<$m;$i++) {
+                for($j=0;$j<$n;$j++) {
+                    $B[$j*$ldB+$i+$offsetB] = $alpha * $A[$i*$ldA+$j+$offsetA];
+                }
+            }
+        }
+    }
+
+    public function fill(
+        int $n,
+        Buffer $V, int $offsetV,
+        Buffer $X, int $offsetX, int $incX)
+    {
+        if($this->math) {
+            $this->math->fill(
+                $n,
+                $V, $offsetV,
+                $X, $offsetX, $incX);
+        }
+        $idX = $offsetX;
+        $value = $V[$offsetV];
+        for($i=0;$i<$n;$i++,$idX+=$incX) {
+            $X[$idX] = $value;
         }
     }
 }

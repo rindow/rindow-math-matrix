@@ -6,10 +6,11 @@
     "license": "BSD-3-Clause",
     "require": {
         "php": ">=7.2",
-        "interop-phpobjects/polite-math": "^1.0"
+        "interop-phpobjects/polite-math": ">=1.0.3"
     },
     "suggest": {
-        "ext-rindow_openblas": "0.1.5 strongly recommended for speed"
+        "ext-rindow_openblas": "0.1.6 strongly recommended for speed",
+        "rindow/math-plot": "for OpenCL tunning"
     },
     "autoload": {
         "psr-4": {
