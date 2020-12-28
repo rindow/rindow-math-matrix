@@ -136,6 +136,56 @@ class Test extends TestCase
         ];
     }
 
+    public function translate_syrk(
+        NDArray $A,
+        float $alpha=null,
+        float $beta=null,
+        NDArray $C=null,
+        bool $lower=null,
+        bool $trans=null)
+    {
+        $shapeA = $A->shape();
+        if($trans) {
+            $shapeA = [$shapeA[1],$shapeA[0]];
+        }
+        $AA = $A->buffer();
+        $offA = $A->offset();
+        $N = $shapeA[0];
+        $K = $shapeA[1];
+
+        if($alpha===null) {
+            $alpha = 1.0;
+        }
+        if($beta===null) {
+            $beta = 0.0;
+        }
+        if($C!=null) {
+            $shapeC = $C->shape();
+            if($N!=$shapeC[0] || $N!=$shapeC[1]) {
+                echo "n=$N,";
+                throw new InvalidArgumentException('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
+            }
+        } else {
+            $C = $this->mo->zeros([$N,$N]);
+        }
+        $CC = $C->buffer();
+        $offC = $C->offset();
+
+        $lda = ($trans) ? $N : $K;
+        $ldc = $N;
+        $uplo  = ($lower) ? BLAS::Lower : BLAS::Upper;
+        $trans = ($trans) ? BLAS::Trans : BLAS::NoTrans;
+
+        return [
+            $uplo,$trans,
+            $N,$K,
+            $alpha,
+            $AA,$offA,$lda,
+            $beta,
+            $CC,$offC,$ldc,
+        ];
+    }
+
     public function testGetConfig()
     {
         $mo = new MatrixOperator();
@@ -713,4 +763,348 @@ class Test extends TestCase
             $beta,
             $YY,$offY,$incY);
     }
+
+    public function testSyrkNormal()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC);
+        $this->assertEquals([
+            [14, 32, 50, 68],
+            [ 0, 77,122,167],
+            [ 0,  0,194,266],
+            [ 0,  0,  0,365],
+        ],$C->toArray());
+    }
+
+    public function testSyrkTranspose()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([3,3]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C,null,true);
+
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC);
+        $this->assertEquals([
+            [ 166, 188, 210],
+            [   0, 214, 240],
+            [   0,   0, 270]
+        ],$C->toArray());
+    }
+
+    public function testSyrkMinusN()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Argument n must be greater than 0.');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            -$n,$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC);
+    }
+
+    public function testSyrkMinusK()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Argument k must be greater than 0.');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,-$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC);
+    }
+
+    public function testSyrkLargeNNoTrans()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferA');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n+1,$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC);
+    }
+
+    public function testSyrkLargeKNoTrans()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferA');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k+1,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC);
+    }
+
+    public function testSyrkOverOffsetA()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferA');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA+1,$ldA,
+            $beta,
+            $CC,$offC,$ldC);
+    }
+
+    public function testSyrkOverLDANormal()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferA');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA,$ldA+1,
+            $beta,
+            $CC,$offC,$ldC);
+    }
+
+    public function testSyrkOverLDATrans()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([3,3]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C,null,true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferA');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA,$ldA+1,
+            $beta,
+            $CC,$offC,$ldC);
+    }
+
+    public function testSyrkOverOffsetC()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferC');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC+1,$ldC);
+    }
+
+    public function testSyrkOverLDCNormal()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([4,4]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferC');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC+1);
+    }
+
+    public function testSyrkOverLDCTrans()
+    {
+        $mo = new MatrixOperator();
+        $blas = $this->getBlas($mo);
+
+        $A = $mo->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $C = $mo->zeros([3,3]);
+
+        [ $uplo,$trans,$n,$k,$alpha,$AA,$offA,$ldA,
+          $beta,$CC,$offC,$ldC] =
+            $this->translate_syrk($A,null,null,$C,null,true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Matrix specification too large for bufferC');
+        $blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $n,$k,
+            $alpha,
+            $AA,$offA,$ldA,
+            $beta,
+            $CC,$offC,$ldC+1);
+    }
+
 }

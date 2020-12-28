@@ -406,4 +406,248 @@ class PhpBlas //implements BLASLevel1
             }
         }
     }
+
+    public function symm(
+        int $order,
+        int $side,
+        int $uplo,
+        int $m,
+        int $n,
+        float $alpha,
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $B, int $offsetB, int $ldB,
+        float $beta,
+        Buffer $C, int $offsetC, int $ldC ) : void
+    {
+        if($this->useBlas($A)) {
+            $this->blas->symm($order,$side,$uplo,$m,$n,$alpha,
+                $A,$offsetA,$ldA,$B,$offsetB,$ldB,$beta,$C,$offsetC,$ldC);
+            return;
+        }
+
+        if($order==BLAS::ColMajor) {
+            [$m,$n] = [$n,$m];
+        } elseif($order!=BLAS::RowMajor) {
+            throw new InvalidArgumentException('Invalid Order type');
+        }
+        $sizeA = ($side==BLAS::Left) ? $m : $n;
+        if($offsetA+($sizeA-1)*$ldA+($sizeA-1)>=count($A))
+            throw new RuntimeException('Matrix specification too large for bufferA.');
+        if($offsetB+($m-1)*$ldB+($n-1)>=count($B))
+            throw new RuntimeException('Matrix specification too large for bufferB.');
+        if($offsetC+($m-1)*$ldC+($n-1)>=count($C))
+            throw new RuntimeException('Matrix specification too large for bufferC.');
+
+        $ldA_m = ($uplo==BLAS::Upper) ? $ldA : 1;
+        $ldA_k = ($uplo==BLAS::Upper) ? 1 : $ldA;
+        $ldB_k = ($side==BLAS::Left) ? $ldB : 1;
+        $ldB_n = ($side==BLAS::Left) ? 1 : $ldB;
+        $ldC_m = ($side==BLAS::Left) ? $ldC : 1;
+        $ldC_n = ($side==BLAS::Left) ? 1 : $ldC;
+        if($side==BLAS::Right) {
+            [$n,$m] = [$m,$n];
+        }
+
+        $idA_m = $offsetA;
+        $idC_m = $offsetC;
+        for ($im=0; $im<$m; $im++,$idC_m+=$ldC_m) {
+            $idB_n = $offsetB;
+            $idC = $idC_m;
+            for ($in=0; $in<$n; $in++,$idB_n+=$ldB_n,$idC+=$ldC_n) {
+                $idB = $idB_n;
+                $acc = 0.0;
+                for ($ik=0; $ik<$sizeA; $ik++,$idB+=$ldB_k) {
+                    if($ik<$im) {
+                        $idA = $offsetA+$ik*$ldA_m+$im*$ldA_k;
+                    } else {
+                        $idA = $offsetA+$im*$ldA_m+$ik*$ldA_k;
+                    }
+                    $acc += $A[$idA] * $B[$idB];
+                }
+                if($beta==0.0) {
+                    $C[$idC] = $alpha * $acc;
+                } else {
+                    $C[$idC] = $alpha * $acc + $beta * $C[$idC];
+                }
+            }
+        }
+    }
+
+    public function syrk(
+        int $order,
+        int $uplo,
+        int $trans,
+        int $n,
+        int $k,
+        float $alpha,
+        Buffer $A, int $offsetA, int $ldA,
+        float $beta,
+        Buffer $C, int $offsetC, int $ldC ) : void
+    {
+        if($this->useBlas($A)) {
+            $this->blas->syrk($order,$uplo,$trans,$n,$k,$alpha,
+                $A,$offsetA,$ldA,$beta,$C,$offsetC,$ldC);
+            return;
+        }
+        if($order==BLAS::ColMajor) {
+            [$n,$k] = [$k,$n];
+        } elseif($order!=BLAS::RowMajor) {
+            throw new InvalidArgumentException('Invalid Order type');
+        }
+        if($n<1)
+            throw new RuntimeException('Argument n must be greater than 0.');
+        if($k<1)
+            throw new RuntimeException('Argument k must be greater than 0.');
+        $rows = ($trans==BLAS::NoTrans) ? $n : $k;
+        $cols = ($trans==BLAS::NoTrans) ? $k : $n;
+        if($offsetA+($rows-1)*$ldA+($cols-1)>=count($A))
+            throw new RuntimeException('Matrix specification too large for bufferA.');
+        if($offsetC+($n-1)*$ldC+($n-1)>=count($C))
+            throw new RuntimeException('Matrix specification too large for bufferC.');
+
+        $ldA_m  = ($trans==BLAS::NoTrans) ? $ldA : 1;
+        $ldA_k  = ($trans==BLAS::NoTrans) ? 1 : $ldA;
+        $ldAT_k = ($trans!=BLAS::NoTrans) ? $ldA : 1;
+        $ldAT_n = ($trans!=BLAS::NoTrans) ? 1 : $ldA;
+
+        $idA_m = $offsetA;
+        $idC_m = $offsetC;
+        for ($im=0; $im<$n; $im++,$idA_m+=$ldA_m,$idC_m+=$ldC) {
+            $idAT_n = $offsetA;
+            $idC = $idC_m;
+            if($uplo==Blas::Upper) {
+                $start_n = $im;
+                $end_n = $n;
+            } else {
+                $start_n = 0;
+                $end_n = $im+1;
+            }
+            for ($in=$start_n; $in<$end_n; $in++,$idAT_n+=$ldAT_n,$idC++) {
+                $acc = 0.0;
+                for ($ik=0; $ik<$k; $ik++) {
+                    $idA  = $offsetA+$im*$ldA_m+$ik*$ldA_k;
+                    $idAT = $offsetA+$ik*$ldAT_k+$in*$ldAT_n;
+                    $acc += $A[$idA] * $A[$idAT];
+                }
+                $idC = $im*$ldC+$in;
+                if($beta==0.0) {
+                    $C[$idC] = $alpha * $acc;
+                } else {
+                    $C[$idC] = $alpha * $acc + $beta * $C[$idC];
+                }
+            }
+        }
+    }
+
+    public function syr2k(
+        int $order,
+        int $uplo,
+        int $trans,
+        int $n,
+        int $k,
+        float $alpha,
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $B, int $offsetB, int $ldB,
+        float $beta,
+        Buffer $C, int $offsetC, int $ldC ) : void
+    {
+        if($this->useBlas($A)) {
+            $this->blas->syr2k($order,$uplo,$trans,$n,$k,$alpha,
+                $A,$offsetA,$ldA,$B,$offsetB,$ldB,$beta,$C,$offsetC,$ldC);
+            return;
+        }
+        if($order==BLAS::ColMajor) {
+            [$n,$k] = [$k,$n];
+        } elseif($order!=BLAS::RowMajor) {
+            throw new InvalidArgumentException('Invalid Order type');
+        }
+        $rows = ($trans==BLAS::NoTrans) ? $n : $k;
+        $cols = ($trans==BLAS::NoTrans) ? $k : $n;
+        if($offsetA+($rows-1)*$ldA+($cols-1)>=count($A))
+            throw new RuntimeException('Matrix specification too large for bufferA.');
+        if($offsetB+($rows-1)*$ldB+($cols-1)>=count($B))
+            throw new RuntimeException('Matrix specification too large for bufferB.');
+        if($offsetC+($n-1)*$ldC+($n-1)>=count($C))
+            throw new RuntimeException('Matrix specification too large for bufferC.');
+
+        $ldA_m  = ($trans==BLAS::NoTrans) ? $ldA : 1;
+        $ldA_k  = ($trans==BLAS::NoTrans) ? 1 : $ldA;
+        $ldAT_k = ($trans!=BLAS::NoTrans) ? $ldA : 1;
+        $ldAT_n = ($trans!=BLAS::NoTrans) ? 1 : $ldA;
+        $ldB_m  = ($trans==BLAS::NoTrans) ? $ldB : 1;
+        $ldB_k  = ($trans==BLAS::NoTrans) ? 1 : $ldB;
+        $ldBT_k = ($trans!=BLAS::NoTrans) ? $ldB : 1;
+        $ldBT_n = ($trans!=BLAS::NoTrans) ? 1 : $ldB;
+
+        $idA_m = $offsetA;
+        $idC_m = $offsetC;
+        for ($im=0; $im<$n; $im++,$idA_m+=$ldA_m,$idC_m+=$ldC) {
+            $idAT_n = $offsetA;
+            $idC = $idC_m;
+            if($uplo==Blas::Upper) {
+                $start_n = $im;
+                $end_n = $n;
+            } else {
+                $start_n = 0;
+                $end_n = $im+1;
+            }
+            for ($in=$start_n; $in<$end_n; $in++,$idAT_n+=$ldAT_n,$idC++) {
+                $acc = 0.0;
+                for ($ik=0; $ik<$k; $ik++) {
+                    $idA  = $offsetA+$im*$ldA_m+ $ik*$ldA_k;
+                    $idB  = $offsetB+$im*$ldB_m+ $ik*$ldB_k;
+                    $idAT = $offsetA+$ik*$ldAT_k+$in*$ldAT_n;
+                    $idBT = $offsetB+$ik*$ldBT_k+$in*$ldBT_n;
+                    $acc += $A[$idA]  * $B[$idBT];
+                    $acc += $A[$idAT] * $B[$idB];
+                }
+                $idC = $im*$ldC+$in;
+                if($beta==0.0) {
+                    $C[$idC] = $alpha * $acc;
+                } else {
+                    $C[$idC] = $alpha * $acc + $beta * $C[$idC];
+                }
+            }
+        }
+    }
+
+    public function trmm(
+        int $order,
+        int $side,
+        int $uplo,
+        int $trans,
+        int $diag,
+        int $m,
+        int $n,
+        float $alpha,
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $B, int $offsetB, int $ldB) : void
+    {
+        if($this->useBlas($A)) {
+            $this->blas->trmm($order,$side,$uplo,$trans,$diag,$m,$n,$alpha,
+                $A,$offsetA,$ldA,$B,$offsetB,$ldB);
+            return;
+        }
+        throw new RuntimeException("Unsupported function yet without rindow_openblas");
+    }
+
+    public function trsm(
+        int $order,
+        int $side,
+        int $uplo,
+        int $trans,
+        int $diag,
+        int $m,
+        int $n,
+        float $alpha,
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $B, int $offsetB, int $ldB) : void
+    {
+        if($this->useBlas($A)) {
+            $this->blas->trsm($order,$side,$uplo,$trans,$diag,$m,$n,$alpha,
+                $A,$offsetA,$ldA,$B,$offsetB,$ldB);
+            return;
+        }
+        throw new RuntimeException("Unsupported function yet without rindow_openblas");
+    }
 }

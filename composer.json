@@ -9,7 +9,9 @@
         "interop-phpobjects/polite-math": ">=1.0.3"
     },
     "suggest": {
-        "ext-rindow_openblas": "0.1.6 strongly recommended for speed",
+        "ext-rindow_openblas": "0.2.0 strongly recommended for speed",
+        "ext-rindow_opencl": "0.1.0 GPU/OpenCL support",
+        "ext-rindow_clblast": "0.1.1 BLAS on GPU/OpenCL support",
         "rindow/math-plot": "for OpenCL tunning"
     },
     "autoload": {

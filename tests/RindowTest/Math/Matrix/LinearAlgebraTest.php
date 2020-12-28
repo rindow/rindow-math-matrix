@@ -76,6 +76,16 @@ class Test extends TestCase
         }
     }
 
+    public function testSpeedTest()
+    {
+        // ==============================================
+        // The speed test should normally be False.
+        // Temporarily change to True only when performing
+        // the corresponding test individually.
+        // ==============================================
+        $this->assertFalse(self::$speedtest);
+    }
+
     public function testAlloc()
     {
         $mo = $this->newMatrixOperator();
@@ -613,6 +623,544 @@ class Test extends TestCase
         $end = hrtime(true);
         echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         $this->assertTrue(true);
+    }
+
+    public function testSymmNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [2,4,5],
+            [3,5,6],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($A,$B);
+        $A = $la->array([
+            [1,2,3],
+            [0,4,5],
+            [0,0,6],
+        ]);
+        $C = $la->symm($A,$B);
+        $this->assertEquals($trues->toArray(),$C->toArray());
+        $this->assertEquals([
+            [38, 44, 50, 56],
+            [67, 78, 89,100],
+            [82, 96,110,124]
+        ],$C->toArray());
+
+        // lower
+        $A = $la->array([
+            [1,0,0],
+            [2,4,0],
+            [3,5,6],
+        ]);
+        $C = $la->symm($A,$B,null,null,null,null,true);
+        $this->assertEquals($trues->toArray(),$C->toArray());
+        $this->assertEquals([
+            [38, 44, 50, 56],
+            [67, 78, 89,100],
+            [82, 96,110,124]
+        ],$C->toArray());
+
+    }
+
+    public function testSymmRight()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [2,4,5],
+            [3,5,6],
+        ]);
+        $B = $la->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $trues = $la->gemm($B,$A);
+        $A = $la->array([
+            [1,2,3],
+            [0,4,5],
+            [0,0,6],
+        ]);
+        $C = $la->symm($A,$B,null,null,null,true);
+        $this->assertEquals($trues->toArray(),$C->toArray());
+        $this->assertEquals([
+            [14, 25, 31],
+            [32, 58, 73],
+            [50, 91,115],
+            [68,124,157]
+        ],$C->toArray());
+        // lower
+        $A = $la->array([
+            [1,0,0],
+            [2,4,0],
+            [3,5,6],
+        ]);
+        $C = $la->symm($A,$B,null,null,null,true,true);
+        $this->assertEquals($trues->toArray(),$C->toArray());
+        $this->assertEquals([
+            [14, 25, 31],
+            [32, 58, 73],
+            [50, 91,115],
+            [68,124,157]
+        ],$C->toArray());
+    }
+
+    public function testSyrkNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        [$n,$k] = $A->shape();
+        $AT = $la->transpose($A);
+        $trues = $la->gemm($A,$AT)->toArray();
+        for($i=0;$i<$n;$i++) {
+            for($j=0;$j<$i;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syrk($A);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [14, 32, 50, 68],
+            [ 0, 77,122,167],
+            [ 0,  0,194,266],
+            [ 0,  0,  0,365],
+        ],$C->toArray());
+
+        // lower
+        $trues = $la->gemm($A,$AT)->toArray();
+        for($i=0;$i<$n;$i++) {
+            for($j=$i+1;$j<$n;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syrk($A,null,null,null,true);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [14,  0,  0,  0],
+            [32, 77,  0,  0],
+            [50,122,194,  0],
+            [68,167,266,365],
+        ],$C->toArray());
+    }
+
+    public function testSyrkTranspose()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        [$n,$k] = $A->shape();
+        $AT = $la->transpose($A);
+        $trues = $la->gemm($AT,$A)->toArray();
+        for($i=0;$i<$k;$i++) {
+            for($j=0;$j<$i;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syrk($A,null,null,null,null,true);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [ 166, 188, 210],
+            [   0, 214, 240],
+            [   0,   0, 270]
+        ],$C->toArray());
+
+        // lower
+        $trues = $la->gemm($AT,$A)->toArray();
+        for($i=0;$i<$k;$i++) {
+            for($j=$i+1;$j<$k;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syrk($A,null,null,null,true,true);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [ 166,   0,   0],
+            [ 188, 214,   0],
+            [ 210, 240, 270]
+        ],$C->toArray());
+    }
+
+    public function testSyr2kNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $B = $la->array([
+            [1,3,5],
+            [2,4,6],
+            [7,9,11],
+            [8,10,12],
+        ]);
+        $AT = $la->transpose($A);
+        $BT = $la->transpose($B);
+        [$n,$k] = $A->shape();
+        $trues = $la->gemm($A,$BT);
+        $trues = $la->gemm($B,$AT,null,1.0,$trues)->toArray();
+        for($i=0;$i<$n;$i++) {
+            for($j=0;$j<$i;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syr2k($A,$B);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [44, 77,134,167],
+            [ 0,128,239,290],
+            [ 0,  0,440,545],
+            [ 0,  0,  0,668]
+        ],$C->toArray());
+
+        // lower
+        $trues = $la->gemm($A,$BT);
+        $trues = $la->gemm($B,$AT,null,1.0,$trues)->toArray();
+        for($i=0;$i<$n;$i++) {
+            for($j=$i+1;$j<$n;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syr2k($A,$B,null,null,null,true);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [ 44,  0,  0,  0],
+            [ 77,128,  0,  0],
+            [134,239,440,  0],
+            [167,290,545,668]
+        ],$C->toArray());
+    }
+
+    public function testSyr2kTranspose()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $B = $la->array([
+            [1,3,5],
+            [2,4,6],
+            [7,9,11],
+            [8,10,12],
+        ]);
+        $AT = $la->transpose($A);
+        $BT = $la->transpose($B);
+        [$n,$k] = $A->shape();
+        $trues = $la->gemm($BT,$A);
+        $trues = $la->gemm($AT,$B,null,1.0,$trues)->toArray();
+        for($i=0;$i<$k;$i++) {
+            for($j=0;$j<$i;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syr2k($A,$B,null,null,null,null,true);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [276,338,400],
+            [  0,416,494],
+            [  0,  0,588]
+        ],$C->toArray());
+
+        // lower
+        $trues = $la->gemm($BT,$A);
+        $trues = $la->gemm($AT,$B,null,1.0,$trues)->toArray();
+        for($i=0;$i<$k;$i++) {
+            for($j=$i+1;$j<$k;$j++) {
+                $trues[$i][$j] = 0;
+            }
+        }
+        $C = $la->syr2k($A,$B,null,null,null,true,true);
+        $this->assertEquals($trues,$C->toArray());
+        $this->assertEquals([
+            [276,  0,  0],
+            [338,416,  0],
+            [400,494,588]
+        ],$C->toArray());
+    }
+
+    /**
+    *   @requires extension rindow_clblast
+    */
+    public function testTrmmNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [0,4,5],
+            [0,0,6],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($A,$B);
+        $A = $la->array([
+            [1,2,3],
+            [9,4,5],
+            [9,9,6],
+        ]);
+        $la->trmm($A,$B);
+        $this->assertEquals($trues->toArray(),$B->toArray());
+        $this->assertEquals([
+            [ 38, 44, 50, 56],
+            [ 65, 74, 83, 92],
+            [ 54, 60, 66, 72]
+        ],$trues->toArray());
+
+        // lower
+        $A = $la->array([
+            [1,0,0],
+            [2,4,0],
+            [3,5,6],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($A,$B);
+        $A = $la->array([
+            [1,9,9],
+            [2,4,9],
+            [3,5,6],
+        ]);
+        $C = $la->trmm($A,$B,null,null,true);
+        $this->assertEquals($trues->toArray(),$C->toArray());
+        $this->assertEquals([
+            [  1,  2,  3,  4],
+            [ 22, 28, 34, 40],
+            [ 82, 96,110,124]
+        ],$trues->toArray());
+    }
+
+    /**
+    *   @requires extension rindow_clblast
+    */
+    public function testTrmmTranspose()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [0,4,5],
+            [0,0,6],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($la->transpose($A),$B);
+        $A = $la->array([
+            [1,2,3],
+            [9,4,5],
+            [9,9,6],
+        ]);
+        $la->trmm($A,$B,null,null,null,true);
+        $this->assertEquals($trues->toArray(),$B->toArray());
+        $this->assertEquals([
+            [  1,  2,  3,  4],
+            [ 22, 28, 34, 40],
+            [ 82, 96,110,124]
+        ],$trues->toArray());
+
+        // lower
+        $A = $la->array([
+            [1,0,0],
+            [2,4,0],
+            [3,5,6],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($la->transpose($A),$B);
+        $A = $la->array([
+            [1,9,9],
+            [2,4,9],
+            [3,5,6],
+        ]);
+        $C = $la->trmm($A,$B,null,null,true,true);
+        $this->assertEquals($trues->toArray(),$C->toArray());
+        $this->assertEquals([
+            [ 38, 44, 50, 56],
+            [ 65, 74, 83, 92],
+            [ 54, 60, 66, 72]
+        ],$trues->toArray());
+    }
+
+    /**
+    *   @requires extension rindow_clblast
+    */
+    public function testTrmmUnit()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [0,1,5],
+            [0,0,1],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($A,$B);
+        $A = $la->array([
+            [9,2,3],
+            [9,9,5],
+            [9,9,9],
+        ]);
+        $la->trmm($A,$B,null,null,null,null,true);
+        $this->assertEquals($trues->toArray(),$B->toArray());
+        $this->assertEquals([
+            [ 38, 44, 50, 56],
+            [ 50, 56, 62, 68],
+            [  9, 10, 11, 12]
+        ],$trues->toArray());
+
+        // lower
+        $A = $la->array([
+            [1,0,0],
+            [2,1,0],
+            [3,5,1],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($A,$B);
+        $A = $la->array([
+            [9,9,9],
+            [2,9,9],
+            [3,5,9],
+        ]);
+        $C = $la->trmm($A,$B,null,null,true,null,true);
+        $this->assertEquals($trues->toArray(),$C->toArray());
+        $this->assertEquals([
+            [  1,  2,  3,  4],
+            [  7, 10, 13, 16],
+            [ 37, 46, 55, 64]
+        ],$trues->toArray());
+    }
+
+    /**
+    *   @requires extension rindow_clblast
+    */
+    public function testTrmmRight()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [0,4,5],
+            [0,0,6],
+        ]);
+        $B = $la->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $trues = $la->gemm($B,$A);
+        $A = $la->array([
+            [1,2,3],
+            [9,4,5],
+            [9,9,6],
+        ]);
+        $la->trmm($A,$B,null,true);
+        $this->assertEquals($trues->toArray(),$B->toArray());
+        $this->assertEquals([
+            [  1, 10, 31],
+            [  4, 28, 73],
+            [  7, 46,115],
+            [ 10, 64,157]
+        ],$trues->toArray());
+
+        // lower
+        $A = $la->array([
+            [1,0,0],
+            [2,4,0],
+            [3,5,6],
+        ]);
+        $B = $la->array([
+            [1,2,3],
+            [4,5,6],
+            [7,8,9],
+            [10,11,12],
+        ]);
+        $trues = $la->gemm($B,$A);
+        $A = $la->array([
+            [1,9,9],
+            [2,4,9],
+            [3,5,6],
+        ]);
+        $la->trmm($A,$B,null,true,true);
+        $this->assertEquals($trues->toArray(),$B->toArray());
+        $this->assertEquals([
+            [ 14, 23, 18],
+            [ 32, 50, 36],
+            [ 50, 77, 54],
+            [ 68,104, 72]
+        ],$trues->toArray());
+    }
+
+    /**
+    *   @requires extension rindow_clblast
+    */
+    public function testTrsmNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $A = $la->array([
+            [1,2,3],
+            [0,4,5],
+            [0,0,6],
+        ]);
+        $B = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12],
+        ]);
+        $trues = $la->gemm($A,$B);
+        $A = $la->array([
+            [1,2,3],
+            [9,4,5],
+            [9,9,6],
+        ]);
+        $la->trsm($A,$B);
+        $this->markTestSkipped('trsm');
     }
 
     public function testMatmulNormal()
@@ -6171,4 +6719,5 @@ class Test extends TestCase
         //echo $mo->toString($solve,'%f',true);
         $this->assertEquals([3,5,2],$solve->toArray());
     }
+
 }

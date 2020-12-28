@@ -20,5 +20,12 @@ Please see the documents on [Rindow projects](https://rindow.github.io/) web pag
 
 You can perform very fast N-dimensional array operations in conjunction
 
-- [Pre-build binaries](https://github.com/rindow/rindow-openblas-binaries)
+- [Pre-build binaries](https://github.com/rindow/rindow-openblas/releases)
 - [Build from source](https://github.com/rindow/rindow-openblas)
+
+### Acceleration with GPU
+
+You can use GPU acceleration on OpenCL.
+
+- [Pre-build binaries](https://github.com/rindow/rindow-clblast/releases)
+- [Build from source](https://github.com/rindow/rindow-clblast)

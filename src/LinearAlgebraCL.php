@@ -858,6 +858,339 @@ class LinearAlgebraCL
     }
 
     /**
+    *    A = Symmetric matrix
+    *    C := alpha * AB + beta * C  ( right = false )
+    *    C := alpha * BA + beta * C  ( right = true )
+    */
+    public function symm(
+        NDArray $A,
+        NDArray $B,
+        float $alpha=null,
+        float $beta=null,
+        NDArray $C=null,
+        bool $right=null,
+        bool $lower=null,
+        object $events=null
+        ) : NDArray
+    {
+        if($A->ndim()!=2 || $B->ndim()!=2) {
+            throw new InvalidArgumentException('Dimensions must be 2D-NDArray');
+        }
+        $shapeA = $A->shape();
+        $rowsA = $shapeA[0];
+        if($rowsA!=$shapeA[1]) {
+            throw new InvalidArgumentException('The matrix "A" must be symmetric');
+        }
+        $shapeB = $B->shape();
+        $M = $shapeB[0];
+        $N = $shapeB[1];
+        $tmpB = ($right) ? $N : $M;
+        if($rowsA!=$tmpB) {
+            throw new InvalidArgumentException('Unmatch Shape of matrix "A" and "B": '."($rowsA,$rowsA) != ($M,$N)");
+        }
+        $AA = $A->buffer();
+        $BB = $B->buffer();
+        $offA = $A->offset();
+        $offB = $B->offset();
+
+        if($alpha===null) {
+            $alpha = 1.0;
+        }
+        if($beta===null) {
+            $beta = 0.0;
+        }
+        if($C!=null) {
+            $shapeC = $C->shape();
+            if($M!=$shapeC[0] || $N!=$shapeC[1]) {
+                throw new InvalidArgumentException('Matrix "B" and "C" must be same shape');
+            }
+        } else {
+            $C = $this->zeros($this->alloc([$M,$N],$A->dtype()));
+        }
+        $CC = $C->buffer();
+        $offC = $C->offset();
+
+        $lda = $rowsA;
+        $ldb = $N;
+        $ldc = $N;
+        $side = ($right) ? BLAS::Right : BLAS::Left;
+        $uplo = ($lower) ? BLAS::Lower : BLAS::Upper;
+
+        $this->blas->symm(
+            BLAS::RowMajor,$side,$uplo,
+            $M,$N,
+            $alpha,
+            $AA,$offA,$lda,
+            $BB,$offB,$ldb,
+            $beta,
+            $CC,$offC,$ldc,
+            $this->queue,$events);
+
+        if($this->blocking) {
+            $this->finish();
+        }
+
+        return $C;
+    }
+
+    /**
+    *    C := alpha * A A^T + beta * C  (trans=false)
+    *    C := alpha * A^T A + beta * C  (trans=true)
+    */
+    public function syrk(
+        NDArray $A,
+        float $alpha=null,
+        float $beta=null,
+        NDArray $C=null,
+        bool $lower=null,
+        bool $trans=null,
+        object $events=null) : NDArray
+    {
+        if($A->ndim()!=2) {
+            throw new InvalidArgumentException('Dimensions must be 2D-NDArray');
+        }
+        $shapeA = $A->shape();
+        if($trans) {
+            $shapeA = [$shapeA[1],$shapeA[0]];
+        }
+        $AA = $A->buffer();
+        $offA = $A->offset();
+        $N = $shapeA[0];
+        $K = $shapeA[1];
+
+        if($alpha===null) {
+            $alpha = 1.0;
+        }
+        if($beta===null) {
+            $beta = 0.0;
+        }
+        if($C!=null) {
+            $shapeC = $C->shape();
+            if($N!=$shapeC[0] || $N!=$shapeC[1]) {
+                throw new InvalidArgumentException('"C" rows and cols must have the same number of "A" cols');
+            }
+        } else {
+            $C = $this->zeros($this->alloc([$N,$N],$A->dtype()));
+        }
+        $CC = $C->buffer();
+        $offC = $C->offset();
+
+        $lda = ($trans) ? $N : $K;
+        $ldc = $N;
+        $uplo  = ($lower) ? BLAS::Lower : BLAS::Upper;
+        $trans = ($trans) ? BLAS::Trans : BLAS::NoTrans;
+
+        $this->blas->syrk(
+            BLAS::RowMajor,$uplo,$trans,
+            $N,$K,
+            $alpha,
+            $AA,$offA,$lda,
+            $beta,
+            $CC,$offC,$ldc,
+            $this->queue,$events);
+
+        if($this->blocking) {
+            $this->finish();
+        }
+
+        return $C;
+    }
+
+    /**
+    *    C := alpha * A B^T + B A^T + beta * C  (trans=false)
+    *    C := alpha * B^T A + A B^T + beta * C  (trans=true)
+    */
+    public function syr2k(
+        NDArray $A,
+        NDArray $B,
+        float $alpha=null,
+        float $beta=null,
+        NDArray $C=null,
+        bool $lower=null,
+        bool $trans=null,
+        object $events=null) : NDArray
+    {
+        if($A->ndim()!=2 || $B->ndim()!=2) {
+            throw new InvalidArgumentException('Dimensions must be 2D-NDArray');
+        }
+        $shapeA = $A->shape();
+        $shapeB = $B->shape();
+        if($shapeA!=$shapeB) {
+            throw new InvalidArgumentException('Matrix A and B must be same shape');
+        }
+        if($trans) {
+            $shapeA = [$shapeA[1],$shapeA[0]];
+        }
+        $AA   = $A->buffer();
+        $offA = $A->offset();
+        $BB   = $B->buffer();
+        $offB = $B->offset();
+        $N = $shapeA[0];
+        $K = $shapeA[1];
+
+        if($alpha===null) {
+            $alpha = 1.0;
+        }
+        if($beta===null) {
+            $beta = 0.0;
+        }
+        if($C!=null) {
+            $shapeC = $C->shape();
+            if($N!=$shapeC[0] || $N!=$shapeC[1]) {
+                throw new InvalidArgumentException('"C" rows and cols must have the same number of "A" cols');
+            }
+        } else {
+            $C = $this->zeros($this->alloc([$N,$N],$A->dtype()));
+        }
+        $CC = $C->buffer();
+        $offC = $C->offset();
+
+        $lda = ($trans) ? $N : $K;
+        $ldb = ($trans) ? $N : $K;
+        $ldc = $N;
+        $uplo  = ($lower) ? BLAS::Lower : BLAS::Upper;
+        $trans = ($trans) ? BLAS::Trans : BLAS::NoTrans;
+
+        $this->blas->syr2k(
+            BLAS::RowMajor,$uplo,$trans,
+            $N,$K,
+            $alpha,
+            $AA,$offA,$lda,
+            $BB,$offB,$ldb,
+            $beta,
+            $CC,$offC,$ldc,
+            $this->queue,$events);
+
+        if($this->blocking) {
+            $this->finish();
+        }
+
+        return $C;
+    }
+
+    /**
+    *    C := alpha * A B  (right=false)
+    *    C := alpha * B A  (right=true)
+    */
+    public function trmm(
+        NDArray $A,
+        NDArray $B,
+        float $alpha=null,
+        bool $right=null,
+        bool $lower=null,
+        bool $trans=null,
+        bool $unit=null,
+        object $events=null) : NDArray
+    {
+        if($A->ndim()!=2 || $B->ndim()!=2) {
+            throw new InvalidArgumentException('Dimensions must be 2D-NDArray');
+        }
+        $shapeA = $A->shape();
+        $shapeB = $B->shape();
+        if($right) {
+            $sizeA = $shapeB[1];
+        } else {
+            $sizeA = $shapeB[0];
+        }
+        if($sizeA!=$shapeA[0]) {
+            throw new InvalidArgumentException('Unmatch shape of Matrix A and B: '.
+                '['.implode(',',$shapeA).'] <=> ['.implode(',',$shapeA).']');
+        }
+        $AA   = $A->buffer();
+        $offA = $A->offset();
+        $BB   = $B->buffer();
+        $offB = $B->offset();
+        $M = $shapeB[0];
+        $N = $shapeB[1];
+
+        if($alpha===null) {
+            $alpha = 1.0;
+        }
+
+        $lda = ($right) ? $N : $M;
+        $ldb = $N;
+        $side  = ($right) ? BLAS::Right : BLAS::Left;
+        $uplo  = ($lower) ? BLAS::Lower : BLAS::Upper;
+        $trans = ($trans) ? BLAS::Trans : BLAS::NoTrans;
+        $diag  = ($unit)  ? BLAS::Unit  : BLAS::NonUnit;
+
+        $this->blas->trmm(
+            BLAS::RowMajor,$side,$uplo,$trans,$diag,
+            $M,$N,
+            $alpha,
+            $AA,$offA,$lda,
+            $BB,$offB,$ldb,
+            $this->queue,$events);
+
+        if($this->blocking) {
+            $this->finish();
+        }
+
+        return $B;
+    }
+
+    /**
+    *    C := alpha A^-1 B  (right=false)
+    *    C := alpha B A^-1  (right=true)
+    */
+    public function trsm(
+        NDArray $A,
+        NDArray $B,
+        float $alpha=null,
+        bool $right=null,
+        bool $lower=null,
+        bool $trans=null,
+        bool $unit=null,
+        object $events=null) : NDArray
+    {
+        if($A->ndim()!=2 || $B->ndim()!=2) {
+            throw new InvalidArgumentException('Dimensions must be 2D-NDArray');
+        }
+        $shapeA = $A->shape();
+        $shapeB = $B->shape();
+        if($right) {
+            $sizeA = $shapeB[1];
+        } else {
+            $sizeA = $shapeB[0];
+        }
+        if($sizeA!=$shapeA[0]) {
+            throw new InvalidArgumentException('Unmatch shape of Matrix A and B: '.
+                '['.implode(',',$shapeA).'] <=> ['.implode(',',$shapeA).']');
+        }
+        $AA   = $A->buffer();
+        $offA = $A->offset();
+        $BB   = $B->buffer();
+        $offB = $B->offset();
+        $M = $shapeB[0];
+        $N = $shapeB[1];
+
+        if($alpha===null) {
+            $alpha = 1.0;
+        }
+
+        $lda = ($right) ? $N : $M;
+        $ldb = $N;
+        $side  = ($right) ? BLAS::Right : BLAS::Left;
+        $uplo  = ($lower) ? BLAS::Lower : BLAS::Upper;
+        $trans = ($trans) ? BLAS::Trans : BLAS::NoTrans;
+        $diag  = ($unit)  ? BLAS::Unit  : BLAS::NonUnit;
+
+        $this->blas->trsm(
+            BLAS::RowMajor,$side,$uplo,$trans,$diag,
+            $M,$N,
+            $alpha,
+            $AA,$offA,$lda,
+            $BB,$offB,$ldb,
+            $this->queue,$events);
+
+        if($this->blocking) {
+            $this->finish();
+        }
+
+        return $B;
+    }
+
+    /**
     *    X := alpha * X + beta
     */
     public function increment(

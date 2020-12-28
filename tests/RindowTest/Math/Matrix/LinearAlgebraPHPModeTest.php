@@ -37,6 +37,32 @@ class Test extends ORGTest
         $this->markTestSkipped('Unsuppored function on clblast');
     }
 
+    public function testTrmmNormal()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testTrmmTranspose()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testTrmmUnit()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testTrmmRight()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testTrsmNormal()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+
     public function testSvdFull1()
     {
         $this->markTestSkipped('Unsuppored function without openblas');
