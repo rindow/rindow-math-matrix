@@ -172,7 +172,7 @@ class PhpBlas //implements BLASLevel1
         int $n,
         Buffer $X, int $offsetX, int $incX ) : int
     {
-        if(method_exists($this->blas,'iamin')&&$this->useBlas($X)) {
+        if($this->blas!=null && method_exists($this->blas,'iamin')&&$this->useBlas($X)) {
             return $this->blas->iamin($n,$X,$offsetX,$incX);
         }
 
