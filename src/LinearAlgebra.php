@@ -1805,251 +1805,155 @@ class LinearAlgebra
 
         return $X;
     }
-/*
-    public function reduceArgMax(NDArray $A,int $axis,NDArray $X=null,$dtypeX=null) : NDArray
-    {
-        $func = function($m,$AA,$idxA,$ldA) {
-            return $this->math->imax($m,$AA,$idxA,$ldA);
-        };
-        if($dtypeX==null) {
-            $dtypeX = NDArray::int64;
-        }
-        return $this->reduceWalk($func, $A, $axis, $X, $dtypeX);
-    }
-
-    public function reduceMax(NDArray $A,int $axis,NDArray $X=null,$dtypeX=null) : NDArray
-    {
-
-        $func = function($m,$AA,$idxA,$ldA) {
-            $idx = $this->math->imax($m,$AA,$idxA,$ldA);
-            return $AA[$idxA+$idx*$ldA];
-        };
-        if($dtypeX==null) {
-            $dtypeX = $A->dtype();
-        }
-        return $this->reduceWalk($func, $A, $axis, $X, $dtypeX);
-    }
-
-    public function reduceMean(NDArray $A,int $axis,NDArray $X=null,$dtypeX=null) : NDArray
-    {
-        $func = function($m,$AA,$idxA,$ldA) {
-            $sum = $this->math->sum($m,$AA,$idxA,$ldA);
-            return $sum/$m;
-        };
-        if($dtypeX==null) {
-            $dtypeX = $A->dtype();
-        }
-        return $this->reduceWalk($func, $A, $axis, $X, $dtypeX);
-    }
-*/
-    protected function reduceWalk(
-        callable $func, NDArray $A,int $axis,NDArray $X=null,$dtypeX=null) : NDArray
-    {
-        if($A->ndim()!=2) {
-            throw new InvalidArgumentException('"A" must be 2D-NDArray.: ['.implode(',',$A->shape()).']');
-        }
-        if($axis === -1)
-            $axis = 1;
-        if($axis!=0 && $axis!=1) {
-            throw new InvalidArgumentException('"axis" must be 0 or 1.');
-        }
-        [$m,$n] = $A->shape();
-        if($X==null) {
-            if($axis==0) {
-                $sizeX = $n;
-            } else {
-                $sizeX = $m;
-            }
-            $X = $this->alloc([$sizeX],$dtypeX);
-        }
-        $AA = $A->buffer();
-        $offA = $A->offset();
-        $ldA = $n;
-        $XX = $X->buffer();
-        $offX = $X->offset();
-        $incX = 1;
-
-        if($axis==0) {
-            $idxA = $offA;
-            $idxX = $offX;
-            for($i=0;$i<$n;$i++) {
-                $XX[$idxX] = $func($m,$AA,$idxA,$ldA);
-                $idxX += $incX;
-                $idxA += 1;
-            }
-        } else {
-            $idxA = $offA;
-            $idxX = $offX;
-            for($i=0;$i<$m;$i++) {
-                $XX[$idxX] = $func($n,$AA,$idxA,1);
-                $idxX += $incX;
-                $idxA += $ldA;
-            }
-        }
-
-        return $X;
-    }
-
-
-    //public function reduceSum(NDArray $A, int $axis,NDArray $X=null) : NDArray
-    //{
-    //    $func = function($m,$AA,$idxA,$ldA) {
-    //        return $this->blas->sum($m,$AA,$idxA,$ldA);
-    //    };
-    //    return $this->reduceWalk($func, $A, $axis, $X);
-    //}
 
     /**
      *    X(m) := sum( A(m,n) )
      */
-    public function reduceSum(
+    public function reduceSum( // reduceSumEx
         NDArray $A,
         int $axis=null,
-        NDArray $X=null,
-        $dtypeX=null) : NDArray
+        NDArray $B=null,
+        $dtype=null) : NDArray
     {
-        if($axis===null)
-            $axis = 0;
-        if($axis!==0 && $axis!==1 && $axis!==-1)
-            throw new InvalidArgumentException('"axis" must be 0 or 1 or -1.');
-        $shapeA = $A->shape();
-        if($axis==0) {
-            $trans = true;
-            $m = array_shift($shapeA);
-            $n = (int)array_product($shapeA);
-            $rows = $n;
-        } else {
-            $trans = false;
-            $n = array_pop($shapeA);
-            $m = (int)array_product($shapeA);
-            $rows = $m;
+        $ndim = $A->ndim();
+        if($axis<0) {
+            $axis = $ndim+$axis;
         }
-
-        if($dtypeX===null) {
-            $dtypeX = $A->dtype();
+        if($axis<0 || $axis>$ndim-1) {
+            throw new InvalidArgumentException("Invalid axis");
         }
-        if($X==null) {
-            $X = $this->alloc([$rows],$dtypeX);
+        $postfixShape = $A->shape();
+        $prefixShape = [];
+        for($i=0;$i<$axis;$i++) {
+            $prefixShape[] = array_shift($postfixShape);
+        }
+        $n = array_shift($postfixShape);
+        $m = array_product($prefixShape);
+        $k = array_product($postfixShape);
+        $outputShape = array_merge($prefixShape,$postfixShape);
+        if($dtype===null) {
+            $dtype = $A->dtype();
+        }
+        if($B==null) {
+            $B = $this->alloc($outputShape,$dtype);
         } else {
-            if($X->shape()!=[$rows]) {
-                $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$X->shape()).')';
+            if($B->shape()!=$outputShape) {
+                $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$B->shape()).')';
                 throw new InvalidArgumentException("Unmatch shape of dimension: ".$shapeError);
             }
         }
 
         $AA = $A->buffer();
         $offA = $A->offset();
-        $XX = $X->buffer();
-        $offX = $X->offset();
+        $BB = $B->buffer();
+        $offB = $B->offset();
 
         $this->math->reduceSum(
-            $trans,
             $m,
             $n,
-            $AA,$offA,$n,
-            $XX,$offX,1);
+            $k,
+            $AA,$offA,
+            $BB,$offB);
 
-        return $X;
+        return $B;
     }
 
-    public function reduceMax(
+    public function reduceMax( // reduceMaxEx
         NDArray $A,
-        int $axis,
-        NDArray $X=null,
-        $dtypeX=null) : NDArray
+        int $axis=null,
+        NDArray $B=null,
+        $dtype=null) : NDArray
     {
-        if($axis===null)
-            $axis = 0;
-        if($axis!==0 && $axis!==1 && $axis!==-1)
-            throw new InvalidArgumentException('"axis" must be 0 or 1 or -1.');
-        $shapeA = $A->shape();
-        if($axis==0) {
-            $trans = true;
-            $m = array_shift($shapeA);
-            $n = (int)array_product($shapeA);
-            $rows = $n;
-        } else {
-            $trans = false;
-            $n = array_pop($shapeA);
-            $m = (int)array_product($shapeA);
-            $rows = $m;
+        $ndim = $A->ndim();
+        if($axis<0) {
+            $axis = $ndim+$axis;
         }
-
-        if($dtypeX===null) {
-            $dtypeX = $A->dtype();
+        if($axis<0 || $axis>$ndim-1) {
+            throw new InvalidArgumentException("Invalid axis");
         }
-        if($X==null) {
-            $X = $this->alloc([$rows],$dtypeX);
+        $postfixShape = $A->shape();
+        $prefixShape = [];
+        for($i=0;$i<$axis;$i++) {
+            $prefixShape[] = array_shift($postfixShape);
+        }
+        $n = array_shift($postfixShape);
+        $m = array_product($prefixShape);
+        $k = array_product($postfixShape);
+        $outputShape = array_merge($prefixShape,$postfixShape);
+        if($dtype===null) {
+            $dtype = $A->dtype();
+        }
+        if($B==null) {
+            $B = $this->alloc($outputShape,$dtype);
         } else {
-            if($X->shape()!=[$rows]) {
-                $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$X->shape()).')';
+            if($B->shape()!=$outputShape) {
+                $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$B->shape()).')';
                 throw new InvalidArgumentException("Unmatch shape of dimension: ".$shapeError);
             }
         }
 
         $AA = $A->buffer();
         $offA = $A->offset();
-        $XX = $X->buffer();
-        $offX = $X->offset();
+        $BB = $B->buffer();
+        $offB = $B->offset();
 
         $this->math->reduceMax(
-            $trans,
             $m,
             $n,
-            $AA,$offA,$n,
-            $XX,$offX,1);
+            $k,
+            $AA,$offA,
+            $BB,$offB);
 
-        return $X;
+        return $B;
     }
 
-    public function reduceArgMax(
+    public function reduceArgMax( // reduceMaxArgEx
         NDArray $A,
-        int $axis,
-        NDArray $X=null,
-        $dtypeX=null) : NDArray
+        int $axis=null,
+        NDArray $B=null,
+        $dtypeB=null) : NDArray
     {
-        if($axis===null)
-            $axis = 0;
-        if($axis!==0 && $axis!==1 && $axis!==-1)
-            throw new InvalidArgumentException('"axis" must be 0 or 1 or -1.');
-        $shapeA = $A->shape();
-        if($axis==0) {
-            $trans = true;
-            $m = array_shift($shapeA);
-            $n = (int)array_product($shapeA);
-            $rows = $n;
-        } else {
-            $trans = false;
-            $n = array_pop($shapeA);
-            $m = (int)array_product($shapeA);
-            $rows = $m;
+        $ndim = $A->ndim();
+        if($axis<0) {
+            $axis = $ndim+$axis;
         }
-
-        if($dtypeX==null) {
-            $dtypeX = NDArray::int64;
+        if($axis<0 || $axis>$ndim-1) {
+            throw new InvalidArgumentException("Invalid axis");
         }
-        if($X==null) {
-            $X = $this->alloc([$rows],$dtypeX);
+        $postfixShape = $A->shape();
+        $prefixShape = [];
+        for($i=0;$i<$axis;$i++) {
+            $prefixShape[] = array_shift($postfixShape);
+        }
+        $n = array_shift($postfixShape);
+        $m = array_product($prefixShape);
+        $k = array_product($postfixShape);
+        $outputShape = array_merge($prefixShape,$postfixShape);
+        if($dtypeB===null) {
+            $dtypeB = NDArray::uint32;
+        }
+        if($B==null) {
+            $B = $this->alloc($outputShape,$dtypeB);
         } else {
-            if($X->shape()!=[$rows]) {
-                $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$X->shape()).')';
+            if($B->shape()!=$outputShape) {
+                $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$B->shape()).')';
                 throw new InvalidArgumentException("Unmatch shape of dimension: ".$shapeError);
             }
         }
 
         $AA = $A->buffer();
         $offA = $A->offset();
-        $XX = $X->buffer();
-        $offX = $X->offset();
+        $BB = $B->buffer();
+        $offB = $B->offset();
 
         $this->math->reduceArgMax(
-            $trans,
             $m,
             $n,
-            $AA,$offA,$n,
-            $XX,$offX,1);
+            $k,
+            $AA,$offA,
+            $BB,$offB);
 
-        return $X;
+        return $B;
     }
 
     public function reduceMean(NDArray $A,int $axis,NDArray $X=null,$dtypeX=null) : NDArray
@@ -2920,47 +2824,6 @@ class LinearAlgebra
                 $k,
                 $BB,$offB,1,
                 $AA,$offA,1,
-                $startAxis0,$sizeAxis0,
-                $startAxis1,$sizeAxis1
-            );
-        }
-        return $B;
-    }
-
-    /**
-    * reduceSumRepeated
-    */
-    public function reduceSumRepeated(NDArray $A)
-    {
-        if($A->ndim()<3) {
-            throw new InvalidArgumentException('dimension rank must be two or greater.');
-        }
-        $shapeCell = $A->shape();
-        $s1 = array_shift($shapeCell);
-        $repeats = array_shift($shapeCell);
-        $shape = array_merge([$s1],$shapeCell);
-        $B = $this->alloc($shape,$A->dtype());
-        $this->zeros($B);
-        $m = $s1;
-        $n = $repeats;
-        $k = (int)array_product($shapeCell);
-        $AA = $A->buffer();
-        $offA = $A->offset();
-        $BB = $B->buffer();
-        $offB = $B->offset();
-        $startAxis0 = 0;
-        $sizeAxis0 = $m;
-        for($i=0;$i<$repeats;$i++) {
-            $startAxis1 = $i;
-            $sizeAxis1 = 1;
-            $this->math->slice(
-                $reverse=false,
-                $addMode=true,
-                $m,
-                $n,
-                $k,
-                $AA,$offA,1,
-                $BB,$offB,1,
                 $startAxis0,$sizeAxis0,
                 $startAxis1,$sizeAxis1
             );

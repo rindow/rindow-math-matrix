@@ -36,6 +36,52 @@ class PhpMath
         return $this->forceMath || in_array($X->dtype(),$this->floatTypes);
     }
 
+    protected function math_sum(
+        int $n,
+        Buffer $X, int $offsetX, int $incX ) : float
+    {
+        $idxX = $offsetX;
+        $acc = 0.0;
+        for ($i=0; $i<$n; $i++,$idxX+=$incX) {
+            $acc += $X[$idxX];
+        }
+        return $acc;
+    }
+
+    protected function math_max(
+        int $n,
+        Buffer $X, int $offsetX, int $incX ) : float
+    {
+        $idxX = $offsetX;
+        $max = $X[$idxX];
+        $idxX += $incX;
+        for ($i=1; $i<$n; $i++,$idxX+=$incX) {
+            $value = $X[$idxX];
+            if($value>$max) {
+                $max = $value;
+            }
+        }
+        return $max;
+    }
+
+    protected function math_imax(
+        int $n,
+        Buffer $X, int $offsetX, int $incX ) : float
+    {
+        $idxX = $offsetX;
+        $max = $X[$idxX];
+        $imax = 0;
+        $idxX += $incX;
+        for ($i=1; $i<$n; $i++,$idxX+=$incX) {
+            $value = $X[$idxX];
+            if($value>$max) {
+                $max = $value;
+                $imax = $i;
+            }
+        }
+        return $imax;
+    }
+
     /**
      *     sum := sum(X)
      */
@@ -828,22 +874,10 @@ class PhpMath
         }
     }
 
-
-    protected function math_sum(
-        int $n,
-        Buffer $X, int $offsetX, int $incX ) : float
-    {
-        $idxX = $offsetX;
-        $acc = 0.0;
-        for ($i=0; $i<$n; $i++,$idxX+=$incX) {
-            $acc += $X[$idxX];
-        }
-        return $acc;
-    }
-
     /**
      * X(m) := sum( A(m,n) )
      */
+/*
     public function reduceSum(
         bool $trans,
         int $m,
@@ -877,97 +911,97 @@ class PhpMath
             $X[$idX] = $this->math_sum($cols,$A,$idAj,$incAi);
         }
     }
+*/
+    public function reduceSum( // reduceSumEx
+        int $m,
+        int $n,
+        int $k,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
+        ) : void
+    {
+        if($this->useMath($A)) {
+            $this->math->reduceSum($m,$n,$k,$A,$offsetA,$B,$offsetB);
+            return;
+        }
+
+        if($offsetA+$m*$n*$k>count($A))
+            throw new RuntimeException('Matrix A specification too large for buffer.');
+        if($offsetB+$m*$k>count($B))
+            throw new RuntimeException('Matrix B specification too large for buffer.');
+
+        $idxA = $offsetA;
+        $idxB = $offsetB;
+        $ldA = $n*$k;
+        $ldB = $k;
+        for($i=0; $i<$m; $i++,$idxA+=$ldA,$idxB+=$ldB) {
+            for($j=0; $j<$k; $j++) {
+                $B[$idxB+$j] = $this->math_sum($n, $A, $idxA+$j, $k);
+            }
+        }
+    }
 
     /**
      * X(m) := max( A(m,n) )
      */
     public function reduceMax(
-        bool $trans,
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX
+        int $k,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
         ) : void
     {
         if($this->useMath($A)) {
-            $this->math->reduceMax($trans,$m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+            $this->math->reduceMax($m,$n,$k,$A,$offsetA,$B,$offsetB);
             return;
         }
 
-        if(!$trans) {
-            $rows = $m; $cols = $n;
-        } else {
-            $rows = $n; $cols = $m;
-        }
+        if($offsetA+$m*$n*$k>count($A))
+            throw new RuntimeException('Matrix A specification too large for buffer.');
+        if($offsetB+$m*$k>count($B))
+            throw new RuntimeException('Matrix B specification too large for buffer.');
 
-        if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for buffer.');
-        if($offsetX+($rows-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
-
-        if(!$trans) { $incAj = $ldA; $incAi = 1;}
-        else        { $incAj = 1;    $incAi = $ldA;}
-
-        $idAj = $offsetA;
-        $idX = $offsetX;
-        for($j=0; $j<$rows; $j++,$idAj+=$incAj,$idX+=$incX) {
-            $idA = $idAj;
-            $max = $A[$idA];
-            $idA += $incAi;
-            for($i=1; $i<$cols; $i++,$idA+=$incAi) {
-                $na = $A[$idA];
-                if($max<$na)
-                    $max = $na;
+        $idxA = $offsetA;
+        $idxB = $offsetB;
+        $ldA = $n*$k;
+        $ldB = $k;
+        for($i=0; $i<$m; $i++,$idxA+=$ldA,$idxB+=$ldB) {
+            for($j=0; $j<$k; $j++) {
+                $B[$idxB+$j] = $this->math_max($n, $A, $idxA+$j, $k);
             }
-            $X[$idX] = $max;
         }
     }
 
     /**
-     * X(m) := sum( A(m,n) )
+     * X(m) := max( A(m,n) )
      */
     public function reduceArgMax(
-        bool $trans,
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX
+        int $k,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
         ) : void
     {
         if($this->useMath($A)) {
-            $this->math->reduceArgMax($trans,$m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+            $this->math->reduceArgMax($m,$n,$k,$A,$offsetA,$B,$offsetB);
             return;
         }
 
-        if(!$trans) {
-            $rows = $m; $cols = $n;
-        } else {
-            $rows = $n; $cols = $m;
-        }
+        if($offsetA+$m*$n*$k>count($A))
+            throw new RuntimeException('Matrix A specification too large for buffer.');
+        if($offsetB+$m*$k>count($B))
+            throw new RuntimeException('Matrix B specification too large for buffer.');
 
-        if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for buffer.');
-        if($offsetX+($rows-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
-
-        if(!$trans) { $incAj = $ldA; $incAi = 1;}
-        else        { $incAj = 1;    $incAi = $ldA;}
-
-        $idAj = $offsetA;
-        $idX = $offsetX;
-        for($j=0; $j<$rows; $j++,$idAj+=$incAj,$idX+=$incX) {
-            $idA = $idAj;
-            $max = $A[$idA];
-            $argMax = 0;
-            $idA += $incAi;
-            for($i=1; $i<$cols; $i++,$idA+=$incAi) {
-                $na = $A[$idA];
-                if($max<$na) {
-                    $argMax = $i;
-                }
-                    $max = $na;
+        $idxA = $offsetA;
+        $idxB = $offsetB;
+        $ldA = $n*$k;
+        $ldB = $k;
+        for($i=0; $i<$m; $i++,$idxA+=$ldA,$idxB+=$ldB) {
+            for($j=0; $j<$k; $j++) {
+                $B[$idxB+$j] = $this->math_imax($n, $A, $idxA+$j, $k);
             }
-            $X[$idX] = $argMax;
         }
     }
 
@@ -982,7 +1016,7 @@ class PhpMath
         $idA = $offsetA;
         for($i=0;$i<$m;$i++,$idA+=$ldA) {
             //float t,max_a,sum_exp;
-            $max_a = $this->softmax_max($n,$A,$idA,1);
+            $max_a = $this->math_max($n,$A,$idA,1);
             $sum_exp = 0;
             for($j=0;$j<$n;$j++) {
                 $t = exp($A[$idA+$j]-$max_a);
@@ -996,18 +1030,6 @@ class PhpMath
                 $A[$idA+$j] = $A[$idA+$j] / $sum_exp;
             }
         }
-    }
-
-    protected function softmax_max($n,$x,$offsetX,$incX)
-    {
-        $a = $x[$offsetX];
-        $idX = $offsetX+$incX;
-        for($i=1;$i<$n;$i++,$idX+=$incX) {
-            if($a<$x[$idX]) {
-                $a = $x[$idX];
-            }
-        }
-        return $a;
     }
 
     public function astype(

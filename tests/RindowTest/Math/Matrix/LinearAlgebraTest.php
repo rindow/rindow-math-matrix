@@ -1485,102 +1485,6 @@ class Test extends TestCase
         $this->assertLessThan(1e-3,$size-$sum);
     }
 
-    public function testSumCompareSpeed()
-    {
-        // Comment out when compare speed
-        if(!self::$speedtest) {
-            $this->markTestSkipped('Speed measurement');
-            return;
-        }
-        $mo = $this->newMatrixOperator();
-        $la = $this->newLA($mo);
-        if($la->getConfig()=='PhpBlas') {
-            $this->assertTrue(true);
-            return;
-        }
-
-        echo "small size\n";
-        $size = 256;
-        $x = $la->alloc([$size],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->sum($x);
-        $start = hrtime(true);
-        $sum = $la->sum($x);
-        $end = hrtime(true);
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-        if(!is_scalar($sum)) {
-            $sum = $sum->toArray();
-        }
-        $this->assertLessThan(1e-3,$size-$sum);
-
-        $size = 256;
-        $x = $la->alloc([$size],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->sumTest($x);
-        $start = hrtime(true);
-        $sum = $la->sumTest($x);
-        $end = hrtime(true);
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-        if(!is_scalar($sum)) {
-            $sum = $sum->toArray();
-        }
-        $this->assertLessThan(1e-3,$size-$sum);
-
-        echo "midle size\n";
-        $size = 131072;
-        $x = $la->alloc([$size],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->sum($x);
-        $start = hrtime(true);
-        $sum = $la->sum($x);
-        $end = hrtime(true);
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-        if(!is_scalar($sum)) {
-            $sum = $sum->toArray();
-        }
-        $this->assertLessThan(1e-3,$size-$sum);
-
-        $size = 131072;
-        $x = $la->alloc([$size],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->sumTest($x);
-        $start = hrtime(true);
-        $sum = $la->sumTest($x);
-        $end = hrtime(true);
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-        if(!is_scalar($sum)) {
-            $sum = $sum->toArray();
-        }
-        $this->assertLessThan(1e-3,$size-$sum);
-
-        echo "large size\n";
-        $size = 2000000;
-        $x = $la->alloc([$size],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->sum($x);
-        $start = hrtime(true);
-        $sum = $la->sum($x);
-        $end = hrtime(true);
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-        if(!is_scalar($sum)) {
-            $sum = $sum->toArray();
-        }
-        $this->assertLessThan(1e-3,$size-$sum);
-
-        $size = 2000000;
-        $x = $la->alloc([$size],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->sumTest($x);
-        $start = hrtime(true);
-        $sum = $la->sumTest($x);
-        $end = hrtime(true);
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-        if(!is_scalar($sum)) {
-            $sum = $sum->toArray();
-        }
-        $this->assertLessThan(1e-3,$size-$sum);
-    }
-
     public function testIncrement()
     {
         $mo = $this->newMatrixOperator();
@@ -1659,7 +1563,7 @@ class Test extends TestCase
         ,$X->toArray());
     }
 
-    public function testGreater()
+    public function testGreaterNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -1670,6 +1574,33 @@ class Test extends TestCase
         $this->assertEquals(
             [[0,0,0],[1,1,1]]
         ,$X->toArray());
+    }
+
+    public function testGreaterSpeed()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+        echo "\n";
+
+        $n = 1000000;
+        $X = $la->alloc([$n]);
+        $la->ones($X);
+        $la->greater(1,$X);
+        $start = hrtime(true);
+        $la->greater(1,$X);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        $this->assertTrue(true);
     }
 
     public function testLess()
@@ -1762,7 +1693,7 @@ class Test extends TestCase
             return;
         }
         // large size
-        $rows = 8000000;
+        $rows = 1000000;
         $cols = 16;
         $x = $la->alloc([$rows,$cols],NDArray::float32);
         $y = $la->alloc([$rows,$cols],NDArray::float32);
@@ -1842,7 +1773,7 @@ class Test extends TestCase
             $trues,$r,-1)));
     }
 
-    public function testSquare()
+    public function testSquareNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -1853,6 +1784,38 @@ class Test extends TestCase
         $this->assertEquals(
             [[1,4,9],[16,25,36]]
         ,$X->toArray());
+    }
+
+    public function testSquareSpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        // X := X ^ 2
+        $rows = 1000000;#;
+        $cols = 8;
+        $X = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(2.0,$X);
+        fwrite(STDERR,"pre-execute\n");
+        $la->square($X);
+        fwrite(STDERR,"execute\n");
+        $start = hrtime(true);
+        $la->square($X);
+        $end = hrtime(true);
+        fwrite(STDERR,"done\n");
+        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        $trues = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(16.0,$trues);
+        $la->axpy($X,$trues,-1);
+        $this->assertLessThan(1e-4,$la->asum($trues));
     }
 
     public function testSqrt()
@@ -2133,7 +2096,7 @@ class Test extends TestCase
         }
     }
 
-    public function testScatterAxis0()
+    public function testScatterAxis0Normal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -2248,6 +2211,167 @@ class Test extends TestCase
             $this->assertEquals(252,$a[0]->toArray());
             $this->assertEquals(254,$a[255]->toArray());
         }
+    }
+
+    public function testScatterAxis0Speed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        echo "small rows\n";
+        // small
+        $rows = 256;
+        $cols = 8;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $start = hrtime(true);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "medium rows\n";
+        // medium
+        $rows = 65536;#131072;
+        $cols = 8;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $start = hrtime(true);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "large rows\n";
+        // large
+        $rows = 1000000;
+        $cols = 8;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $start = hrtime(true);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "medium cols\n";
+        // medium cols
+        $rows = 8;
+        $cols = 65536;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $start = hrtime(true);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "large cols\n";
+        // large cols
+        $rows = 8;
+        $cols = 1000000;
+        $numClass = 8;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $start = hrtime(true);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "medium class\n";
+        // medium class
+        $rows = 8;
+        $cols = 8;
+        $numClass = 131072;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $start = hrtime(true);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        echo "large class\n";
+        // large class
+        $rows = 8;
+        $cols = 8;
+        $numClass = 1000000;
+        $x = $la->alloc([$rows],NDArray::int32);
+        $la->fill(1,$x);
+        $y = $la->alloc([$rows,$cols],NDArray::float32);
+        $la->fill(1.0,$y);
+        $a = $la->alloc([$numClass,$cols],NDArray::float32);
+        $la->fill(0.0,$a);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $start = hrtime(true);
+        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo "\n";
+
+        //echo "mode4\n";
+        // small
+        //
+        //$rows = 131072;
+        //$cols = 8;
+        //$numClass = 8;
+        //$x = $la->alloc([$rows],NDArray::int32);
+        //$la->fill(1,$x);
+        //$y = $la->alloc([$rows,$cols],NDArray::float32);
+        //$la->fill(1.0,$y);
+        //$a = $la->alloc([$numClass,$cols],NDArray::float32);
+        //$la->fill(0.0,$a);
+        //$la->scatterTest($x,$y,$numClass,$axis=0,$a,null,null,$mode=4);
+        //$start = hrtime(true);
+        //$la->scatterTest($x,$y,$numClass,$axis=0,$a,null,null,$mode=4);
+        //$end = hrtime(true);
+        //echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        //echo "\n";
+
+        $this->assertTrue(true);
     }
 
     public function testScatterAxis1()
@@ -2620,8 +2744,8 @@ class Test extends TestCase
             [-1, 1, 1],
         ],$la->onehot($x,3,-2,$y)->toArray());
     }
-
-    public function testReduceSumNormal()
+/*
+    public function testReduceSumOLDNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -2646,8 +2770,35 @@ class Test extends TestCase
         $this->assertEquals([5,7,9],$la->reduceSum($x,$axis=0)->toArray());
         $this->assertEquals([6,15],$la->reduceSum($x,$axis=1)->toArray());
     }
+*/
+    public function testReduceSumNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->array([[1,2,3],[4,5,6]]);
+        $y = $la->reduceSum($x,$axis=0);
+        $this->assertEquals([5,7,9],$y->toArray());
+        $y = $la->reduceSum($x,$axis=1);
+        $this->assertEquals([6,15],$y->toArray());
+        $y = $la->reduceSum($x,$axis=-1);
+        $this->assertEquals([6,15],$y->toArray());
 
-    public function testReduceSumLarge()
+        // 3d array
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceSum($x,$axis=0);
+        $this->assertEquals([[6,8],[10,12]],$y->toArray());
+        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $y = $la->reduceSum($x,$axis=1);
+        $this->assertEquals([[4,6],[12,14]],$y->toArray());
+
+        // with offset
+        $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
+        $x = $x[1];
+        $this->assertEquals([5,7,9],$la->reduceSum($x,$axis=0)->toArray());
+        $this->assertEquals([6,15],$la->reduceSum($x,$axis=1)->toArray());
+    }
+/*
+    public function testReduceSumOLDLarge()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -2677,7 +2828,99 @@ class Test extends TestCase
         $this->assertLessThan(1e-3,$la->amax($la->axpy(
             $trues,$sum,-1)));
     }
+*/
+    public function testReduceSumLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+        // large size
+        $colsize = 800000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSum($x,$axis=1);
+        $trues = $la->alloc([$rowsize],NDArray::float32);
+        $la->fill($colsize,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$sum,-1)));
 
+        // large size
+        $colsize = 64;
+        $rowsize = 10000;#00;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        $la->fill(1.0,$x);
+        $sum = $la->reduceSum($x,$axis=1);
+        $trues = $la->alloc([$rowsize],NDArray::float32);
+        $la->fill($colsize,$trues);
+        $this->assertLessThan(1e-3,$la->amax($la->axpy(
+            $trues,$sum,-1)));
+    }
+/*
+    public function testReduceSumOLDSpeed()
+    {
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        echo "\n";
+
+        $colsize = 1000000;
+        $rowsize = 64;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"Start fill\n");
+        $la->fill(1.0,$x);
+        fwrite(STDERR,"End fill\n");
+        fwrite(STDERR,"Start prepare\n");
+        $sum = $la->reduceSum($x,$axis=1);
+        fwrite(STDERR,"End prepare\n");
+        $start = hrtime(true);
+        $sum = $la->reduceSum($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 64;
+        $rowsize = 1000000;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"Start fill\n");
+        $la->fill(1.0,$x);
+        fwrite(STDERR,"End fill\n");
+        fwrite(STDERR,"Start prepare\n");
+        $sum = $la->reduceSum($x,$axis=1);
+        fwrite(STDERR,"End prepare\n");
+        $start = hrtime(true);
+        $sum = $la->reduceSum($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $colsize = 4096;
+        $rowsize = 12500;#0;
+        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"Start fill\n");
+        $la->fill(1.0,$x);
+        fwrite(STDERR,"End fill\n");
+        fwrite(STDERR,"Start prepare\n");
+        $sum = $la->reduceSum($x,$axis=1);
+        fwrite(STDERR,"End prepare\n");
+        $start = hrtime(true);
+        $sum = $la->reduceSum($x,$axis=1);
+        $end = hrtime(true);
+        $this->assertEquals($x->size(),$la->asum($sum));
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+    }
+*/
     public function testReduceSumSpeed()
     {
         if(!self::$speedtest) {
@@ -2691,124 +2934,49 @@ class Test extends TestCase
             return;
         }
 
+        echo "\n";
+
         $colsize = 1000000;
         $rowsize = 64;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"Start fill1\n");
         $la->fill(1.0,$x);
+        fwrite(STDERR,"End fill1\n");
+        fwrite(STDERR,"Start prepare1\n");
         $sum = $la->reduceSum($x,$axis=1);
+        fwrite(STDERR,"End prepare1\n");
         $start = hrtime(true);
         $sum = $la->reduceSum($x,$axis=1);
         $end = hrtime(true);
         $this->assertEquals($x->size(),$la->asum($sum));
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
         $colsize = 64;
         $rowsize = 1000000;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"Start fill2\n");
         $la->fill(1.0,$x);
+        fwrite(STDERR,"End fill2\n");
+        fwrite(STDERR,"Start prepare2\n");
         $sum = $la->reduceSum($x,$axis=1);
+        fwrite(STDERR,"End prepare2\n");
         $start = hrtime(true);
         $sum = $la->reduceSum($x,$axis=1);
         $end = hrtime(true);
         $this->assertEquals($x->size(),$la->asum($sum));
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
         $colsize = 4096;
-        $rowsize = 12500;#0;
+        $rowsize = 8000;#0;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"Start fill3\n");
         $la->fill(1.0,$x);
+        fwrite(STDERR,"End fill3\n");
+        fwrite(STDERR,"Start prepare3\n");
         $sum = $la->reduceSum($x,$axis=1);
+        fwrite(STDERR,"End prepare3\n");
         $start = hrtime(true);
         $sum = $la->reduceSum($x,$axis=1);
-        $end = hrtime(true);
-        $this->assertEquals($x->size(),$la->asum($sum));
-        echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-    }
-
-    public function testReduceSumCompareSpeed()
-    {
-        // Comment out when compare speed
-        if(!self::$speedtest) {
-            $this->markTestSkipped('Speed measurement');
-            return;
-        }
-        $mo = $this->newMatrixOperator();
-        $la = $this->newLA($mo);
-        if($la->getConfig()=='PhpBlas') {
-            $this->assertTrue(true);
-            return;
-        }
-        echo "==large cols==\n";
-        echo "mode=2\n";
-        $colsize = 131072;#0;
-        $rowsize = 64;
-        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
-        $start = hrtime(true);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
-        $end = hrtime(true);
-        $this->assertEquals($x->size(),$la->asum($sum));
-        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-
-        echo "mode=3\n";
-        $colsize = 131072;#0;
-        $rowsize = 64;
-        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
-        $start = hrtime(true);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
-        $end = hrtime(true);
-        $this->assertEquals($x->size(),$la->asum($sum));
-        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-
-        echo "==large rows==\n";
-        echo "mode=1\n";
-        $colsize = 64;
-        $rowsize = 1000000;
-        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,1);
-        $start = hrtime(true);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,1);
-        $end = hrtime(true);
-        $this->assertEquals($x->size(),$la->asum($sum));
-        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-
-        echo "mode=2\n";
-        $colsize = 64;
-        $rowsize = 1000000;
-        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
-        $start = hrtime(true);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
-        $end = hrtime(true);
-        $this->assertEquals($x->size(),$la->asum($sum));
-        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-
-        echo "==midle rows,cols==\n";
-        echo "mode=2\n";
-        $colsize = 4096;
-        $rowsize = 12500;#0;
-        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
-        $start = hrtime(true);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,2);
-        $end = hrtime(true);
-        $this->assertEquals($x->size(),$la->asum($sum));
-        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
-
-        echo "mode=2\n";
-        $colsize = 4096;
-        $rowsize = 12500;#0;
-        $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
-        $la->fill(1.0,$x);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
-        $start = hrtime(true);
-        $sum = $la->reduceSumTest($x,$axis=1,null,null,null,null,3);
         $end = hrtime(true);
         $this->assertEquals($x->size(),$la->asum($sum));
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
@@ -2830,13 +2998,13 @@ class Test extends TestCase
 
 
         // ***** CAUTION ******
-        // 3d array as 2d array
+        // 3d array
         $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
         $y = $la->reduceMax($x,$axis=0);
-        $this->assertEquals([5,6,7,8],$y->toArray());
+        $this->assertEquals([[5,6],[7,8]],$y->toArray());
         $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
         $y = $la->reduceMax($x,$axis=1);
-        $this->assertEquals([2,4,6,8],$y->toArray());
+        $this->assertEquals([[3,4],[7,8]],$y->toArray());
 
         // with offset
         $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
@@ -2922,13 +3090,13 @@ class Test extends TestCase
         $this->assertEquals([2,2],$la->reduceArgMax($x,$axis=1)->toArray());
 
         // ***** CAUTION ******
-        // 3d array as 2d array
+        // 3d array
         $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
         $y = $la->reduceArgMax($x,$axis=0);
-        $this->assertEquals([1,1,1,1],$y->toArray());
+        $this->assertEquals([[1,1],[1,1]],$y->toArray());
         $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
         $y = $la->reduceArgMax($x,$axis=1);
-        $this->assertEquals([1,1,1,1],$y->toArray());
+        $this->assertEquals([[1,1],[1,1]],$y->toArray());
 
         // with offset
         $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
@@ -3104,8 +3272,12 @@ class Test extends TestCase
         $colsize = 600000;
         $rowsize = 64;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"fill-start\n");
         $la->fill(1.0,$x);
+        fwrite(STDERR,"fill-end\n");
+        fwrite(STDERR,"pre-start\n");
         $r = $la->softmax($x);
+        fwrite(STDERR,"pre-end\n");
         $start = hrtime(true);
         $r = $la->softmax($x);
         $end = hrtime(true);
@@ -3115,8 +3287,12 @@ class Test extends TestCase
         $colsize = 64;
         $rowsize = 1000000;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
+        fwrite(STDERR,"fill-start\n");
         $la->fill(1.0,$x);
+        fwrite(STDERR,"fill-end\n");
+        fwrite(STDERR,"pre-start\n");
         $r = $la->softmax($x);
+        fwrite(STDERR,"pre-end\n");
         $start = hrtime(true);
         $r = $la->softmax($x);
         $end = hrtime(true);
@@ -5742,6 +5918,177 @@ class Test extends TestCase
         //);
     }
 
+    public function testIm2col2dSpeed()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if($la->getConfig()=='PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+        echo "\n";
+        $batches = 8;
+        $im_h = 512;
+        $im_w = 512;
+        $channels = 3;
+        $images = $la->alloc([$batches,$im_h,$im_w,$channels]);
+        $la->ones($images);
+        $kernel_h = 3;
+        $kernel_w = 3;
+        $stride_h = 1;
+        $stride_w = 1;
+        $padding = null;
+        $channels_first = null;
+        $dilation_h = 1;
+        $dilation_w = 1;
+        $cols_channels_first=null;
+        $cols = null;
+        echo "im=($im_h,$im_w),knl=($kernel_h,$kernel_w),batches=$batches\n";
+
+        $cols = $la->im2col(
+            $images,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $start = hrtime(true);
+        $cols = $la->im2col(
+            $images,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $newImages = $la->alloc([$batches,$im_h,$im_w,$channels]);
+        $la->col2im(
+            $cols,
+            $newImages,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $start = hrtime(true);
+        $la->col2im(
+            $cols,
+            $newImages,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $batches = 256;
+        $im_h = 28;
+        $im_w = 28;
+        $channels = 1;
+        $images = $la->alloc([$batches,$im_h,$im_w,$channels]);
+        $la->ones($images);
+        $kernel_h = 3;
+        $kernel_w = 3;
+        $stride_h = 1;
+        $stride_w = 1;
+        $padding = null;
+        $channels_first = null;
+        $dilation_h = 1;
+        $dilation_w = 1;
+        $cols_channels_first=null;
+        $cols = null;
+        echo "im=($im_h,$im_w),knl=($kernel_h,$kernel_w),batches=$batches\n";
+
+        $cols = $la->im2col(
+            $images,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $start = hrtime(true);
+        $cols = $la->im2col(
+            $images,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+
+        $newImages = $la->alloc([$batches,$im_h,$im_w,$channels]);
+        $la->col2im(
+            $cols,
+            $newImages,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $start = hrtime(true);
+        $la->col2im(
+            $cols,
+            $newImages,
+            $filterSize=[
+                $kernel_h,$kernel_w],
+            $strides=[
+                $stride_h,$stride_w],
+            $padding,
+            $channels_first,
+            $dilation_rate=[
+                $dilation_h,$dilation_w],
+            $cols_channels_first
+        );
+        $end = hrtime(true);
+        echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
+        $this->assertTrue(true);
+    }
+
     public function testRandomUniform()
     {
         $mo = $this->newMatrixOperator();
@@ -6103,21 +6450,21 @@ class Test extends TestCase
             ],$y->toArray());
 
             // reverse and add
-            $Y = $la->array([
-                [[1,2,3],[1,2,3]],
-                [[4,5,6],[4,5,6]],
-            ],$dtype);
-            $X = $la->reduceSumRepeated($Y);
-            $this->assertEquals([2,2,3],$Y->shape());
-            $this->assertEquals([2,3],$X->shape());
-            $this->assertEquals([
-                [[1,2,3],[1,2,3]],
-                [[4,5,6],[4,5,6]],
-            ],$Y->toArray());
-            $this->assertEquals([
-                [2,4,6],
-                [8,10,12]
-            ],$X->toArray());
+            // $Y = $la->array([
+            //     [[1,2,3],[1,2,3]],
+            //     [[4,5,6],[4,5,6]],
+            // ],$dtype);
+            // $X = $la->reduceSumRepeated($Y);
+            // $this->assertEquals([2,2,3],$Y->shape());
+            // $this->assertEquals([2,3],$X->shape());
+            // $this->assertEquals([
+            //     [[1,2,3],[1,2,3]],
+            //     [[4,5,6],[4,5,6]],
+            // ],$Y->toArray());
+            // $this->assertEquals([
+            //     [2,4,6],
+            //     [8,10,12]
+            // ],$X->toArray());
 
         }
     }
@@ -6180,7 +6527,7 @@ class Test extends TestCase
         ],$Y->toArray());
     }
 
-    public function testReduceSumRepeated()
+    public function testReduceSum3d()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -6190,7 +6537,7 @@ class Test extends TestCase
             [[1,2,3],[1,2,3]],
             [[4,5,6],[4,5,6]],
         ]);
-        $X = $la->reduceSumRepeated($Y);
+        $X = $la->reduceSum($Y,$axis=1);
         $this->assertEquals([2,2,3],$Y->shape());
         $this->assertEquals([2,3],$X->shape());
         $this->assertEquals([
@@ -6207,7 +6554,7 @@ class Test extends TestCase
             [[1,2,3]],
             [[4,5,6]]
         ]);
-        $X = $la->reduceSumRepeated($Y);
+        $X = $la->reduceSum($Y,$axis=1);
         $this->assertEquals([2,1,3],$Y->shape());
         $this->assertEquals([2,3],$X->shape());
         $this->assertEquals([
@@ -6229,7 +6576,7 @@ class Test extends TestCase
              [[7,8,9],[10,11,12]],
              [[7,8,9],[10,11,12]]],
         ]);
-        $X = $la->reduceSumRepeated($Y);
+        $X = $la->reduceSum($Y,$axis=1);
         $this->assertEquals([2,4,2,3],$Y->shape());
         $this->assertEquals([2,2,3],$X->shape());
         $this->assertEquals([
