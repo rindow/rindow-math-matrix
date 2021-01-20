@@ -279,8 +279,8 @@ class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
             if(!($buffer instanceof OpenCLBuffer))
                 throw new LogicException("Must be NDArray on OpenCL.");
             $valueSize = self::$valueSizeTable[$value->dtype()];
-            $this->buffer->copy($this->queue, $buffer, $valueSize,
-                ($this->offset+$offset)*$valueSize ,$value->offset()*$valueSize);
+            $buffer->copy($this->queue, $this->buffer, $valueSize,
+                $value->offset()*$valueSize, ($this->offset+$offset)*$valueSize);
             return;
         }
 
@@ -293,8 +293,8 @@ class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
         $idx=$this->offset+$offset*$size;
 
         $valueSize = self::$valueSizeTable[$value->dtype()];
-        $this->buffer->copy($this->queue, $src, $size*$valueSize,
-            $idx*$valueSize ,$src_idx*$valueSize);
+        $src->copy($this->queue, $this->buffer, $size*$valueSize,
+            $src_idx*$valueSize ,$idx*$valueSize);
     }
 
     public function offsetUnset( $offset )
