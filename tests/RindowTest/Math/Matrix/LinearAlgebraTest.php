@@ -307,8 +307,8 @@ class Test extends TestCase
         $la = $this->newLA($mo);
         $x = $la->array([1,2,3,4,5],NDArray::float32);
         $y = $la->array([1,2,3,4,5],NDArray::float32);
-        $c = $la->array([cos(pi()/4),NDArray::float32]);
-        $s = $la->array([sin(pi()/4),NDArray::float32]);
+        $c = $la->array([cos(pi()/4)],NDArray::float32);
+        $s = $la->array([sin(pi()/4)],NDArray::float32);
         $la->rot($x,$y,$c,$s);
         for($i=0;$i<5;$i++) {
             $this->assertLessThan(1e-6,abs(sqrt(2)*($i+1)-$x[$i]));

@@ -350,10 +350,10 @@ class LinearAlgebra
         $R = $this->copy($X,$R);
         $Z = $this->copy($Y,$Z);
         if($C==null) {
-            $C = $this->alloc([1],$X->dtype());
+            $C = $this->alloc($X->shape(),$X->dtype());
         }
         if($S==null) {
-            $S = $this->alloc([1],$X->dtype());
+            $S = $this->alloc($Y->shape(),$X->dtype());
         }
         $AA = $R->buffer();
         $offA = $R->offset();
@@ -373,8 +373,7 @@ class LinearAlgebra
     }
 
     /**
-    *    Y := rot(X,
-    *    X := Y
+    *    x,y := rot(x,y,c,s)
     */
     public function rot(
         NDArray $X,
@@ -790,8 +789,8 @@ class LinearAlgebra
     }
 
     /**
-    *    C := alpha * A B^T + B A^T + beta * C  (trans=false)
-    *    C := alpha * B^T A + A B^T + beta * C  (trans=true)
+    *    C := alpha * A B^T + alpha * B A^T + beta * C  (trans=false)
+    *    C := alpha * B A^T + alpha * A B^T + beta * C  (trans=true)
     */
     public function syr2k(
         NDArray $A,

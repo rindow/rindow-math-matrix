@@ -1099,6 +1099,14 @@ class MatrixOperator
         $indent=null) : string
     {
         $shape = $array->shape();
+        if(count($shape)==0) {
+            $value = $array->toArray();
+            if($format) {
+                return sprintf($format,$value);
+            } else {
+                return strval($value);
+            }
+        }
         $n = array_shift($shape);
         if(!is_numeric($indent) && $indent===true) {
             $indent=1;
