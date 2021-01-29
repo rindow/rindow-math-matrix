@@ -2594,6 +2594,35 @@ class LinearAlgebra
                 );
                 $i++;
             }
+        } elseif($axis==2){
+            $k = count($values);
+            $shape = $values[0]->shape();
+            $m = array_shift($shape);
+            $n = array_shift($shape);
+            array_unshift($shape,$k);
+            array_unshift($shape,$n);
+            array_unshift($shape,$m);
+            $output = $this->alloc($shape,$values[0]->dtype());
+            $i = 0;
+            foreach($values as $value){
+                if(!($value instanceof NDArray)) {
+                    throw new InvalidArgumentException('values must be array of NDArray');
+                }
+                $shape = $value->shape();
+                $m = array_shift($shape);
+                $n = array_shift($shape);
+                array_unshift($shape,1);
+                array_unshift($shape,$n);
+                array_unshift($shape,$m);
+                $value = $value->reshape(
+                    $shape);
+                $this->doSlice(true,
+                    $output,
+                    [0,0,$i],[-1,-1,1],
+                    $value
+                );
+                $i++;
+            }
         } else {
             throw new InvalidArgumentException('unsuppoted axis');
         }
@@ -2618,12 +2647,10 @@ class LinearAlgebra
         foreach ($values as $value) {
             $shapePrefix = [];
             $shape = $value->shape();
-            $mm = 1;
             for($j=0;$j<$axis;$j++) {
-                $mmm = array_shift($shape);
-                $shapePrefix[] = $mmm;
-                $mm *= $mmm;
+                $shapePrefix[] = array_shift($shape);
             }
+            $mm = (int)array_product($shapePrefix);
             $nn = array_shift($shape);
             if($base===null) {
                 $m = $mm;
@@ -2666,12 +2693,10 @@ class LinearAlgebra
         }
         $shapePrefix = [];
         $shape = $input->shape();
-        $m = 1;
         for($j=0;$j<$axis;$j++) {
-            $mmm = array_shift($shape);
-            $shapePrefix[] = $mmm;
-            $m *= $mmm;
+            $shapePrefix[] = array_shift($shape);
         }
+        $m = (int)array_product($shapePrefix);
         $n = array_shift($shape);
         $input = $input->reshape(array_merge([$m,$n],$shape));
         $i = 0;
@@ -2701,12 +2726,12 @@ class LinearAlgebra
         $orgBegin = $begin;
         $orgSize = $size;
         $ndimBegin = count($begin);
-        if($ndimBegin<1||$ndimBegin>2) {
-            throw new InvalidArgumentException('begin must has 1 or 2 integer.');
+        if($ndimBegin<1||$ndimBegin>3) {
+            throw new InvalidArgumentException('begin must has 1 or 2 or 3 integer.');
         }
         $ndimSize = count($size);
-        if($ndimSize<1||$ndimSize>2) {
-            throw new InvalidArgumentException('Size must has 1 or 2 integer.');
+        if($ndimSize<1||$ndimSize>3) {
+            throw new InvalidArgumentException('Size must has 1 or 2 or 3 integer.');
         }
         if($ndimBegin!=$ndimSize){
             throw new InvalidArgumentException('Unmatch shape of begin and size');
@@ -2716,6 +2741,8 @@ class LinearAlgebra
             throw new InvalidArgumentException($messageInput.' shape rank is low to slice');
         }
         $shape = $input->shape();
+
+        // ndim = 0
         $m = array_shift($shape);
         $startAxis0 = array_shift($begin);
         if($startAxis0<0){
@@ -2731,7 +2758,9 @@ class LinearAlgebra
         if($sizeAxis0<1||$startAxis0+$sizeAxis0>$m){
             throw new InvalidArgumentException('size of axis 0 is invalid value.');
         }
-        if($ndimBegin==1){
+
+        // ndim = 1
+        if($ndimBegin<=1){
             $n = 1;
             $startAxis1 = 0;
             $sizeAxis1 = 1;
@@ -2752,11 +2781,38 @@ class LinearAlgebra
                 throw new InvalidArgumentException('size of axis 1 is invalid value.');
             }
         }
-        $k = array_product($shape);
+
+        // ndim = 2
+        if($ndimBegin<=2){
+            $k = 1;
+            $startAxis2 = 0;
+            $sizeAxis2 = 1;
+        } else {
+            $k = array_shift($shape);
+            $startAxis2 = array_shift($begin);
+            if($startAxis2<0){
+                $startAxis2 = $k+$startAxis2;
+            }
+            if($startAxis2<0||$startAxis2>=$k){
+                throw new InvalidArgumentException('start of axis 2 is invalid value.:begin=['.implode(',',$orgBegin).']');
+            }
+            $sizeAxis2 = array_shift($size);
+            if($sizeAxis2<0){
+                $sizeAxis2 = $k-$startAxis2+$sizeAxis2+1;
+            }
+            if($sizeAxis2<1||$startAxis2+$sizeAxis2>$k){
+                throw new InvalidArgumentException('size of axis 2 is invalid value.');
+            }
+        }
+        $itemSize = array_product($shape);
         $outputShape = [$sizeAxis0];
-        if($ndimBegin==2){
+        if($ndimBegin>=2){
             array_push($outputShape,
                 $sizeAxis1);
+        }
+        if($ndimBegin>=3){
+            array_push($outputShape,
+                $sizeAxis2);
         }
         $outputShape = array_merge(
             $outputShape,$shape);
@@ -2764,7 +2820,9 @@ class LinearAlgebra
             $output = $this->alloc($outputShape,$input->dtype());
         }else{
             if($outputShape!=$output->shape()){
-                throw new InvalidArgumentException('Unmatch output shape');
+                throw new InvalidArgumentException('Unmatch output shape: '.
+                    $this->printableShapes($outputShape).'<=>'.
+                    $this->printableShapes($output->shape()));
             }
         }
 
@@ -2780,10 +2838,12 @@ class LinearAlgebra
             $m,
             $n,
             $k,
+            $itemSize,
             $A,$offsetA,$incA,
             $Y,$offsetY,$incY,
             $startAxis0,$sizeAxis0,
-            $startAxis1,$sizeAxis1
+            $startAxis1,$sizeAxis1,
+            $startAxis2,$sizeAxis2
         );
         return $output;
     }
@@ -2805,13 +2865,16 @@ class LinearAlgebra
         $B = $this->alloc($shape,$A->dtype());
         $m = $s1;
         $n = $repeats;
-        $k = (int)array_product($shapeCell);
+        $k = 1;
+        $size = (int)array_product($shapeCell);
         $AA = $A->buffer();
         $offA = $A->offset();
         $BB = $B->buffer();
         $offB = $B->offset();
         $startAxis0 = 0;
         $sizeAxis0 = $m;
+        $startAxis2 = 0;
+        $sizeAxis2 = 1;
         for($i=0;$i<$repeats;$i++) {
             $startAxis1 = $i;
             $sizeAxis1 = 1;
@@ -2821,10 +2884,12 @@ class LinearAlgebra
                 $m,
                 $n,
                 $k,
+                $size,
                 $BB,$offB,1,
                 $AA,$offA,1,
                 $startAxis0,$sizeAxis0,
-                $startAxis1,$sizeAxis1
+                $startAxis1,$sizeAxis1,
+                $startAxis2,$sizeAxis2
             );
         }
         return $B;
@@ -2985,20 +3050,29 @@ class LinearAlgebra
             $this->zeros($grad);
             $grads[] = $grad;
             $size = $x->size();
-            $xx = $x->buffer();
-            $idx = $x->offset();
-            $gg = $grad->buffer();
-            $gidx = $grad->offset();
+            $xx = $x->reshape([$x->size()]);
+            //$idx = $x->offset();
+            $gg = $grad->reshape([$grad->size()]);
+            //$gidx = $grad->offset();
             $h2 = $h*2 ;
-            for($i=0;$i<$size;$i++,$idx++,$gidx++) {
-                $value = $xx[$idx];
-                $xx[$idx] = $value + $h;
+            for($i=0;$i<$size;$i++) {
+                //    $value = $xx[$idx];
+                $value = $this->copy($xx[[$i,$i]]);
+                //    $xx[$idx] = $value + $h;
+                $this->copy($this->increment($this->copy($value),$h),$xx[[$i,$i]]);
+                //echo $value[0]."-h =>".$xx[$i]."\n";
                 $y1 = $f(...$variables);
-                $xx[$idx] = $value - $h;
+                //    $xx[$idx] = $value - $h;
+                $this->copy($this->increment($this->copy($value),-$h),$xx[[$i,$i]]);
+                //echo $value[0]."-h =>".$xx[$i]."\n";
                 $y2 = $f(...$variables);
                 $d = $this->axpy($y2,$this->copy($y1),-1);
-                $gg[$gidx] = $this->sum($d)/$h2;
-                $xx[$idx] = $value;
+                //    $gg[$gidx] = $this->sum($d)/$h2;
+                $sum = $this->reduceSum($d->reshape([$d->size(),1]));
+                //echo "d=".$sum[0]."\n";
+                $this->copy($this->scal(1/$h2,$sum),$gg[[$i,$i]]);
+                //    $xx[$idx] = $value;
+                $this->copy($value,$xx[[$i,$i]]);
             }
         }
         return $grads;

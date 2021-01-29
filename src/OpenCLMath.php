@@ -43,6 +43,11 @@ class OpenCLMath
         NDArray::float32 => -1.0e+37, NDArray::float64 => -1.0e+37,
     ];
 
+    protected $intTypes= [
+        NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
+        NDArray::uint8,NDArray::uint16,NDArray::uint32,NDArray::uint64,
+    ];
+
     protected $kernelCoreOperation = [
         'qsum' =>
             "i >>= 1;\n".
@@ -4198,37 +4203,43 @@ class OpenCLMath
         if($A->dtype()==NDArray::float64) {
             $this->assertFP64();
         }
-
-        $y_variable = 'y[i0*i1size*i2size*size+'.
-                        'i1*i2size*size+'.
-                        'i2*size+lid*incy+offset_y]';
-        $a_variable = 'a[(startAxis0+i0)*n*k*size+'.
-                        '(startAxis1+i1)*k*size+'.
-                        '(startAxis2+i2)*size+lid*inca+offset_a]';
-        if($reverse) {
-            $from = $y_variable;
-            $to = $a_variable;
-            $y_arg_type = 'const global';
-            $a_arg_type = '__global';
-            $direction = 'r';
-        } else {
-            $from = $a_variable;
-            $to = $y_variable;
-            $a_arg_type = 'const global';
-            $y_arg_type = '__global';
-            $direction = 'f';
-        }
         if($addMode) {
             $op = 'add';
-            $operator = '+=';
         } else {
             $op = 'set';
-            $operator = '=';
+        }
+        if($reverse) {
+            $direction = 'r';
+        } else {
+            $direction = 'f';
         }
         $type = $this->dtypeToOpenCLType[$A->dtype()];
-        if(!isset($this->sources["slice_${type}_${direction}_${op}"])) {
-            $this->sources["slice_${type}_${direction}_${op}"] =
-                "__kernel void slice_${type}_${direction}_${op}(\n".
+        $kernel_name = "slice_${type}_${direction}_${op}";
+        if(!isset($this->sources[$kernel_name])) {
+            $y_variable = 'y[i0*i1size*i2size*size+'.
+                            'i1*i2size*size+'.
+                            'i2*size+lid*incy+offset_y]';
+            $a_variable = 'a[(startAxis0+i0)*n*k*size+'.
+                            '(startAxis1+i1)*k*size+'.
+                            '(startAxis2+i2)*size+lid*inca+offset_a]';
+            if($reverse) {
+                $from = $y_variable;
+                $to = $a_variable;
+                $y_arg_type = 'const global';
+                $a_arg_type = '__global';
+            } else {
+                $from = $a_variable;
+                $to = $y_variable;
+                $a_arg_type = 'const global';
+                $y_arg_type = '__global';
+            }
+            if($addMode) {
+                $operator = '+=';
+            } else {
+                $operator = '=';
+            }
+            $this->sources[$kernel_name] =
+                "__kernel void ${kernel_name}(\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
                 "    $a_arg_type ${type} * a,\n".
@@ -4239,24 +4250,23 @@ class OpenCLMath
                 "    const        uint incy,\n".
                 "    const        uint startAxis0,\n".
                 "    const        uint startAxis1,\n".
-                "    const        uint startAxis2)\n".
+                "    const        uint startAxis2,\n".
+                "    const        uint i0size,\n".
+                "    const        uint i1size,\n".
+                "    const        uint i2size,\n".
+                "    const        uint size)\n".
                 "{\n".
-                "    uint i0 = get_global_id(0);\n".
-                "    uint i1 = get_global_id(1);\n".
-                "    uint i2 = get_group_id(2);\n".
-                "    uint lid = get_local_id(2);\n".
-                "    uint i1size = get_local_size(1);\n".
-                "    uint i2size = get_num_groups(2);\n".
-                "    uint size = get_local_size(2);\n".
+                "    uint gid0 = get_global_id(0);\n".
+                "    uint gid1 = get_global_id(1);\n".
+                "    uint lid  = gid0 % size;\n".
+                "    uint i2   = gid0 / size;\n".
+                "    uint i1   = gid1 % i1size;\n".
+                "    uint i0   = gid1 / i1size;\n".
                 "    ${to} ${operator} ${from};\n".
                 "}\n";
         }
-//echo "dtype=".$this->dtypeToString($A->dtype())."\n";
-//echo "m,n,k,size=$m,$n,$k,$size\n";
-//echo "startAxis0,startAxis1,startAxis2=$startAxis0,$startAxis1,$startAxis2\n";
-//echo "sizeAxis0,sizeAxis1,sizeAxis2=$sizeAxis0,$sizeAxis1,$sizeAxis2\n";
 
-        $kernel = $this->createKernel("slice_${type}_${direction}_${op}");
+        $kernel = $this->createKernel($kernel_name);
         $kernel->setArg(0,$n,NDArray::uint32);
         $kernel->setArg(1,$k,NDArray::uint32);
         $kernel->setArg(2,$A);
@@ -4268,9 +4278,12 @@ class OpenCLMath
         $kernel->setArg(8,$startAxis0,NDArray::uint32);
         $kernel->setArg(9,$startAxis1,NDArray::uint32);
         $kernel->setArg(10,$startAxis2,NDArray::uint32);
-        $global_work_size = [$sizeAxis0,$sizeAxis1,$sizeAxis2*$size];
+        $kernel->setArg(11,$sizeAxis0,NDArray::uint32);
+        $kernel->setArg(12,$sizeAxis1,NDArray::uint32);
+        $kernel->setArg(13,$sizeAxis2,NDArray::uint32);
+        $kernel->setArg(14,$size,NDArray::uint32);
+        $global_work_size = [$size*$sizeAxis2,$sizeAxis1*$sizeAxis0];
         $local_work_size=null;
-        #$local_work_size = [1,1,$size];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
     }
@@ -4925,6 +4938,163 @@ class OpenCLMath
             $global_work_size = [$this->ceil($output_w*$channels,2),$this->ceil($output_h*$output_d,2),$this->ceil($batches,8)];
             $local_work_size=[2,2,8];
         }
+        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
+            $events,$waitEvents);
+    }
+
+    /**
+    * randomUniform
+    */
+    public function randomUniform(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        $low,
+        $high,
+        int $seed,
+        EventList $events=null, EventList $waitEvents=null
+        )
+    {
+        $dtype = $X->dtype();
+        if($dtype==NDArray::float64) {
+            $this->assertFP64();
+        }
+        $isInt = array_key_exists($dtype,$this->intTypes);
+        $itype = ($isInt) ? 'i' : 'f';
+        $type = $this->dtypeToOpenCLType[$dtype];
+        $kernel_name = "randomUniform_${type}_${itype}";
+        if(!isset($this->sources[$kernel_name])) {
+            if($isInt) {
+                $this->sources[$kernel_name] =
+                "uint wang_hash(uint seed)\n".
+                "{\n".
+                "    seed = (seed ^ 61) ^ (seed >> 16);\n".
+                "    seed *= 9;\n".
+                "    seed = seed ^ (seed >> 4);\n".
+                "    seed *= 0x27d4eb2d;\n".
+                "    seed = seed ^ (seed >> 15);\n".
+                "    return seed;\n".
+                "}\n".
+                "__kernel void ${kernel_name}(const uint seed,\n".
+                "                      const ${type} low,\n".
+                "                      const ${type} high,\n".
+                "                    __global ${type} * x,\n".
+                "                      const uint offsetX,\n".
+                "                      const uint incX)\n".
+                "{\n".
+                "   uint gid = get_global_id(0);\n".
+                "   uint randmax = 0;\n".
+                "   randmax--;\n".
+                "   ${type} randx = (${type})floor((float)wang_hash(gid+seed)*\n".
+                "                         ((float)(high+1-low)/(float)randmax)+(float)low);\n".
+                "   if(randx>=high) {\n".
+                "       randx = high;\n".
+                "   }\n".
+                "   x[offsetX+gid*incX] = randx;\n".
+                "}\n";
+            } else {
+                $this->sources[$kernel_name] =
+                "uint wang_hash(uint seed)\n".
+                "{\n".
+                "    seed = (seed ^ 61) ^ (seed >> 16);\n".
+                "    seed *= 9;\n".
+                "    seed = seed ^ (seed >> 4);\n".
+                "    seed *= 0x27d4eb2d;\n".
+                "    seed = seed ^ (seed >> 15);\n".
+                "    return seed;\n".
+                "}\n".
+                "__kernel void ${kernel_name}(const uint seed,\n".
+                "                      const ${type} low,\n".
+                "                      const ${type} high,\n".
+                "                    __global ${type} * x,\n".
+                "                      const uint offsetX,\n".
+                "                      const uint incX)\n".
+                "{\n".
+                "   uint gid = get_global_id(0);\n".
+                "   uint randmax = 0;\n".
+                "   randmax--;\n".
+                "   ${type} randx = (${type})((${type})wang_hash(gid+seed)*\n".
+                "                         ((high-low)/(${type})randmax)+low);\n".
+                "   x[offsetX+gid*incX] = randx;\n".
+                "}\n";
+            }
+        }
+
+        $kernel = $this->createKernel($kernel_name);
+        $kernel->setArg(0,$seed,NDArray::uint32);
+        $kernel->setArg(1,$low,$dtype);
+        $kernel->setArg(2,$high,$dtype);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$incX,NDArray::uint32);
+        $global_work_size = [$n];
+        $local_work_size=null;
+        #$local_work_size = [1,1,$size];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
+            $events,$waitEvents);
+    }
+
+    /**
+    * randomNormal
+    */
+    public function randomNormal(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        float $mean,
+        float $scale,
+        int $seed,
+        EventList $events=null, EventList $waitEvents=null
+        )
+    {
+        $dtype = $X->dtype();
+        if($dtype!=NDArray::float32 && $dtype!=NDArray::float64) {
+            throw new InvalidArgumentException('Data type of X must be float32 or float64');
+        }
+        if($dtype==NDArray::float64) {
+            $this->assertFP64();
+        }
+        $isInt = array_key_exists($dtype,$this->intTypes);
+        $type = $this->dtypeToOpenCLType[$dtype];
+        $kernel_name = "randomNormal_${type}";
+        if(!isset($this->sources[$kernel_name])) {
+            $PI = ($dtype==NDArray::float32) ? 'M_PI_F' : 'M_PI';
+            $this->sources[$kernel_name] =
+            "uint wang_hash(uint seed)\n".
+            "{\n".
+            "    seed = (seed ^ 61) ^ (seed >> 16);\n".
+            "    seed *= 9;\n".
+            "    seed = seed ^ (seed >> 4);\n".
+            "    seed *= 0x27d4eb2d;\n".
+            "    seed = seed ^ (seed >> 15);\n".
+            "    return seed;\n".
+            "}\n".
+            "__kernel void ${kernel_name}(const uint seed,\n".
+            "                      const ${type} mean,\n".
+            "                      const ${type} scale,\n".
+            "                    __global ${type} * x,\n".
+            "                      const uint offsetX,\n".
+            "                      const uint incX)\n".
+            "{\n".
+            "   uint gid = get_global_id(0);\n".
+            "   uint randmax = 0;\n".
+            "   randmax--;\n".
+            "   uint seed1 = wang_hash(gid+seed);\n".
+            "   uint seed2 = wang_hash(gid+seed1);\n".
+            "   ${type} randx = (${type})seed1/(${type})randmax;\n".
+            "   ${type} randy = (${type})seed2/(${type})randmax;\n".
+            "   x[offsetX+gid*incX] = sqrt(-2*log(randx))*cos(2*${PI}*randy)*scale+mean;\n".
+            "}\n";
+        }
+
+        $kernel = $this->createKernel($kernel_name);
+        $kernel->setArg(0,$seed,NDArray::uint32);
+        $kernel->setArg(1,$mean,$dtype);
+        $kernel->setArg(2,$scale,$dtype);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$incX,NDArray::uint32);
+        $global_work_size = [$n];
+        $local_work_size=null;
+        #$local_work_size = [1,1,$size];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
     }

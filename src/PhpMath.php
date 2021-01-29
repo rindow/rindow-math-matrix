@@ -1894,12 +1894,15 @@ class PhpMath
         int $m,
         int $n,
         int $k,
+        int $size,
         Buffer $A, int $offsetA, int $incA,
         Buffer $Y, int $offsetY, int $incY,
         int $startAxis0,
         int $sizeAxis0,
         int $startAxis1,
-        int $sizeAxis1
+        int $sizeAxis1,
+        int $startAxis2,
+        int $sizeAxis2
         )
     {
         if($this->math) {
@@ -1909,6 +1912,7 @@ class PhpMath
                 $m,
                 $n,
                 $k,
+                $size,
                 $A,
                 $offsetA,
                 $incA,
@@ -1918,14 +1922,14 @@ class PhpMath
                 $startAxis0,
                 $sizeAxis0,
                 $startAxis1,
-                $sizeAxis1
+                $sizeAxis1,
+                $startAxis2,
+                $sizeAxis2
             );
             return;
         }
-        if($m*$n*$k*$incA+$offsetA>count ($A)) {
+        if($m*$n*$k*$size*$incA+$offsetA>count ($A)) {
             throw new InvalidArgumentException('unmatch BufferA size and m,n,k');
-        }
-        if($m*$n*$k*$incY+$offsetY>count ($Y)) {
         }
         if($startAxis0<0||$startAxis0>=$m||
             $sizeAxis0<0||$sizeAxis0+$startAxis0>$m){
@@ -1935,24 +1939,36 @@ class PhpMath
             $sizeAxis1<0||$sizeAxis1+$startAxis1>$n){
             throw new InvalidArgumentException('Axis1 range is too large for source array.');
         }
-        if($sizeAxis0*$sizeAxis1*$k*$incY>count($Y)-$offsetY){
+        if($startAxis2<0||$startAxis2>=$k||
+            $sizeAxis2<0||$sizeAxis2+$startAxis2>$k){
+            throw new InvalidArgumentException('Axis2 range is too large for source array.');
+        }
+        if($sizeAxis0*$sizeAxis1*$sizeAxis2*$size*$incY>count($Y)-$offsetY){
             throw new InvalidArgumentException('BufferY size is too small');
         }
-        for($i=0;$i<$sizeAxis0;$i++) {
-            for($j=0;$j<$sizeAxis1;$j++){
-                $pa = ($i+$startAxis0)*$n*$k+($j+$startAxis1)*$k+$offsetA;
-                $py = $i*$sizeAxis1*$k+$j*$k+$offsetY;
-                if(!$reverse) {
-                    if($addMode){
-                        $this->rindow_openblas_math_add($k,$A,$pa,$incA,$Y,$py,$incY);
+        for($i0=0;$i0<$sizeAxis0;$i0++) {
+            for($i1=0;$i1<$sizeAxis1;$i1++){
+                for($i2=0;$i2<$sizeAxis2;$i2++){
+                    $pa = ($i0+$startAxis0)*$n*$k*$size+
+                          ($i1+$startAxis1)*$k*$size+
+                          ($i2+$startAxis2)*$size+
+                          $offsetA;
+                    $py = $i0*$sizeAxis1*$sizeAxis2*$size+
+                          $i1*$sizeAxis2*$size+
+                          $i2*$size+
+                          $offsetY;
+                    if(!$reverse) {
+                        if($addMode){
+                            $this->rindow_openblas_math_add($size,$A,$pa,$incA,$Y,$py,$incY);
+                        } else {
+                            $this->rindow_openblas_math_copy($size,$A,$pa,$incA,$Y,$py,$incY);
+                        }
                     } else {
-                        $this->rindow_openblas_math_copy($k,$A,$pa,$incA,$Y,$py,$incY);
-                    }
-                } else {
-                    if($addMode){
-                        $this->rindow_openblas_math_add($k,$Y,$py,$incY,$A,$pa,$incA);
-                    } else {
-                        $this->rindow_openblas_math_copy($k,$Y,$py,$incY,$A,$pa,$incA);
+                        if($addMode){
+                            $this->rindow_openblas_math_add($size,$Y,$py,$incY,$A,$pa,$incA);
+                        } else {
+                            $this->rindow_openblas_math_copy($size,$Y,$py,$incY,$A,$pa,$incA);
+                        }
                     }
                 }
             }

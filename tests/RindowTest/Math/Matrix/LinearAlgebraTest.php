@@ -6127,8 +6127,13 @@ class Test extends TestCase
             $x->toArray(),
             $y->toArray());
         $x = $la->astype($x,NDArray::float32);
-        $this->assertLessThanOrEqual(1,$la->max($x));
-        $this->assertGreaterThanOrEqual(-1,$la->min($x));
+        if(extension_loaded('rindow_openblas')) {
+            $this->assertEquals(1,$la->max($x));
+            $this->assertEquals(-1,$la->min($x));
+        } else {
+            $this->assertEquals(1,round($la->max($x)));
+            $this->assertEquals(-1,round($la->min($x)));
+        }
     }
 
     public function testRandomNormal()
@@ -6151,7 +6156,6 @@ class Test extends TestCase
             $y->toArray());
         $this->assertLessThanOrEqual(5,$la->max($x));
         $this->assertGreaterThanOrEqual(-5,$la->min($x));
-
     }
 
     public function testRandomSequence()
@@ -6186,7 +6190,18 @@ class Test extends TestCase
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
-        $x = $la->array($mo->arange(24,null,null,NDArray::float32)->reshape([2,4,3]));
+        // 3D
+        $x = $la->array([
+            [[0,1,2],
+             [3,4,5],
+             [6,7,8],
+             [9,10,11]],
+            [[12,13,14],
+             [15,16,17],
+             [18,19,20],
+             [21,22,23]],
+        ]);
+        $this->assertEquals(3,$x->ndim());
         $y = $la->slice(
             $x,
             $start=[0,1],
@@ -6231,7 +6246,13 @@ class Test extends TestCase
              [21,22,23],],
         ],$y->toArray());
 
+        // 2D
         $x = $la->array($mo->arange(8,null,null,NDArray::float32)->reshape([2,4]));
+        $this->assertEquals(2,$x->ndim());
+        $x = $la->array([
+            [0,1,2,3],
+            [4,5,6,7],
+        ]);
         $y = $la->slice(
             $x,
             $start=[0,1],
@@ -6240,6 +6261,56 @@ class Test extends TestCase
         $this->assertEquals([
             [1,2],
             [5,6]
+        ],$y->toArray());
+
+        $y = $la->slice(
+            $x,
+            $start=[0,0],
+            $size=[2,4]
+            );
+        $this->assertEquals([
+            [0,1,2,3],
+            [4,5,6,7],
+        ],$y->toArray());
+
+        // 4D
+        $x = $la->array([
+            [[[0,1,2],
+              [3,4,5]],
+             [[6,7,8],
+              [9,10,11]]],
+            [[[12,13,14],
+              [15,16,17]],
+             [[18,19,20],
+              [21,22,23]]],
+        ]);
+        $this->assertEquals(4,$x->ndim());
+        $y = $la->slice(
+            $x,
+            $start=[1,1,1],
+            $size=[-1,-1,-1]);
+        $this->assertEquals([
+            [[[21,22,23]]],
+        ],$y->toArray());
+
+        $y = $la->slice(
+            $x,
+            $start=[1,1],
+            $size=[-1,-1]);
+        $this->assertEquals([
+            [[[18,19,20],
+              [21,22,23]]],
+        ],$y->toArray());
+
+        $y = $la->slice(
+            $x,
+            $start=[1],
+            $size=[-1]);
+        $this->assertEquals([
+            [[[12,13,14],
+              [15,16,17]],
+             [[18,19,20],
+              [21,22,23]]],
         ],$y->toArray());
     }
 
@@ -6336,6 +6407,45 @@ class Test extends TestCase
             [0,0,1,0],
             [0,2,3,0],
         ],$y->toArray());
+
+        // 4D
+        $x = $la->array([
+            [[[0,1,2],
+              [3,4,5]],
+             [[6,7,8],
+              [9,10,11]]],
+            [[[12,13,14],
+              [15,16,17]],
+             [[18,19,20],
+              [21,22,23]]],
+        ]);
+        $this->assertEquals(4,$x->ndim());
+        $this->assertEquals([2,2,2,3],$x->shape());
+        $y = $la->array($mo->zeros([2,2,4,3]));
+        $la->stick(
+            $x,
+            $y,
+            $start=[ 0, 0, 1],
+            $size= [-1,-1, 2]
+            );
+        $this->assertEquals([
+            [[[0,0,0],
+              [0,1,2],
+              [3,4,5],
+              [0,0,0]],
+             [[0,0,0],
+              [6,7,8],
+              [9,10,11],
+              [0,0,0]]],
+            [[[0,0,0],
+              [12,13,14],
+              [15,16,17],
+              [0,0,0]],
+             [[0,0,0],
+              [18,19,20],
+              [21,22,23],
+              [0,0,0]]],
+        ],$y->toArray());
     }
 
     public function testStack()
@@ -6402,6 +6512,32 @@ class Test extends TestCase
             [[18,19,20],
              [21,22,23]]],
         ],$y->toArray());
+
+        // 4D
+        $a = $la->array($mo->arange(24, 0,null,NDArray::float32)->reshape([2,2,2,3]));
+        $b = $la->array($mo->arange(24,24,null,NDArray::float32)->reshape([2,2,2,3]));
+        $y = $la->stack(
+            [$a,$b],
+            $axis=2
+            );
+        $this->assertEquals([
+             [[[[ 0,  1,  2],
+                [ 3,  4,  5]],
+               [[24, 25, 26],
+                [27, 28, 29]]],
+              [[[ 6,  7,  8],
+                [ 9, 10, 11]],
+               [[30, 31, 32],
+                [33, 34, 35]]]],
+             [[[[12, 13, 14],
+                [15, 16, 17]],
+               [[36, 37, 38],
+                [39, 40, 41]]],
+              [[[18, 19, 20],
+                [21, 22, 23]],
+               [[42, 43, 44],
+                [45, 46, 47]]]]
+        ],$y->toArray());
     }
 
     public function testAnytypeSlice()
@@ -6467,6 +6603,93 @@ class Test extends TestCase
             // ],$X->toArray());
 
         }
+    }
+
+    public function testConcat()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]));
+        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
+        $y = $la->concat(
+            [$a,$b],
+            $axis=0
+            );
+        $this->assertEquals([
+            [0,1],
+            [2,3],
+            [4,5],
+            [6,7],
+            [8,9],
+        ],$y->toArray());
+
+        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]));
+        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
+        $y = $la->concat(
+            [$a,$b],
+            $axis=1
+            );
+        $this->assertEquals([
+            [0,1,2,6,7],
+            [3,4,5,8,9],
+        ],$y->toArray());
+
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
+        $y = $la->concat(
+            [$a,$b],
+            $axis=0
+            );
+        $this->assertEquals([
+            [[0,1],[2,3]],
+            [[4,5],[6,7]],
+            [[8,9],[10,11]],
+            [[12,13],[14,15]],
+            [[16,17],[18,19]],
+        ],$y->toArray());
+
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
+        $y = $la->concat(
+            [$a,$b],
+            $axis=1
+            );
+        $this->assertEquals([
+            [[0,1],
+             [2,3],
+             [4,5],
+             [12,13],
+             [14,15]],
+            [[6,7],
+             [8,9],
+             [10,11],
+             [16,17],[18,19]],
+        ],$y->toArray());
+
+        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]));
+        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
+        $y = $la->concat(
+            [$a,$b],
+            $axis=2
+            );
+        $this->assertEquals([
+            [[0,1,2,12,13],
+             [3,4,5,14,15]],
+            [[6,7,8,16,17],
+             [9,10,11,18,19]],
+        ],$y->toArray());
+
+        $y = $la->concat(
+            [$a,$b],
+            $axis=-1
+            );
+        $this->assertEquals([
+            [[0,1,2,12,13],
+             [3,4,5,14,15]],
+            [[6,7,8,16,17],
+             [9,10,11,18,19]],
+        ],$y->toArray());
     }
 
     public function testRepeat()
@@ -6593,93 +6816,6 @@ class Test extends TestCase
              [[7,8,9],[10,11,12]],
              [[7,8,9],[10,11,12]]],
         ],$Y->toArray());
-    }
-
-    public function testConcat()
-    {
-        $mo = $this->newMatrixOperator();
-        $la = $this->newLA($mo);
-
-        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([3,2]));
-        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
-        $y = $la->concat(
-            [$a,$b],
-            $axis=0
-            );
-        $this->assertEquals([
-            [0,1],
-            [2,3],
-            [4,5],
-            [6,7],
-            [8,9],
-        ],$y->toArray());
-
-        $a = $la->array($mo->arange(6,$start=0,null,NDArray::float32)->reshape([2,3]));
-        $b = $la->array($mo->arange(4,$start=6,null,NDArray::float32)->reshape([2,2]));
-        $y = $la->concat(
-            [$a,$b],
-            $axis=1
-            );
-        $this->assertEquals([
-            [0,1,2,6,7],
-            [3,4,5,8,9],
-        ],$y->toArray());
-
-        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([3,2,2]));
-        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
-        $y = $la->concat(
-            [$a,$b],
-            $axis=0
-            );
-        $this->assertEquals([
-            [[0,1],[2,3]],
-            [[4,5],[6,7]],
-            [[8,9],[10,11]],
-            [[12,13],[14,15]],
-            [[16,17],[18,19]],
-        ],$y->toArray());
-
-        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,3,2]));
-        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
-        $y = $la->concat(
-            [$a,$b],
-            $axis=1
-            );
-        $this->assertEquals([
-            [[0,1],
-             [2,3],
-             [4,5],
-             [12,13],
-             [14,15]],
-            [[6,7],
-             [8,9],
-             [10,11],
-             [16,17],[18,19]],
-        ],$y->toArray());
-
-        $a = $la->array($mo->arange(12,$start=0,null,NDArray::float32)->reshape([2,2,3]));
-        $b = $la->array($mo->arange(8,$start=12,null,NDArray::float32)->reshape([2,2,2]));
-        $y = $la->concat(
-            [$a,$b],
-            $axis=2
-            );
-        $this->assertEquals([
-            [[0,1,2,12,13],
-             [3,4,5,14,15]],
-            [[6,7,8,16,17],
-             [9,10,11,18,19]],
-        ],$y->toArray());
-
-        $y = $la->concat(
-            [$a,$b],
-            $axis=-1
-            );
-        $this->assertEquals([
-            [[0,1,2,12,13],
-             [3,4,5,14,15]],
-            [[6,7,8,16,17],
-             [9,10,11,18,19]],
-        ],$y->toArray());
     }
 
     public function testSplit()
