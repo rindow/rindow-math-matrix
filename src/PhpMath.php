@@ -36,6 +36,30 @@ class PhpMath
         return $this->forceMath || in_array($X->dtype(),$this->floatTypes);
     }
 
+    protected function math_copy(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY ) : void
+    {
+        $idxX = $offsetX;
+        $idxY = $offsetY;
+        for ($i=0; $i<$n; $i++,$idxX+=$incX,$idxY+=$incY) {
+            $Y[$idxY] = $X[$idxX];
+        }
+    }
+
+    protected function math_add(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY ) : void
+    {
+        $idxX = $offsetX;
+        $idxY = $offsetY;
+        for ($i=0; $i<$n; $i++,$idxX+=$incX,$idxY+=$incY) {
+            $Y[$idxY] = $Y[$idxY] + $X[$idxX];
+        }
+    }
+
     protected function math_sum(
         int $n,
         Buffer $X, int $offsetX, int $incX ) : float
@@ -633,183 +657,222 @@ class PhpMath
     }
 
     /**
-     *     Y := A(k,X(m))
-     */
-    public function selectAxis0(
-        int $m,
+    *      B(n,k) := A(X(n),k)
+    */
+    public function gather(
+        bool $reverse,
+        bool $addMode,
         int $n,
         int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $ldY
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
         ) : void
     {
-        if($this->math) {
-            $this->math->selectAxis0($m,$n,$k,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$ldY);
-            return;
-        }
-
-        if($offsetA+($m-1)*$ldA+$n-1>=count($A))
-            throw new RuntimeException('Vector specification too large for bufferA.');
-        if($offsetX+($k-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for bufferX.');
-        if($offsetY+($k-1)*$ldY+$n-1>=count($Y))
-            throw new RuntimeException('Vector specification too large for bufferY.');
-
-        $idx = $offsetX;
-        $idy = $offsetY;
-        for($i=0; $i<$k; $i++,$idx+=$incX,$idy+=$ldY) {
-            $label = (int)$X[$idx];
-            if($label>=$m||$label<0)
-                throw new RuntimeException('Label number is out of bounds.');
-            $idA = $offsetA+$ldA*$label;
-            if($n==1) {
-                $Y[$idy]  = $A[$idA];
-            } else {
-                $this->rindow_openblas_math_copy($n, $A,$idA,1, $Y,$idy,1);
-            }
-        }
-    }
-
-    protected function rindow_openblas_math_copy($n,$X,$offsetX,$incX,$Y,$offsetY,$incY)
-    {
-        $idX = $offsetX;
-        $idY = $offsetY;
-        for($i=0; $i<$n; $i++, $idX+=$incX,$idY+=$incY) {
-            $Y[$idY] = $X[$idX];
-        }
-    }
-
-    protected function rindow_openblas_math_add($n,$X,$offsetX,$incX,$Y,$offsetY,$incY)
-    {
-        $idX = $offsetX;
-        $idY = $offsetY;
-        for($i=0; $i<$n; $i++, $idX+=$incX,$idY+=$incY) {
-            $tmp = $Y[$idY];
-            $Y[$idY] = $tmp + $X[$idX];
-        }
-    }
-
-    /**
-     *     Y := A(k,X(m))
-     */
-    public function selectAxis1(
-        int $m,
-        int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY
-        ) : void
-    {
+        //if($reverse==true && $addMode==true) {
+        //    $this->scatterAdd($n,$k,$numClass,$X,$offsetX,$A,$offsetA,$B,$offsetB);
+        //    return;
+        //}
         if($this->useMath($A)) {
-            $this->math->selectAxis1($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$incY);
+            $this->math->gather(
+                $reverse,
+                $addMode,
+                $n,
+                $k,
+                $numClass,
+                $X, $offsetX,
+                $A, $offsetA,
+                $B, $offsetB
+            );
             return;
         }
+//echo "[n=$n,k=$k,class=$numClass]\n";
 
-        if($offsetA+($m-1)*$ldA+$n-1>=count($A))
-            throw new RuntimeException('Vector specification too large for bufferA.');
-        if($offsetX+($m-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for bufferX.');
-        if($offsetY+($m-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector specification too large for bufferY.');
+        if($offsetX+$n>count($X))
+            throw new RuntimeException('Matrix X specification too large for buffer.');
+        if($offsetA+$numClass*$k>count($A))
+            throw new RuntimeException('Matrix A specification too large for buffer.');
+        if($offsetB+$n*$k>count($B))
+            throw new RuntimeException('Matrix B specification too large for buffer.');
 
-        $ida = $offsetA;
-        $idx = $offsetX;
-        $idy = $offsetY;
-        for ($i=0; $i<$m; $i++,$ida+=$ldA,$idx+=$incX,$idy+=$incY) {
-            $label = (int)$X[$idx];
-            if($label>=$n||$label<0)
-                throw new RuntimeException('Label number is out of bounds.');
-            $Y[$idy] = $A[$ida+$label];
-        }
-    }
-
-    /**
-     *      A(k,X(m)) := Y
-     */
-    public function scatterAxis0(
-        int $m,
-        int $n,
-        int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $ldY,
-        bool $addMode
-        ) : void
-    {
-        if($this->math) {
-            $this->math->scatterAxis0($m,$n,$k,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$ldY,$addMode);
-            return;
-        }
-
-        if($offsetA+($m-1)*$ldA+$n-1>=count($A))
-            throw new RuntimeException('Vector specification too large for bufferA.');
-        if($offsetX+($k-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for bufferX.');
-        if($offsetY+($k-1)*$ldY+$n-1>=count($Y))
-            throw new RuntimeException('Vector specification too large for bufferY.');
-
-        $idx = $offsetX;
-        $idy = $offsetY;
-        for($i=0; $i<$k; $i++,$idx+=$incX,$idy+=$ldY) {
-            $label = (int)$X[$idx];
-            if($label>=$m||$label<0)
-                throw new RuntimeException('Label number is out of bounds.');
-            $idA = $offsetA+$ldA*$label;
-            if($n==1) {
-                if($addMode){
-                    $tmp = $A[$idA];
-                    $A[$idA] = $tmp + $Y[$idy];
+        $idxX = $offsetX;
+        $idxA = $offsetA;
+        $idxB = $offsetB;
+        $ldIndex = $k;
+        for($j=0;$j<$n;$j++) {
+            $index = $X[$idxX+$j];
+            if($index>=$numClass) {
+                throw new RuntimeException("index is out of range.:".$index);
+            }
+            $iA = $idxA+$index*$ldIndex;
+            $iB = $idxB+$j*$k;
+            if($reverse) {
+                if($addMode) {
+                    $this->math_add($k,$B,$iB,1,$A,$iA,1);
                 } else {
-                    $A[$idA] = $Y[$idy];
+                    $this->math_copy($k,$B,$iB,1,$A,$iA,1);
                 }
             } else {
-                if($addMode){
-                    $this->rindow_openblas_math_add($n, $Y,$idy,1, $A,$idA,1);
+                if($addMode) {
+                    $this->math_add($k,$A,$iA,1,$B,$iB,1);
                 } else {
-                    $this->rindow_openblas_math_copy($n, $Y,$idy,1, $A,$idA,1);
+                    $this->math_copy($k,$A,$iA,1,$B,$iB,1);
                 }
             }
         }
     }
 
     /**
-     *     A(k,X(m)) := Y
-     */
-    public function scatterAxis1(
+    *      B(m,n) := A(m,X(m,n))
+    */
+    public function reduceGather(
+        bool $reverse,
+        bool $addMode,
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY,
-        bool $addMode
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
         ) : void
     {
         if($this->useMath($A)) {
-            $this->math->scatterAxis1($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX,$Y,$offsetY,$incY,$addMode);
+            $this->math->reduceGather(
+                $reverse,
+                $addMode,
+                $m,
+                $n,
+                $numClass,
+                $X, $offsetX,
+                $A, $offsetA,
+                $B, $offsetB
+            );
             return;
         }
+//echo "[m=$m,n=$n,class=$numClass]\n";
+        if($offsetX+$n>count($X))
+            throw new RuntimeException('Matrix X specification too large for buffer.');
+        if($offsetA+$m*$numClass>count($A))
+            throw new RuntimeException('Matrix A specification too large for buffer.');
+        if($offsetB+$m*$n>count($B))
+            throw new RuntimeException('Matrix B specification too large for buffer.');
 
-        if($offsetA+($m-1)*$ldA+$n-1>=count($A))
-            throw new RuntimeException('Vector specification too large for bufferA.');
-        if($offsetX+($m-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for bufferX.');
-        if($offsetY+($m-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector specification too large for bufferY.');
-
-        $ida = $offsetA;
-        $idx = $offsetX;
-        $idy = $offsetY;
-        for ($i=0; $i<$m; $i++,$ida+=$ldA,$idx+=$incX,$idy+=$incY) {
-            $label = (int)$X[$idx];
-            if($label>=$n||$label<0){
-                throw new RuntimeException('Label number is out of bounds.');
+        $idxX = $offsetX;
+        $idxA = $offsetA;
+        $idxB = $offsetB;
+        $ldX = $n;
+        $ldA = $n*$numClass;
+        $ldB = $n;
+        $ldIndex = $n;
+        for($i=0; $i<$m; $i++,$idxX+=$ldX,$idxA+=$ldA,$idxB+=$ldB) {
+            for($j=0;$j<$n;$j++) {
+                $index = $X[$idxX+$j];
+                if($index>=$numClass) {
+                    throw new RuntimeException("index is out of range.:".$index);
+                }
+                $iA = $idxA+$j+$index*$ldIndex;
+                $iB = $idxB+$j;
+                if($reverse) {
+                    if($addMode) {
+                        $A[$iA] = $A[$iA] + $B[$iB];
+                    } else {
+                        $A[$iA] = $B[$iB];
+                    }
+                } else {
+                    if($addMode) {
+                        $B[$iB] = $B[$iB] + $A[$iA];
+                    } else {
+                        $B[$iB] = $A[$iA];
+                    }
+                }
             }
-            if($addMode) {
-                $tmp = $A[$ida+$label];
-                $A[$ida+$label] = $tmp+$Y[$idy];
-            } else {
-                $A[$ida+$label] = $Y[$idy];
+        }
+    }
+
+    /**
+    *  For Parallel Computing Algorithm
+    */
+    protected function scatterAdd(
+        int $n,
+        int $k,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
+        ) : void
+    {
+        //if($this->useMath($A)) {
+        //    $this->math->gather(
+        //        $reverse=true,
+        //        $addMode=true,
+        //        $n,
+        //        $k,
+        //        $numClass,
+        //        $X, $offsetX,
+        //        $A, $offsetA,
+        //        $B, $offsetB
+        //    );
+        //    return;
+        //}
+
+        if($offsetX+$n>count($X))
+            throw new RuntimeException('Matrix X specification too large for buffer.');
+        if($offsetA+$numClass*$k>count($A))
+            throw new RuntimeException('Matrix A specification too large for buffer.');
+        if($offsetB+$n*$k>count($B))
+            throw new RuntimeException('Matrix B specification too large for buffer.');
+
+        for($i=0;$i<$numClass;$i++) {
+            for($p=0;$p<$k;$p++) {
+                $sum = 0;
+                for($j=0;$j<$n;$j++) {
+                    $index = $X[$offsetX+$j];
+                    if($index==$i) {
+                        $iB = $offsetB+$p+$j*$k;
+                        $sum += $B[$iB];
+                    }
+                }
+                $iA = $offsetA+$i*$k+$p;
+                $A[$iA] = $A[$iA] + $sum;
+            }
+        }
+    }
+
+    /**
+    *  B(n,repeats,k) := A(n,k)
+    */
+    public function repeat(
+        int $m,
+        int $k,
+        int $repeats,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
+        ) : void
+    {
+        if($this->useMath($A)) {
+            $this->math->repeat(
+                $m,
+                $k,
+                $repeats,
+                $A, $offsetA,
+                $B, $offsetB
+            );
+            return;
+        }
+//echo "[m=$m,n=$n,class=$numClass]\n";
+        if($offsetA+$m*$k>count($A))
+            throw new RuntimeException('Matrix A specification too large for buffer.');
+        if($offsetB+$m*$repeats*$k>count($B))
+            throw new RuntimeException('Matrix B specification too large for buffer.');
+
+        $idxA = $offsetA;
+        $idxB = $offsetB;
+        $ldA = $k;
+        $ldB = $k;
+        for($i=0; $i<$m; $i++,$idxA+=$ldA) {
+            for($j=0;$j<$repeats;$j++,$idxB+=$ldB) {
+                $this->math_copy($k,$A,$idxA,1,$B,$idxB,1);
             }
         }
     }
@@ -875,44 +938,9 @@ class PhpMath
     }
 
     /**
-     * X(m) := sum( A(m,n) )
-     */
-/*
+    *   X(m) := sum( A(m,n) )
+    */
     public function reduceSum(
-        bool $trans,
-        int $m,
-        int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX
-        ) : void
-    {
-        if($this->useMath($A)) {
-            $this->math->reduceSum($trans,$m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
-            return;
-        }
-
-        if($trans) {
-            $rows = $n; $cols = $m;
-        } else {
-            $rows = $m; $cols = $n;
-        }
-
-        if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for buffer.');
-        if($offsetX+($rows-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
-
-        if($trans) { $incAj = 1;    $incAi = $ldA;}
-        else       { $incAj = $ldA; $incAi = 1;}
-
-        $idAj = $offsetA;
-        $idX = $offsetX;
-        for($j=0; $j<$rows; $j++,$idAj+=$incAj,$idX+=$incX) {
-            $X[$idX] = $this->math_sum($cols,$A,$idAj,$incAi);
-        }
-    }
-*/
-    public function reduceSum( // reduceSumEx
         int $m,
         int $n,
         int $k,
@@ -1959,15 +1987,15 @@ class PhpMath
                           $offsetY;
                     if(!$reverse) {
                         if($addMode){
-                            $this->rindow_openblas_math_add($size,$A,$pa,$incA,$Y,$py,$incY);
+                            $this->math_add($size,$A,$pa,$incA,$Y,$py,$incY);
                         } else {
-                            $this->rindow_openblas_math_copy($size,$A,$pa,$incA,$Y,$py,$incY);
+                            $this->math_copy($size,$A,$pa,$incA,$Y,$py,$incY);
                         }
                     } else {
                         if($addMode){
-                            $this->rindow_openblas_math_add($size,$Y,$py,$incY,$A,$pa,$incA);
+                            $this->math_add($size,$Y,$py,$incY,$A,$pa,$incA);
                         } else {
-                            $this->rindow_openblas_math_copy($size,$Y,$py,$incY,$A,$pa,$incA);
+                            $this->math_copy($size,$Y,$py,$incY,$A,$pa,$incA);
                         }
                     }
                 }
@@ -2022,6 +2050,84 @@ class PhpMath
         $value = $V[$offsetV];
         for($i=0;$i<$n;$i++,$idX+=$incX) {
             $X[$idX] = $value;
+        }
+    }
+
+    public function imagecopy(
+        int $height,
+        int $width,
+        int $channels,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        bool $channelsFirst,
+        int $heightShift,
+        int $widthShift,
+        bool $verticalFlip,
+        bool $horizontalFlip
+        )
+    {
+        if($this->math) {
+            $this->math->imagecopy(
+                    $height,
+                    $width,
+                    $channels,
+                    $A, $offsetA,
+                    $B, $offsetB,
+                    $channelsFirst,
+                    $heightShift,
+                    $widthShift,
+                    $verticalFlip,
+                    $horizontalFlip
+                  );
+        }
+
+        if($width*$height*$channels+$offsetA>count ($A)) {
+            throw new InvalidArgumentException('Matrix specification too large for bufferA');
+        }
+        if($width*$height*$channels+$offsetB>count ($B)) {
+            throw new InvalidArgumentException('Matrix specification too large for bufferB');
+        }
+
+        if($channelsFirst) {
+            $ldC = $width*$height;
+            $ldY = $width;
+            $ldX = 1;
+        } else {
+            $ldY = $width*$channels;
+            $ldX = $channels;
+            $ldC = 1;
+        }
+        $directionY = $directionX = 1;
+        $biasY = $biasX = 0;
+        if($verticalFlip) {
+            $directionY = -$directionY;
+            $biasY = $height-1;
+        }
+        if($horizontalFlip) {
+            $directionX = -$directionX;
+            $biasX = $width-1;
+        }
+        $biasY -= $heightShift*$directionY;
+        $biasX -= $widthShift*$directionX;
+        for($y=0;$y<$height;$y++) {
+            for($x=0;$x<$width;$x++) {
+                for($c=0;$c<$channels;$c++) {
+                    $sy = $y*$directionY+$biasY;
+                    $sx = $x*$directionX+$biasX;
+                    if($sy<0) {
+                        $sy = 0;
+                    } elseif($sy>=$height) {
+                        $sy = $height-1;
+                    }
+                    if($sx<0) {
+                        $sx = 0;
+                    } elseif($sx>=$width) {
+                        $sx = $width-1;
+                    }
+                    $B[$y*$ldY+$x*$ldX+$c*$ldC+$offsetB] =
+                        $A[$sy*$ldY+$sx*$ldX+$c*$ldC+$offsetA];
+                }
+            }
         }
     }
 }

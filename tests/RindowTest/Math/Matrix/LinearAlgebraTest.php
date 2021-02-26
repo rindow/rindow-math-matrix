@@ -44,6 +44,11 @@ class Test extends TestCase
         return $array;
     }
 
+    public function ndarray($x)
+    {
+        return $x;
+    }
+
     public function equalTest($a,$b)
     {
         $mo = $this->newMatrixOperator();
@@ -1974,9 +1979,9 @@ class Test extends TestCase
             [10,11,12],
         ],NDArray::float32);
         $x = $la->array([0,2],NDArray::int32);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
         $a = $la->array([
@@ -1986,7 +1991,7 @@ class Test extends TestCase
             [10,11,12],
         ]);
         $x = $la->array([0,1,2,0],NDArray::int32);
-        $y = $la->select($a,$x,$axis=1);
+        $y = $la->gather($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
     }
 
@@ -2001,7 +2006,7 @@ class Test extends TestCase
             [10,11,12],
         ],NDArray::float32);
         $x = $la->array([0,2],NDArray::int32);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
         if($la->fp64()) {
@@ -2012,7 +2017,7 @@ class Test extends TestCase
                 [10,11,12],
             ],NDArray::float64);
             $x = $la->array([0,2],NDArray::int64);
-            $y = $la->select($a,$x,$axis=0);
+            $y = $la->gather($a,$x);
             $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
         }
 
@@ -2023,7 +2028,7 @@ class Test extends TestCase
             [10,11,12],
         ],NDArray::int64);
         $x = $la->array([0,2],NDArray::int64);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
         $a = $la->array([
@@ -2033,37 +2038,37 @@ class Test extends TestCase
             [10,11,12],
         ],NDArray::uint8);
         $x = $la->array([0,2],NDArray::uint8);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([[1,2,3],[7,8,9]],$y->toArray());
 
         $a = $la->array([1,2,3,4],NDArray::float32);
         $x = $la->array([0,2],NDArray::int32);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([1,3],$y->toArray());
 
         if($la->fp64()) {
             $a = $la->array([1,2,3,4],NDArray::float64);
             $x = $la->array([0,2],NDArray::int64);
-            $y = $la->select($a,$x,$axis=0);
+            $y = $la->gather($a,$x);
             $this->assertEquals([1,3],$y->toArray());
         }
 
         $a = $la->array([1,2,3,4],NDArray::int64);
         $x = $la->array([0,2],NDArray::int64);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([1,3],$y->toArray());
 
         $a = $la->array([252,253,254,255],NDArray::uint8);
         $x = $la->array([0,2],NDArray::uint8);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $this->assertEquals([252,254],$y->toArray());
 
         $a = $la->array($mo->full([256],255,NDArray::uint8));
         $x = $la->array([0,2],NDArray::uint8);
-        $y = $la->select($a,$x,$axis=0);
+        $y = $la->gather($a,$x);
         $a2 = $la->array($mo->full([256],255,NDArray::uint8));
         $x2 = $la->array([0,2],NDArray::uint8);
-        $y2 = $la->select($a2,$x2,$axis=0);
+        $y2 = $la->gather($a2,$x2);
 
     }
 
@@ -2078,20 +2083,20 @@ class Test extends TestCase
             [10,11,12],
         ]);
         $x = $la->array([0,1,2,0],NDArray::int32);
-        $y = $la->select($a,$x,$axis=1);
+        $y = $la->gather($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
         $x = $la->array([0,1,2,0],NDArray::int64);
-        $y = $la->select($a,$x,$axis=1);
+        $y = $la->gather($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
         $x = $la->array([0,1,2,0],NDArray::float32);
-        $y = $la->select($a,$x,$axis=1);
+        $y = $la->gather($a,$x,$axis=1);
         $this->assertEquals([1,5,9,10],$y->toArray());
 
         if($la->fp64()) {
             $x = $la->array([0,1,2,0],NDArray::float64);
-            $y = $la->select($a,$x,$axis=1);
+            $y = $la->gather($a,$x,$axis=1);
             $this->assertEquals([1,5,9,10],$y->toArray());
         }
     }
@@ -2104,7 +2109,7 @@ class Test extends TestCase
         // float32
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::float32);
-        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=4);
         //foreach($a->toArray() as $pr) {
         //    echo "\n";
         //    foreach($pr as $value) {
@@ -2124,7 +2129,7 @@ class Test extends TestCase
         if($la->fp64()) {
             $x = $la->array([0,2],NDArray::int64);
             $y = $la->array([[1,2,3],[7,8,9]],NDArray::float64);
-            $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+            $a = $la->scatter($x,$y,$numClass=4);
             $this->assertEquals(
                 [[1,2,3],
                 [0,0,0],
@@ -2136,7 +2141,7 @@ class Test extends TestCase
         // int64
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::int64);
-        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=4);
         $this->assertEquals(
            [[1,2,3],
             [0,0,0],
@@ -2147,7 +2152,7 @@ class Test extends TestCase
         // uint8
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::uint8);
-        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=4);
         $this->assertEquals(
            [[1,2,3],
             [0,0,0],
@@ -2159,7 +2164,7 @@ class Test extends TestCase
         // float32
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([1,3],NDArray::float32);
-        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=4);
         $this->assertEquals(
            [1,0,3,0],
             $a->toArray()
@@ -2168,7 +2173,7 @@ class Test extends TestCase
         // int32
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([1,3],NDArray::int32);
-        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=4);
         $this->assertEquals(
            [1,0,3,0],
             $a->toArray()
@@ -2178,7 +2183,7 @@ class Test extends TestCase
         if($la->fp64()) {
             $x = $la->array([0,2],NDArray::int64);
             $y = $la->array([1,3],NDArray::float64);
-            $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+            $a = $la->scatter($x,$y,$numClass=4);
             $this->assertEquals(
                 [1,0,3,0],
                 $a->toArray()
@@ -2187,7 +2192,7 @@ class Test extends TestCase
         // int64
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([1,3],NDArray::int64);
-        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=4);
         $this->assertEquals(
            [1,0,3,0],
             $a->toArray()
@@ -2195,7 +2200,7 @@ class Test extends TestCase
         // uint8
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([252,254],NDArray::uint8);
-        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=4);
         $this->assertEquals(
            [252,0,254,0],
             $a->toArray()
@@ -2203,7 +2208,7 @@ class Test extends TestCase
         // x=uint8
         $x = $la->array([0,255],NDArray::uint8);
         $y = $la->array([252,254],NDArray::uint8);
-        $a = $la->scatter($x,$y,$numClass=256,$axis=0);
+        $a = $la->scatter($x,$y,$numClass=256);
         if(is_scalar($a[0])) {
             $this->assertEquals(252,$a[0]);
             $this->assertEquals(254,$a[255]);
@@ -2237,9 +2242,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $start = hrtime(true);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2255,9 +2260,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $start = hrtime(true);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2273,9 +2278,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $start = hrtime(true);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2291,9 +2296,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $start = hrtime(true);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2309,9 +2314,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $start = hrtime(true);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2327,9 +2332,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $start = hrtime(true);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2345,9 +2350,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $start = hrtime(true);
-        $la->scatter($x,$y,$numClass,$axis=0,$a);
+        $la->scatter($x,$y,$numClass,$axis=null,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2427,6 +2432,520 @@ class Test extends TestCase
 
     }
 
+    public function testGatherNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // 1D by 1D
+        $x = $la->array([3,2,1,1],NDArray::int32);
+        $a = $la->array([10,11,12,13,14,15,16,17,18,19]);
+        $b = $la->gather($a,$x);
+        $this->assertEquals([4],$x->shape());
+        $this->assertEquals([10],$a->shape());
+        $this->assertEquals([4],$b->shape()); // replace axis0
+        $trues = $la->array([13,12,11,11]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($a),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$b->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // 1D by 2D
+        $x = $la->array([[3,2,1],[1,2,3]],NDArray::int32);
+        $a = $la->array([10,11,12,13,14,15,16,17,18,19]);
+        $b = $la->gather($a,$x);
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([10],$a->shape());
+        $this->assertEquals([2,3],$b->shape()); // replace axis0
+        $trues = $la->array([[13,12,11],[11,12,13]]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($a),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$b->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // 2D by 1D
+        $x = $la->array([3,1],NDArray::int32);
+        $a = $la->array([
+            [ 0, 0, 3],
+            [ 0, 0, 4],
+            [ 0, 2, 0],
+            [ 1, 0, 0]]);
+        $b = $la->gather($a,$x);
+        $this->assertEquals([2],$x->shape());
+        $this->assertEquals([4,3],$a->shape());
+        $this->assertEquals([2,3],$b->shape()); // replace axis0
+        $trues = $la->array([
+            [1,0,0],
+            [0,0,4]
+        ]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($a),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$b->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // 2D by 2D
+        $x = $la->array([
+            [2, 1, 0],
+            [1, 2, 3],
+        ],NDArray::int32);
+        $a = $la->array([
+            [ 1, 0, 0],
+            [ 0, 2, 0],
+            [ 0, 0, 3],
+            [ 4, 0, 0]]);
+        $b = $la->gather($a,$x);
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([4,3],$a->shape());
+        $this->assertEquals([2,3,3],$b->shape()); // replace axis0
+        $trues = $la->array([
+            [[0,0,3],
+             [0,2,0],
+             [1,0,0]],
+            [[0,2,0],
+             [0,0,3],
+             [4,0,0]],
+        ]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($a),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$b->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+    }
+
+    public function testGatherReduction()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        // axis = 0
+        // 1D indices
+        $x = $la->array([3,2,1],NDArray::int32);
+        $a = $la->array([
+            [ 0, 0, 3],
+            [ 0, 0, 4],
+            [ 0, 2, 0],
+            [ 1, 0, 0]]);
+        $b = $la->gather($a,$x,$axis=0);
+        $this->assertEquals([3],$x->shape());
+        $this->assertEquals([4,3],$a->shape());
+        $this->assertEquals([3],$b->shape()); // reduction axis0
+        $trues = $la->array([1,2,4]);
+        //echo $mo->toString($b,null,true)."\n";
+        $max = $la->reduceMax($a,$axis=0);
+        //echo $mo->toString($max,null,true)."\n";
+        $max = $la->reduceArgMax($a,$axis=0);
+        //echo $mo->toString($max,null,true)."\n";
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($a,$axis=0);
+        $this->assertEquals($max->toArray(),$trues->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // axis = 0
+        // 2D indices
+        $x = $la->array([
+            [0,2,2,1],
+            [2,0,1,2],
+        ],NDArray::int32);
+        $a = $la->array([
+            [[ 1, 0, 0, 0],
+             [ 0, 6, 0, 0]],
+            [[ 0, 0, 0, 4],
+             [ 0, 0, 7, 0]],
+            [[ 0, 2, 3, 0],
+             [ 5, 0, 0, 8]],
+        ]);
+        $b = $la->gather($a,$x,$axis=0);
+        $this->assertEquals([2,4],$x->shape());
+        $this->assertEquals([3,2,4],$a->shape());
+        $this->assertEquals([2,4],$b->shape()); // reduction axis0
+        $trues = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+        ]);
+        //echo $mo->toString($b,null,true)."\n";
+        $max = $la->reduceMax($a,$axis=0);
+        //echo $mo->toString($max,null,true)."\n";
+        $max = $la->reduceArgMax($a,$axis=0);
+        //echo $mo->toString($max,null,true)."\n";
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($a,$axis=0);
+        $this->assertEquals($max->toArray(),$trues->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // axis = 1
+        // 1D indices
+        $x = $la->array([2,2,1,0],NDArray::int32);
+        $a = $la->array([
+            [ 0, 0, 3],
+            [ 0, 0, 4],
+            [ 0, 2, 0],
+            [ 1, 0, 0]]);
+        $b = $la->gather($a,$x,$axis=1);
+        $this->assertEquals([4],$x->shape());
+        $this->assertEquals([4,3],$a->shape());
+        $this->assertEquals([4],$b->shape()); // reduction axis1
+        $trues = $la->array([3,4,2,1]);
+        //echo $mo->toString($b,null,true)."\n";
+        $max = $la->reduceMax($a,$axis=1);
+        //echo $mo->toString($max,null,true)."\n";
+        $max = $la->reduceArgMax($a,$axis=1);
+        //echo $mo->toString($max,null,true)."\n";
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($a,$axis=1);
+        $this->assertEquals($max->toArray(),$trues->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // axis = 1
+        // 2D indices
+        $x = $la->array([
+            [1,0,1,0],
+            [1,0,1,0],
+            [1,0,1,0],
+        ],NDArray::int32);
+        $a = $la->array([
+            [[ 0, 2, 0, 4],
+             [ 1, 0, 3, 0]],
+            [[ 0, 6, 0, 8],
+             [ 5, 0, 7, 0]],
+            [[ 0,10, 0,12],
+             [ 9, 0,11, 0]],
+        ]);
+        $b = $la->gather($a,$x,$axis=1);
+        $this->assertEquals([3,4],$x->shape());
+        $this->assertEquals([3,2,4],$a->shape());
+        $this->assertEquals([3,4],$b->shape()); // reduction axis1
+        $trues = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12]
+        ]);
+        //echo $mo->toString($b,null,true)."\n";
+        $max = $la->reduceMax($a,$axis=1);
+        //echo $mo->toString($max,null,true)."\n";
+        $max = $la->reduceArgMax($a,$axis=1);
+        //echo $mo->toString($max,null,true)."\n";
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($a,$axis=1);
+        $this->assertEquals($max->toArray(),$trues->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+    }
+
+    public function testScatterExNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // 1D by 1D
+        $x = $la->array([3,2,1,1],NDArray::int32);
+        $a = $la->array([13,12,11,11]);
+        $b = $la->scatter($x,$a,$numClass=10);
+        $this->assertEquals([4],$x->shape());
+        $this->assertEquals([4],$a->shape());
+        $this->assertEquals([10],$b->shape()); // replace axis0
+        $trues = $la->array([0,11,12,13,0,0,0,0,0,0]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($b),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // 1D by 2D
+        $x = $la->array([[3,2,1],[5,6,7]],NDArray::int32);
+        $a = $la->array([[13,12,11],[15,16,17]]);
+        $b = $la->scatter($x,$a,$numClass=10);
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([2,3],$a->shape());
+        $this->assertEquals([10],$b->shape()); // replace axis0
+        $trues = $la->array([0,11,12,13,0,15,16,17,0,0]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($b),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // 2D by 1D
+        $x = $la->array([3,1],NDArray::int32);
+        $a = $la->array([
+            [1,2,3],
+            [2,3,4]
+        ]);
+        $b = $la->scatter($x,$a,$numClass=4);
+        $this->assertEquals([2],$x->shape());
+        $this->assertEquals([2,3],$a->shape());
+        $this->assertEquals([4,3],$b->shape()); // replace axis0
+        $trues = $la->array([
+            [ 0, 0, 0],
+            [ 2, 3, 4],
+            [ 0, 0, 0],
+            [ 1, 2, 3]
+        ]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($b),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        // 2D by 2D
+        $x = $la->array([
+            [2, 1, 0],
+            [1, 2, 3],
+        ],NDArray::int32);
+        $a = $la->array([
+            [[0,0,3],
+             [0,2,0],
+             [1,0,0]],
+            [[0,2,0],
+             [0,0,3],
+             [4,0,0]],
+        ]);
+        $b = $la->scatter($x,$a,$numClass=4);
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([2,3,3],$a->shape());
+        $this->assertEquals([4,3],$b->shape()); // replace axis0
+        $trues = $la->array([
+            [ 1, 0, 0],
+            [ 0, 2, 0],
+            [ 0, 0, 3],
+            [ 4, 0, 0]
+        ]);
+        //echo $mo->toString($b,null,true)."\n";
+        $mo_gather = $mo->select($this->ndarray($b),$this->ndarray($x));
+        //echo $mo->toString($mo_gather,null,true)."\n";
+        $this->assertEquals($mo_gather->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+    }
+
+    public function testScatterExExpandDims()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // axis = 0
+        //
+        //  1D inputs
+        $x = $la->array([3,2,0],NDArray::int32);
+        $a = $la->array([1,2,3],NDArray::float32);
+        $b = $la->scatter($x,$a,$numClass=4,$axis=0);
+        $this->assertEquals([3],$x->shape());
+        $this->assertEquals([3],$a->shape());
+        $this->assertEquals([4,3],$b->shape()); // insert axis0
+        $trues = $la->array([
+            [ 0, 0, 3],
+            [ 0, 0, 0],
+            [ 0, 2, 0],
+            [ 1, 0, 0]]);
+        $max = $la->reduceArgMax($trues,$axis=0);
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($trues,$axis=0);
+        $this->assertEquals($max->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        //  2D inputs
+        $x = $la->array([
+            [0,2,2,1],
+            [2,0,1,2],
+        ]);
+        $a = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+        ]);
+        $b = $la->scatter($x,$a,$numClass=3,$axis=0);
+        $this->assertEquals([2,4],$x->shape());
+        $this->assertEquals([2,4],$a->shape());
+        $this->assertEquals([3,2,4],$b->shape()); // insert axis0
+        $trues = $la->array([
+            [[ 1, 0, 0, 0],
+             [ 0, 6, 0, 0]],
+            [[ 0, 0, 0, 4],
+             [ 0, 0, 7, 0]],
+            [[ 0, 2, 3, 0],
+             [ 5, 0, 0, 8]],
+        ]);
+        $max = $la->reduceArgMax($trues,$axis=0);
+        //echo $mo->toString($max,null,true);
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($trues,$axis=0);
+        //echo $mo->toString($max,null,true);
+        $this->assertEquals($max->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        //
+        // axis = 1
+        //
+        //  1D inputs
+        $x = $la->array([0,1,2,0],NDArray::int32);
+        $a = $la->array([1,5,9,10],NDArray::float32);
+        $b = $la->scatter($x,$a,$numClass=3,$axis=1);
+        $this->assertEquals([4],$x->shape());
+        $this->assertEquals([4],$a->shape());
+        $this->assertEquals([4,3],$b->shape()); // insert axis1
+        $trues = $la->array([
+            [1,0,0],
+            [0,5,0],
+            [0,0,9],
+            [10,0,0]]);
+        $max = $la->reduceArgMax($trues,$axis=1);
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($trues,$axis=1);
+        $this->assertEquals($max->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        //  2D inputs
+        $x = $la->array([
+            [1,0,1,0],
+            [1,0,1,0],
+            [1,0,1,0],
+        ]);
+        $a = $la->array([
+            [1,2,3,4],
+            [5,6,7,8],
+            [9,10,11,12]
+        ]);
+        $b = $la->scatter($x,$a,$numClass=2,$axis=1);
+        $this->assertEquals([3,4],$x->shape());
+        $this->assertEquals([3,4],$a->shape());
+        $this->assertEquals([3,2,4],$b->shape()); // insert axis1
+        $trues = $la->array([
+            [[0,2,0,4],
+             [1,0,3,0]],
+            [[0,6,0,8],
+             [5,0,7,0]],
+            [[ 0,10, 0,12],
+             [ 9, 0,11, 0]],
+        ]);
+        $max = $la->reduceArgMax($trues,$axis=1);
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($trues,$axis=1);
+        $this->assertEquals($max->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+        //  3D inputs
+        $x = $la->array([
+            [[1,0],[1,0]],
+            [[1,0],[1,0]],
+            [[1,0],[1,0]],
+        ]);
+        $a = $la->array([
+            [[1,2],[3,4]],
+            [[5,6],[7,8]],
+            [[9,10],[11,12]],
+        ]);
+        $b = $la->scatter($x,$a,$numClass=2,$axis=1);
+        $this->assertEquals([3,2,2],$x->shape());
+        $this->assertEquals([3,2,2],$a->shape());
+        $this->assertEquals([3,2,2,2],$b->shape()); // insert axis1
+        $trues = $la->array([
+            [[[0,2],[0,4]],
+             [[1,0],[3,0]]],
+            [[[0,6],[0,8]],
+             [[5,0],[7,0]]],
+            [[[0,10],[0,12]],
+             [[9, 0],[11,0]]],
+        ]);
+        $max = $la->reduceArgMax($trues,$axis=1);
+        $this->assertEquals($max->toArray(),$x->toArray());
+        $max = $la->reduceMax($trues,$axis=1);
+        $this->assertEquals($max->toArray(),$a->toArray());
+        $this->assertEquals($trues->toArray(),$b->toArray());
+
+/*
+        $x = $la->array([0,1,2,0],NDArray::int32);
+        $y = $la->array([
+            [1,2],
+            [5,6],
+            [9,10],
+            [11,12]
+        ],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=3,$axis=1);
+        $trues = $la->array([
+            [1,0,0],
+            [0,5,0],
+            [0,0,9],
+            [10,0,0]]);
+        $this->assertEquals($trues->toArray(),$a->toArray());
+*/
+
+        $y = $la->array([1,5,9,10],NDArray::float32);
+        $x = $la->array([0,1,2,0],NDArray::int64);
+        $a = $la->scatter($x,$y,$numClass=3,$axis=1);
+        $this->assertEquals(
+           [[1,0,0],
+            [0,5,0],
+            [0,0,9],
+            [10,0,0]],
+            $a->toArray());
+
+        $x = $la->array([0,1,2,0],NDArray:: float32);
+        $a = $la->scatter($x,$y,$numClass=3,$axis=1);
+        $this->assertEquals(
+           [[1,0,0],
+            [0,5,0],
+            [0,0,9],
+            [10,0,0]],
+            $a->toArray());
+
+        if($la->fp64()) {
+            $x = $la->array([0,1,2,0],NDArray:: float64);
+            $a = $la->scatter($x,$y,$numClass=3,$axis=1);
+            $this->assertEquals(
+                [[1,0,0],
+                [0,5,0],
+                [0,0,9],
+                [10,0,0]],
+                $a->toArray());
+        }
+
+    }
+
+    public function testScatterAddExNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // 1D by 1D
+        $x = $la->array([3,2,1,1],NDArray::int32);
+        $a = $la->array([13,12,11,11]);
+        $b = $la->alloc([10]);
+        $la->ones($b);
+        $la->scatterAdd($x,$a,$b);
+        $this->assertEquals([4],$x->shape());
+        $this->assertEquals([4],$a->shape());
+        $this->assertEquals([10],$b->shape()); // replace axis0
+        $trues = $la->array([1,23,13,14,1,1,1,1,1,1]);
+        //echo $mo->toString($b,null,true)."\n";
+        $this->assertEquals($trues->toArray(),$b->toArray());
+    }
+
+    public function testScatterAddExExpandDims()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // axis = 0
+        //
+        //  1D inputs
+        $x = $la->array([3,2,0],NDArray::int32);
+        $a = $la->array([1,2,3],NDArray::float32);
+        $b = $la->alloc([4,3]);
+        $la->ones($b);
+        $la->scatterAdd($x,$a,$b,$axis=0);
+        $this->assertEquals([3],$x->shape());
+        $this->assertEquals([3],$a->shape());
+        $this->assertEquals([4,3],$b->shape()); // insert axis0
+        $trues = $la->array([
+            [ 1, 1, 4],
+            [ 1, 1, 1],
+            [ 1, 3, 1],
+            [ 2, 1, 1]]);
+        $this->assertEquals($trues->toArray(),$b->toArray());
+    }
+
+
+
     public function testScatterAddAxis0Normal()
     {
         $mo = $this->newMatrixOperator();
@@ -2435,7 +2954,7 @@ class Test extends TestCase
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::float32);
         $a = $la->array($mo->ones([4,3],NDArray::float32));
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         #foreach($a->toArray() as $pr) {
         #    echo "\n";
         #    foreach($pr as $value) {
@@ -2456,7 +2975,7 @@ class Test extends TestCase
             $x = $la->array([0,2],NDArray::int64);
             $y = $la->array([[1,2,3],[7,8,9]],NDArray::float64);
             $a = $la->array($mo->ones([4,3],NDArray::float64));
-            $la->scatterAdd($x,$y,$a,$axis=0);
+            $la->scatterAdd($x,$y,$a);
             $this->assertEquals(
                 [[2,3,4],
                 [1,1,1],
@@ -2469,7 +2988,7 @@ class Test extends TestCase
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::int64);
         $a = $la->array($mo->ones([4,3],NDArray::int64));
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $this->assertEquals(
            [[2,3,4],
             [1,1,1],
@@ -2481,7 +3000,7 @@ class Test extends TestCase
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::uint8);
         $a = $la->array($mo->ones([4,3],NDArray::uint8));
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $this->assertEquals(
            [[2,3,4],
             [1,1,1],
@@ -2491,7 +3010,7 @@ class Test extends TestCase
         );
     }
 
-    public function testScatterAddAxis0Large()
+    public function testScatterAddLarge()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -2499,7 +3018,6 @@ class Test extends TestCase
             $this->markTestSkipped('Skip due to high load');
             return;
         }
-
         // medium size
         $rows = 8;
         $cols = 8;
@@ -2510,7 +3028,7 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $trues = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill($rows,$trues);
         $this->assertLessThan(1e-3,$la->amax($la->axpy(
@@ -2525,7 +3043,7 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $trues = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill($rows,$trues);
         $this->assertLessThan(1e-3,$la->amax($la->axpy(
@@ -2556,9 +3074,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2574,9 +3092,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2592,9 +3110,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2610,9 +3128,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2628,9 +3146,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2646,9 +3164,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -2664,9 +3182,9 @@ class Test extends TestCase
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAdd($x,$y,$a,$axis=0);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         echo "\n";
@@ -3006,6 +3524,21 @@ class Test extends TestCase
         $y = $la->reduceMax($x,$axis=1);
         $this->assertEquals([[3,4],[7,8]],$y->toArray());
 
+        $x = $la->array([
+            [[1,4,5,8],
+             [2,3,6,7]],
+            [[1,4,5,8],
+             [2,3,6,7]],
+            [[1,4,5,8],
+             [2,3,6,7]],
+         ]);
+         $y = $la->reduceMax($x,$axis=1);
+         $this->assertEquals([
+             [2,4,6,8],
+             [2,4,6,8],
+             [2,4,6,8]
+         ],$y->toArray());
+
         // with offset
         $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
         $x = $x[1];
@@ -3094,9 +3627,20 @@ class Test extends TestCase
         $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
         $y = $la->reduceArgMax($x,$axis=0);
         $this->assertEquals([[1,1],[1,1]],$y->toArray());
-        $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
+        $x = $la->array([
+            [[1,4,5,8],
+             [2,3,6,7]],
+            [[1,4,5,8],
+             [2,3,6,7]],
+            [[1,4,5,8],
+             [2,3,6,7]],
+         ]);
         $y = $la->reduceArgMax($x,$axis=1);
-        $this->assertEquals([[1,1],[1,1]],$y->toArray());
+        $this->assertEquals([
+            [1,0,1,0],
+            [1,0,1,0],
+            [1,0,1,0],
+        ],$y->toArray());
 
         // with offset
         $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
@@ -3179,6 +3723,16 @@ class Test extends TestCase
         $this->assertEquals([2.5,3.5,4.5],$la->reduceMean($x,$axis=0)->toArray());
         $this->assertEquals([2,5],$la->reduceMean($x,$axis=1)->toArray());
 
+        // n-dimensions
+        $x = $la->array([[[1,2,3],[4,5,6]],[[1,2,3],[4,5,6]],[[1,2,3],[4,5,6]]]);
+        $y = $la->reduceMean($x,$axis=0);
+        $this->assertEquals([3,2,3],$x->shape());
+        $this->assertEquals([2,3],$y->shape());
+        $this->assertEquals([[1,2,3],[4,5,6]],$y->toArray());
+        $y = $la->reduceMean($x,$axis=1);
+        $this->assertEquals([3,3],$y->shape());
+        $this->assertEquals([[2.5,3.5,4.5],[2.5,3.5,4.5],[2.5,3.5,4.5]],$y->toArray());
+
         // with offset
         $x = $la->array([[[9,9,9],[9,9,9]],[[1,2,3],[4,5,6]]]);
         $x = $x[1];
@@ -3245,7 +3799,7 @@ class Test extends TestCase
 
         // large size
         $colsize = 64;
-        $rowsize = 1000000;
+        $rowsize = 800000;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
         $la->fill(1.0,$x);
         $r = $la->softmax($x);
@@ -6702,7 +7256,7 @@ class Test extends TestCase
             [1,2,3],
             [4,5,6]
         ]);
-        $Y = $la->repeat($X,2);
+        $Y = $la->repeat($X,$repeats=2,$axis=1);
         $this->assertEquals([2,3],$X->shape());
         $this->assertEquals([2,2,3],$Y->shape());
         $this->assertEquals([
@@ -6716,7 +7270,7 @@ class Test extends TestCase
 
         // 1 time
         $X = $la->array([[1,2,3],[4,5,6]]);
-        $Y = $la->repeat($X,1);
+        $Y = $la->repeat($X,$repeats=1,$axis=1);
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
@@ -6731,7 +7285,7 @@ class Test extends TestCase
             [[1,2,3],[4,5,6]],
             [[7,8,9],[10,11,12]]
         ]);
-        $Y = $la->repeat($X,4);
+        $Y = $la->repeat($X,$repeats=4,$axis=1);
         $this->assertEquals([
             [[1,2,3],[4,5,6]],
             [[7,8,9],[10,11,12]]
@@ -6747,6 +7301,85 @@ class Test extends TestCase
              [[7,8,9],[10,11,12]],
              [[7,8,9],[10,11,12]],
              [[7,8,9],[10,11,12]]],
+        ],$Y->toArray());
+
+        // axis = 0
+        // Y := X (duplicate 2 times)
+        $X = $la->array([
+            [1,2,3],
+            [4,5,6]
+        ]);
+        $Y = $la->repeat($X,$repeats=2,$axis=0);
+        $this->assertEquals([2,3],$X->shape());
+        $this->assertEquals([2,2,3],$Y->shape());
+        $this->assertEquals([
+            [1,2,3],
+            [4,5,6]
+        ],$X->toArray());
+        $this->assertEquals([
+            [[1,2,3],[4,5,6]],
+            [[1,2,3],[4,5,6]],
+        ],$Y->toArray());
+
+        // axis = 0
+        // Y := X (duplicate 1D)
+        $X = $la->array([1,2,3]);
+        $Y = $la->repeat($X,$repeats=2,$axis=0);
+        $this->assertEquals([3],$X->shape());
+        $this->assertEquals([2,3],$Y->shape());
+        $this->assertEquals([1,2,3],$X->toArray());
+        $this->assertEquals([
+            [1,2,3],
+            [1,2,3],
+        ],$Y->toArray());
+
+        // axis = 1
+        // Y := X (duplicate 1D)
+        $X = $la->array([1,2,3]);
+        $Y = $la->repeat($X,$repeats=2,$axis=1);
+        $this->assertEquals([3],$X->shape());
+        $this->assertEquals([3,2],$Y->shape());
+        $this->assertEquals([1,2,3],$X->toArray());
+        $this->assertEquals([
+            [1,1],
+            [2,2],
+            [3,3],
+        ],$Y->toArray());
+
+        // axis = NULL
+        // Y := X (duplicate 2 times)
+        $X = $la->array([
+            [1,2,3],
+            [4,5,6]
+        ]);
+        $Y = $la->repeat($X,$repeats=2,$axis=null);
+        $this->assertEquals([2,3],$X->shape());
+        $this->assertEquals([12],$Y->shape());
+        $this->assertEquals([
+            [1,2,3],
+            [4,5,6]
+        ],$X->toArray());
+        $this->assertEquals([
+            1,2,3,4,5,6,
+            1,2,3,4,5,6,
+        ],$Y->toArray());
+
+        // axis = -1
+        // Y := X (duplicate 2 times)
+        $X = $la->array([
+            [1,2,3],
+            [4,5,6]
+        ]);
+        $Y = $la->repeat($X,$repeats=2,$axis=-1);
+        $this->assertEquals([2,3],$X->shape());
+        $this->assertEquals([2,2,3],$Y->shape());
+        $this->assertEquals([
+            [1,2,3],
+            [4,5,6]
+        ],$X->toArray());
+        $this->assertEquals([
+            [[1,2,3],[1,2,3]],
+            [[4,5,6],[4,5,6]],
         ],$Y->toArray());
     }
 
@@ -6936,6 +7569,327 @@ class Test extends TestCase
             [0,3],
             [1,4],
             [2,5]
+        ],$b->toArray());
+    }
+
+    public function testImagecopy()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $a = $la->array([
+            [[0],[1],[2]],
+            [[3],[4],[5]],
+            [[6],[7],[8]],
+        ]);
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=1
+        );
+        $this->assertEquals([
+            [[0],[1],[2]],
+            [[0],[1],[2]],
+            [[3],[4],[5]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=-1
+        );
+        $this->assertEquals([
+            [[3],[4],[5]],
+            [[6],[7],[8]],
+            [[6],[7],[8]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=1
+        );
+        $this->assertEquals([
+            [[0],[0],[1]],
+            [[3],[3],[4]],
+            [[6],[6],[7]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=-1
+        );
+        $this->assertEquals([
+            [[1],[2],[2]],
+            [[4],[5],[5]],
+            [[7],[8],[8]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=1,
+            $widthShift=1
+        );
+        $this->assertEquals([
+            [[0],[0],[1]],
+            [[0],[0],[1]],
+            [[3],[3],[4]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=-1,
+            $widthShift=-1
+        );
+        $this->assertEquals([
+            [[4],[5],[5]],
+            [[7],[8],[8]],
+            [[7],[8],[8]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=null,
+            $verticalFlip=true,
+            $horizontalFlip=null
+        );
+        $this->assertEquals([
+            [[6],[7],[8]],
+            [[3],[4],[5]],
+            [[0],[1],[2]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=null,
+            $verticalFlip=null,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[2],[1],[0]],
+            [[5],[4],[3]],
+            [[8],[7],[6]],
+        ],$b->toArray());
+
+        $a = $la->array([
+            [[0], [1], [2], [3] ],
+            [[4], [5], [6], [7] ],
+            [[8], [9], [10],[11]],
+            [[12],[13],[14],[15]],
+        ]);
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=1,
+            $widthShift=null,
+            $verticalFlip=true,
+            $horizontalFlip=null
+        );
+        $this->assertEquals([
+            [[12],[13],[14],[15]],
+            [[12],[13],[14],[15]],
+            [[8],[9],[10],[11]],
+            [[4],[5],[6],[7]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=-1,
+            $widthShift=null,
+            $verticalFlip=true,
+            $horizontalFlip=null
+        );
+        $this->assertEquals([
+            [[8], [9], [10],[11]],
+            [[4], [5], [6], [7] ],
+            [[0], [1], [2], [3] ],
+            [[0], [1], [2], [3] ],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=1,
+            $verticalFlip=null,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[3] ,[3] ,[2], [1] ],
+            [[7] ,[7] ,[6], [5] ],
+            [[11],[11],[10],[9] ],
+            [[15],[15],[14],[13]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=-1,
+            $verticalFlip=null,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[2 ],[1 ],[0] ,[0] ],
+            [[6 ],[5 ],[4] ,[4] ],
+            [[10],[9 ],[8] ,[8] ],
+            [[14],[13],[12],[12]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=null,
+            $verticalFlip=true,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[15],[14],[13],[12]],
+            [[11],[10],[9] ,[8] ],
+            [[7] ,[6] ,[5] ,[4] ],
+            [[3] ,[2] ,[1] ,[0] ],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=1,
+            $widthShift=null,
+            $verticalFlip=true,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[15],[14],[13],[12]],
+            [[15],[14],[13],[12]],
+            [[11],[10],[9] ,[8]],
+            [[7] ,[6], [5] ,[4]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=-1,
+            $widthShift=null,
+            $verticalFlip=true,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[11],[10],[9] ,[8]],
+            [[7] ,[6], [5] ,[4]],
+            [[3] ,[2], [1] ,[0]],
+            [[3] ,[2], [1] ,[0]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=1,
+            $verticalFlip=true,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[15],[15],[14],[13]],
+            [[11],[11],[10],[9 ]],
+            [[7 ],[7 ],[6 ],[5 ]],
+            [[3 ],[3 ],[2 ],[1 ]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=null,
+            $widthShift=-1,
+            $verticalFlip=true,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[14],[13],[12],[12]],
+            [[10],[9 ],[8 ],[8 ]],
+            [[6 ],[5 ],[4 ],[4 ]],
+            [[2 ],[1 ],[0 ],[0 ]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=1,
+            $widthShift=1,
+            $verticalFlip=true,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[15],[15],[14],[13]],
+            [[15],[15],[14],[13]],
+            [[11],[11],[10],[9] ],
+            [[7] ,[7] ,[6] ,[5] ],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=-1,
+            $widthShift=-1,
+            $verticalFlip=true,
+            $horizontalFlip=true
+        );
+        $this->assertEquals([
+            [[10],[9] ,[8] ,[8] ],
+            [[6] ,[5] ,[4] ,[4] ],
+            [[2] ,[1] ,[0] ,[0] ],
+            [[2] ,[1] ,[0] ,[0] ],
+        ],$b->toArray());
+
+        $a = $la->array([
+            [[1,2,3],
+             [1,2,3]],
+            [[4,5,6],
+             [4,5,6]],
+            [[7,8,9],
+             [7,8,9]],
+        ]);
+        $this->assertEquals([3,2,3],$a->shape());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=1,
+            $widthShift=0,
+            $verticalFlip=false,
+            $horizontalFlip=false
+        );
+        //echo $mo->toString($b,null,true);
+        $this->assertEquals([
+            [[1,2,3],
+             [1,2,3]],
+            [[1,2,3],
+             [1,2,3]],
+            [[4,5,6],
+             [4,5,6]],
+        ],$b->toArray());
+    }
+
+    public function testImagecopychannelsfirst()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $a = $la->array([
+            [[1,2,3],
+             [4,5,6]],
+            [[11,12,13],
+             [14,15,16]],
+            [[21,22,23],
+             [24,25,26]],
+        ]);
+        $this->assertEquals([3,2,3],$a->shape());
+        $b = $la->imagecopy($a,null,true,
+            $heightShift=1,
+            $widthShift=0,
+            $verticalFlip=false,
+            $horizontalFlip=false
+        );
+        $this->assertEquals([
+            [[1,2,3],
+             [1,2,3]],
+            [[11,12,13],
+             [11,12,13]],
+            [[21,22,23],
+             [21,22,23]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,true,
+            $heightShift=0,
+            $widthShift=1,
+            $verticalFlip=false,
+            $horizontalFlip=false
+        );
+        $this->assertEquals([
+            [[1,1,2],
+             [4,4,5]],
+            [[11,11,12],
+             [14,14,15]],
+            [[21,21,22],
+             [24,24,25]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,true,
+            $heightShift=0,
+            $widthShift=0,
+            $verticalFlip=true,
+            $horizontalFlip=false
+        );
+        $this->assertEquals([
+            [[4,5,6],
+             [1,2,3]],
+            [[14,15,16],
+             [11,12,13]],
+            [[24,25,26],
+             [21,22,23]],
+        ],$b->toArray());
+        $b = $la->imagecopy($a,null,true,
+            $heightShift=0,
+            $widthShift=0,
+            $verticalFlip=false,
+            $horizontalFlip=true
+        );
+        //echo $mo->toString($b,null,true);
+        $this->assertEquals([
+            [[3,2,1],
+             [6,5,4]],
+            [[13,12,11],
+             [16,15,14]],
+            [[23,22,21],
+             [26,25,24]],
         ],$b->toArray());
     }
 

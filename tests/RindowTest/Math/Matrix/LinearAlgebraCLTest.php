@@ -16,6 +16,7 @@ use Rindow\Math\Matrix\MatrixOperator;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\OpenCL;
 use Rindow\Math\Matrix\LinearAlgebraCL;
+use Rindow\Math\Matrix\NDArrayCL;
 use Rindow\Math\Matrix\OpenCLMath;
 use Rindow\Math\Matrix\OpenCLMathTunner;
 use Rindow\OpenCL\Context;
@@ -690,154 +691,6 @@ class TestLinearAlgebraCL extends LinearAlgebraCL
         }
         return $B;
     }
-    /**
-     * A(X) := Y
-     */
-    public function scatterAddTest(
-        NDArray $X,
-        NDArray $Y,
-        NDArray $A,
-        int $axis=null,
-        $events=null,$waitEvents=null,
-        int $mode = null
-        ) : NDArray
-    {
-        if($axis===null) {
-            $axis=0;
-        }
-        if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
-            $waitPrev = $waitEvents;
-            $waitEvents = $this->newEventList();
-            $X = $this->astype($X,NDArray::int32,null,$waitEvents,$waitPrev);
-        }
-        if($axis==0) {
-            return $this->scatterAddAxis0Test(true,$X,$Y,null,$A,$events,$waitEvents,$mode);
-        } elseif($axis==1) {
-            return $this->scatterAddAxis1Test(true,$X,$Y,null,$A,$events,$waitEvents,$mode);
-        } else {
-            throw new InvalidArgumentException('axis must be 0 or 1');
-        }
-    }
-
-    protected function scatterAddAxis0Test(
-        bool $addMode,
-        NDArray $X,
-        NDArray $Y,
-        int $numClass=null,
-        NDArray $A=null,
-        $events=null,$waitEvents=null,
-        int $mode=null
-        ) : NDArray
-    {
-        if($X->ndim()!=1) {
-            throw new InvalidArgumentException('"X" must be 1D-NDArray.');
-        }
-        $countX = $X->shape()[0];
-        $shape = $Y->shape();
-        $countY = array_shift($shape);
-        if($countX!=$countY) {
-            throw new InvalidArgumentException('Unmatch size "Y" with "X".');
-        }
-        $n = (int)array_product($shape);
-        if($A==null) {
-            $m = $numClass;
-            array_unshift($shape,$numClass);
-            $A = $this->alloc($shape,$Y->dtype());
-            $waitPrev = $waitEvents;
-            $waitEvents = $this->newEventList();
-            $this->zeros($A,$waitEvents,$waitPrev);
-        } else {
-            $m = $A->shape()[0];
-            array_unshift($shape,$m);
-            if($A->shape()!=$shape){
-                throw new InvalidArgumentException('Unmatch size "Y" with "A" .');
-            }
-        }
-
-        $AA = $A->buffer();
-        $offA = $A->offset();
-        $ldA = $n;
-        $XX = $X->buffer();
-        $offX = $X->offset();
-        $YY = $Y->buffer();
-        $offY = $Y->offset();
-        $ldY = $n;
-
-        switch($mode) {
-            case 0: {
-                $this->openclmath->scatterAddAxis0_0(
-                    $m,
-                    $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
-                break;
-            }
-            case 1: {
-                $this->openclmath->scatterAddAxis0_1(
-                    $m,
-                    $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
-                break;
-            }
-            case 2: {
-                $this->openclmath->scatterAddAxis0_2(
-                    $m,
-                    $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
-                break;
-            }
-            case 3: {
-                $this->openclmath->scatterAddAxis0_3(
-                    $m,
-                    $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
-                break;
-            }
-            case 4: {
-                $this->openclmath->scatterAddAxis0_4(
-                    $m,
-                    $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
-                break;
-            }
-            default:
-                throw new InvalidArgumentException("invalid mode: ".$mode);
-        }
-
-        if($this->blocking) {
-            $this->finish();
-        }
-        return $A;
-    }
 
     public function softmaxTest(
         NDArray $X,
@@ -907,6 +760,14 @@ class Test extends ORGTest
         $la->blocking(true);
         $la->scalarNumeric(true);
         return $la;
+    }
+
+    public function ndarray($x)
+    {
+        if($x instanceof NDArrayCL) {
+            $x = $x->toNDArray();
+        }
+        return $x;
     }
 
     public function modeProviderNoZero()
@@ -1718,15 +1579,16 @@ class Test extends ORGTest
     /**
     * @dataProvider modeProvider4mode
     */
-    public function testScatterAddAxis0OpenCL($mode)
+    public function testScatterAddOpenCL($mode)
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        $la->setOpenCLTestMode($mode);
         // float32
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::float32);
         $a = $la->array($mo->ones([4,3],NDArray::float32));
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         #foreach($a->toArray() as $pr) {
         #    echo "\n";
         #    foreach($pr as $value) {
@@ -1747,7 +1609,7 @@ class Test extends ORGTest
             $x = $la->array([0,2],NDArray::int64);
             $y = $la->array([[1,2,3],[7,8,9]],NDArray::float64);
             $a = $la->array($mo->ones([4,3],NDArray::float64));
-            $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+            $la->scatterAdd($x,$y,$a);
             $this->assertEquals(
                 [[2,3,4],
                 [1,1,1],
@@ -1760,7 +1622,7 @@ class Test extends ORGTest
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::int64);
         $a = $la->array($mo->ones([4,3],NDArray::int64));
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $this->assertEquals(
            [[2,3,4],
             [1,1,1],
@@ -1772,7 +1634,7 @@ class Test extends ORGTest
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::uint8);
         $a = $la->array($mo->ones([4,3],NDArray::uint8));
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $this->assertEquals(
            [[2,3,4],
             [1,1,1],
@@ -2698,7 +2560,7 @@ class Test extends ORGTest
         echo (explode(' ',$la->getConfig()))[0].'2='.number_format($end-$start)."\n";
     }
 
-    public function testScatterAddAxis0CompareSpeed()
+    public function testScatterAddCompareSpeed()
     {
         // Comment out when compare speed
         if(!self::$speedtest) {
@@ -2725,9 +2587,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2740,9 +2602,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2755,9 +2617,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2774,9 +2636,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2789,9 +2651,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2804,9 +2666,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2819,9 +2681,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2838,9 +2700,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2853,9 +2715,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 
@@ -2868,9 +2730,9 @@ class Test extends ORGTest
         $la->fill(1.0,$y);
         $a = $la->alloc([$numClass,$cols],NDArray::float32);
         $la->fill(0.0,$a);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $start = hrtime(true);
-        $la->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $la->scatterAdd($x,$y,$a);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
 

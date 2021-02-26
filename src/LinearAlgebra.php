@@ -108,10 +108,7 @@ class LinearAlgebra
     public function ones(
         NDArray $X) : NDArray
     {
-        $N = $X->size();
-        $XX = $X->buffer();
-        $offX = $X->offset();
-        $this->math->zeros($N,$XX,$offX,1);
+        $this->fill(1,$X);
         return $X;
     }
 
@@ -1472,274 +1469,242 @@ class LinearAlgebra
     }
 
     /**
-     * Y := A[X]
-     */
-    public function select(
+    *      B(m,n,k) := A(m,X(m,n),k)
+    */
+    public function doGather(
+        bool $scatterAdd,
         NDArray $A,
         NDArray $X,
         int $axis=null,
-        NDArray $Y=null) : NDArray
+        NDArray $B=null,
+        $dtype=null) : NDArray
     {
+//echo "shapeX=[".implode(',',$X->shape())."],shapeA=[".implode(',',$A->shape())."]\n";
         if($axis===null) {
-            $axis=0;
-        }
-        if($axis==0) {
-            return $this->selectAxis0($A,$X,$Y);
-        } elseif($axis==1) {
-            return $this->selectAxis1($A,$X,$Y);
+            $postfixShape = $A->shape();
+            $prefixShape = $X->shape();
+            $numClass = array_shift($postfixShape);
+            $m = 1;
+            $n = array_product($prefixShape);
+            $k = array_product($postfixShape);
+            $reductionDims = false;
+            $outputShape = array_merge($prefixShape,$postfixShape);
         } else {
-            throw new InvalidArgumentException('axis must be 0 or 1');
+            $ndim = $A->ndim();
+            $orgAxis = $axis;
+            if($axis<0) {
+                $axis = $ndim+$axis;
+            }
+            $postfixShape = $A->shape();
+            $prefixShape = [];
+            for($i=0;$i<$axis;$i++) {
+                $prefixShape[] = array_shift($postfixShape);
+            }
+            $numClass = array_shift($postfixShape);
+            $m = array_product($prefixShape);
+            $n = array_product($postfixShape);
+            $k = 1;
+            $reductionDims = true;
+            $outputShape = array_merge($prefixShape,$postfixShape);
+            if($X->shape()!=$outputShape) {
+                throw new InvalidArgumentException('Unmatch Shape:'.
+                                        $this->printableShapes([$A,$X]));
+            }
         }
-    }
-
-    /**
-     *    Y(i,j) := A(X[i],j)
-     */
-    protected function selectAxis0(
-        NDArray $A,
-        NDArray $X,
-        NDArray $Y=null) : NDArray
-    {
-        if($X->ndim()!=1) {
-            throw new InvalidArgumentException('"X" must be 1D-NDArray.');
+//echo "outputShape=[".implode(',',$outputShape)."]\n";
+        if($dtype===null) {
+            $dtype = $A->dtype();
         }
-        $countX = $X->shape()[0];
-        if($A->ndim()==1) {
-            $shape = $X->shape();
-            $m = $A->shape()[0];
-            $n = 1;
+        if($B==null) {
+            $B = $this->alloc($outputShape,$dtype);
+            $this->zeros($B);
         } else {
-            $shape = $A->shape();
-            $m = $shape[0];
-            $n = (int)($A->size()/$m);
-            array_shift($shape);
-            array_unshift($shape,$countX);
-        }
-        if($Y===null) {
-            $Y = $this->alloc($shape,$A->dtype());
-        } else {
-            if($Y->shape()!=$shape) {
-                throw new InvalidArgumentException('Unmatch size "Y" with "X" and "A" .');
+            if($B->shape()!=$outputShape) {
+                throw new InvalidArgumentException("Unmatch output shape of dimension: ".
+                                            $this->printableShapes([$outputShape,$B]));
             }
         }
 
         $AA = $A->buffer();
         $offA = $A->offset();
-        $ldA = $n;
         $XX = $X->buffer();
         $offX = $X->offset();
-        $YY = $Y->buffer();
-        $offY = $Y->offset();
-        $ldY = $n;
+        $BB = $B->buffer();
+        $offB = $B->offset();
 
-        $this->math->selectAxis0(
-            $m,
-            $n,
-            $countX,
-            $AA,$offA,$ldA,
-            $XX,$offX,1,
-            $YY,$offY,$ldY);
+        if($scatterAdd) {
+            $reverse=true;
+            $addMode=true;
+        } else {
+            $reverse=false;
+            $addMode=false;
+        }
+        if($reductionDims) {
+            $this->math->reduceGather(
+                $reverse,
+                $addMode,
+                $m,
+                $n,
+                $numClass,
+                $XX,$offX,
+                $AA,$offA,
+                $BB,$offB);
+        } else {
+            $this->math->gather(
+                $reverse,
+                $addMode,
+                $n,
+                $k,
+                $numClass,
+                $XX,$offX,
+                $AA,$offA,
+                $BB,$offB);
+        }
 
-        return $Y;
+        return $B;
     }
 
     /**
-     *  Y(i) := A(i,X[i])
-     */
-    protected function selectAxis1(
+    *      B(m,n,k) := A(m,X(m,n),k)
+    */
+    public function gather(
         NDArray $A,
         NDArray $X,
-        NDArray $Y=null) : NDArray
-    {
-        if($A->ndim()!=2) {
-            throw new InvalidArgumentException('"A" must be 2D-NDArray.');
-        }
-        if($X->ndim()!=1) {
-            throw new InvalidArgumentException('"X" must be 1D-NDArray.');
-        }
-        [$m,$n] = $A->shape();
-        if($X->size()!=$m) {
-            throw new InvalidArgumentException('Unmatch size "X" with rows of "A".');
-        }
-        if($Y==null) {
-            $Y = $this->alloc([$m],$A->dtype());
-        } else {
-            if($Y->ndim()!=1) {
-                throw new InvalidArgumentException('"Y" must be 1D-NDArray.');
-            }
-            if($Y->size()!=$m) {
-                throw new InvalidArgumentException('Unmatch size "Y" with rows of "A".');
-            }
-        }
-
-        $AA = $A->buffer();
-        $offA = $A->offset();
-        $ldA = $n;
-        $XX = $X->buffer();
-        $offX = $X->offset();
-        $YY = $Y->buffer();
-        $offY = $Y->offset();
-
-        $this->math->selectAxis1(
-            $m,
-            $n,
-            $AA,$offA,$ldA,
-            $XX,$offX,1,
-            $YY,$offY,1);
-
-        return $Y;
-    }
-
-    /**
-     * A(X) := Y
-     */
-    public function scatter(
-        NDArray $X,
-        NDArray $Y,
-        int $numClass,
         int $axis=null,
-        NDArray $A=null) : NDArray
+        NDArray $B=null,
+        $dtype=null) : NDArray
     {
-        if($axis===null) {
-            $axis=0;
-        }
-        if($axis==0) {
-            return $this->scatterAxis0(false,$X,$Y,$numClass,$A);
-        } elseif($axis==1) {
-            return $this->scatterAxis1(false,$X,$Y,$numClass,$A);
-        } else {
-            throw new InvalidArgumentException('axis must be 0 or 1');
-        }
+        return $this->doGather(
+            $scatterAdd=false,
+            $A,
+            $X,
+            $axis,
+            $B,
+            $dtype);
     }
 
     /**
-     * A(X) := Y
-     */
+    *      B(m,X(m,n),k) += A(m,n,k)
+    */
     public function scatterAdd(
         NDArray $X,
-        NDArray $Y,
         NDArray $A,
-        int $axis=null) : NDArray
+        NDArray $B,
+        int $axis=null,
+        $dtype=null) : NDArray
     {
+        $this->doGather(
+            $scatterAdd=true,
+            $B,
+            $X,
+            $axis,
+            $A,
+            $dtype);
+        return $B;
+    }
+
+    /**
+    *      B(m,X(m,n),k) := A(m,n,k)
+    */
+    public function scatter(
+        NDArray $X,
+        NDArray $A,
+        int $numClass,
+        int $axis=null,
+        NDArray $B=null,
+        $dtype=null) : NDArray
+    {
+//echo "shapeX=[".implode(',',$X->shape())."],shapeA=[".implode(',',$A->shape())."]\n";
+//echo "axis=$axis,numClass=$numClass\n";
         if($axis===null) {
-            $axis=0;
-        }
-        if($axis==0) {
-            return $this->scatterAxis0(true,$X,$Y,null,$A);
-        } elseif($axis==1) {
-            return $this->scatterAxis1(true,$X,$Y,null,$A);
+            $postfixShape = $A->shape();
+            $prefixShape = $X->shape();
+            //$numClass
+            $ndimX = $X->ndim();
+            $tmpShape = [];
+            for($i=0;$i<$ndimX;$i++) {
+                $tmpShape[] = array_shift($postfixShape);
+            }
+            if($tmpShape!=$prefixShape) {
+                throw new InvalidArgumentException('Unmatch Shape:'.
+                                        $this->printableShapes([$X,$A]));
+            }
+            $n = array_product($prefixShape);
+            $k = array_product($postfixShape);
+            $m = 1;
+            $expandDims = false;
+            $outputShape = array_merge([$numClass],$postfixShape);
         } else {
-            throw new InvalidArgumentException('axis must be 0 or 1');
+            $ndim = $A->ndim();
+            $orgAxis = $axis;
+            if($axis<0) {
+                $axis = $ndim+$axis;
+            }
+            //if($axis<0 || $axis>$ndim-1) {
+            //    throw new InvalidArgumentException("Invalid axis: ".$orgAxis);
+            //}
+            $postfixShape = $A->shape();
+            $postfixX = $X->shape();
+            if($postfixShape!=$postfixX) {
+                throw new InvalidArgumentException('Unmatch Shape:'.
+                                        $this->printableShapes([$X,$A]));
+            }
+            $prefixShape = [];
+            for($i=0;$i<$axis;$i++) {
+                $prefixShape[] = array_shift($postfixShape);
+                array_shift($postfixX);
+            }
+            $m = array_product($prefixShape);
+            $n = array_product($postfixShape);
+            $k = 1;
+            $expandDims = true;
+            $outputShape = array_merge($prefixShape,[$numClass],$postfixShape);
         }
-    }
-
-    /**
-     * A(X[i],j) := Y[i,j]
-     */
-    protected function scatterAxis0(
-        bool $addMode,
-        NDArray $X,
-        NDArray $Y,
-        int $numClass=null,
-        NDArray $A=null) : NDArray
-    {
-        if($X->ndim()!=1) {
-            throw new InvalidArgumentException('"X" must be 1D-NDArray.');
+//echo "outputShape=[".implode(',',$outputShape)."]\n";
+        if($dtype===null) {
+            $dtype = $A->dtype();
         }
-        $countX = $X->shape()[0];
-        $shape = $Y->shape();
-        $countY = array_shift($shape);
-        if($countX!=$countY) {
-            throw new InvalidArgumentException('Unmatch size "Y" with "X".');
-        }
-        $n = (int)array_product($shape);
-        if($A==null) {
-            $m = $numClass;
-            array_unshift($shape,$numClass);
-            $A = $this->alloc($shape,$Y->dtype());
-            $this->zeros($A);
+        if($B==null) {
+            $B = $this->alloc($outputShape,$dtype);
+            $this->zeros($B);
         } else {
-            $m = $A->shape()[0];
-            array_unshift($shape,$m);
-            if($A->shape()!=$shape){
-                throw new InvalidArgumentException('Unmatch size "Y" with "A" .');
+            if($B->shape()!=$outputShape) {
+                $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$B->shape()).')';
+                throw new InvalidArgumentException("Unmatch shape of dimension: ".$shapeError);
             }
         }
 
         $AA = $A->buffer();
         $offA = $A->offset();
-        $ldA = $n;
         $XX = $X->buffer();
         $offX = $X->offset();
-        $YY = $Y->buffer();
-        $offY = $Y->offset();
-        $ldY = $n;
+        $BB = $B->buffer();
+        $offB = $B->offset();
 
-        $this->math->scatterAxis0(
-            $m,
-            $n,
-            $countX,
-            $AA,$offA,$ldA,
-            $XX,$offX,1,
-            $YY,$offY,$ldY,
-            $addMode
-            );
+        if($expandDims) {
+            $this->math->reduceGather(
+                $reverse=true,
+                $addMode=false,
+                $m,
+                $n,
+                $numClass,
+                $XX,$offX,
+                $BB,$offB,
+                $AA,$offA);
 
-        return $A;
-    }
-
-    /**
-     * A(i,X[i]) := Y[i]
-     */
-    protected function scatterAxis1(
-        bool $addMode,
-        NDArray $X,
-        NDArray $Y,
-        int $numClass=null,
-        NDArray $A=null) : NDArray
-    {
-        if($X->ndim()!=1) {
-            throw new InvalidArgumentException('"X" must be 1D-NDArray.');
-        }
-        if($Y->ndim()!=1) {
-            throw new InvalidArgumentException('"Y" must be 1D-NDArray.');
-        }
-        if($X->shape()[0]!=$Y->shape()[0]) {
-            throw new InvalidArgumentException('Unmatch size "X" and "Y".');
-        }
-        $m = $X->shape()[0];
-        if($A==null) {
-            if($numClass==null){
-                throw new InvalidArgumentException('numClass must be specified when without target Array.');
-            }
-            $n = $numClass;
-            $A = $this->alloc([$m,$n]);
-            $this->zeros($A);
         } else {
-            if($A->shape()[0]!=$m) {
-                throw new InvalidArgumentException('Unmatch size "X" and "A".');
-            }
-            $n = $A->shape()[1];
+            $this->math->gather(
+                $reverse=true,
+                $addMode=false,
+                $n,
+                $k,
+                $numClass,
+                $XX,$offX,
+                $BB,$offB,
+                $AA,$offA);
         }
 
-        $AA = $A->buffer();
-        $offA = $A->offset();
-        $ldA = $n;
-        $XX = $X->buffer();
-        $offX = $X->offset();
-        $YY = $Y->buffer();
-        $offY = $Y->offset();
-
-        $this->math->scatterAxis1(
-            $m,
-            $n,
-            $AA,$offA,$ldA,
-            $XX,$offX,1,
-            $YY,$offY,1,
-            $addMode
-            );
-
-        return $A;
+        return $B;
     }
 
     public function onehot(
@@ -1815,6 +1780,9 @@ class LinearAlgebra
         $dtype=null) : NDArray
     {
         $ndim = $A->ndim();
+        if($axis===null) {
+            $axis = 0;
+        }
         if($axis<0) {
             $axis = $ndim+$axis;
         }
@@ -1864,6 +1832,9 @@ class LinearAlgebra
         $dtype=null) : NDArray
     {
         $ndim = $A->ndim();
+        if($axis===null) {
+            $axis = 0;
+        }
         if($axis<0) {
             $axis = $ndim+$axis;
         }
@@ -1913,6 +1884,9 @@ class LinearAlgebra
         $dtypeB=null) : NDArray
     {
         $ndim = $A->ndim();
+        if($axis===null) {
+            $axis = 0;
+        }
         if($axis<0) {
             $axis = $ndim+$axis;
         }
@@ -1960,12 +1934,11 @@ class LinearAlgebra
         $X = $this->reduceSum(
             $A,$axis,$X,$dtypeX
         );
-        $shapeA = $A->shape();
-        if($axis==0) {
-            $rows = $shapeA[0];
-        } else {
-            $rows = array_pop($shapeA);
+        if($A->ndim()<=$axis) {
+            throw new InvalidException('axis must be less then num of dimension');
         }
+        $shapeA = $A->shape();
+        $rows = $shapeA[$axis];
         $this->scal(1/$rows,$X);
         return $X;
     }
@@ -2851,47 +2824,45 @@ class LinearAlgebra
     /**
     * repeat
     */
-    public function repeat(NDArray $A, int $repeats)
+    public function repeat(NDArray $A, int $repeats, int $axis=null)
     {
         if($repeats<1) {
             throw new InvalidArgumentException('repeats argument must be one or greater.');
         }
-        if($A->ndim()<2) {
-            throw new InvalidArgumentException('dimension rank must be two or greater.');
+        if($axis!==null) {
+            $ndim = $A->ndim();
+            if($axis<0) {
+                $axis = $ndim+$axis;
+            }
+            if($A->ndim()<$axis) {
+                throw new InvalidArgumentException('dimension rank must be two or greater.');
+            }
         }
-        $shapeCell = $A->shape();
-        $s1 = array_shift($shapeCell);
-        $shape = array_merge([$s1,$repeats],$shapeCell);
-        $B = $this->alloc($shape,$A->dtype());
-        $m = $s1;
-        $n = $repeats;
-        $k = 1;
-        $size = (int)array_product($shapeCell);
+        $innerShape = $A->shape();
+        $outerShape = [];
+        for($i=0;$i<$axis;$i++) {
+            $outerShape[] = array_shift($innerShape);
+        }
+        if($axis===null) {
+            $outputShape = [(int)array_product(
+                    array_merge($outerShape,[$repeats],$innerShape))];
+        } else {
+            $outputShape = array_merge($outerShape,[$repeats],$innerShape);
+        }
+        $B = $this->alloc($outputShape,$A->dtype());
+        $m = (int)array_product($outerShape);
+        $k = (int)array_product($innerShape);
         $AA = $A->buffer();
         $offA = $A->offset();
         $BB = $B->buffer();
         $offB = $B->offset();
-        $startAxis0 = 0;
-        $sizeAxis0 = $m;
-        $startAxis2 = 0;
-        $sizeAxis2 = 1;
-        for($i=0;$i<$repeats;$i++) {
-            $startAxis1 = $i;
-            $sizeAxis1 = 1;
-            $this->math->slice(
-                $reverse=true,
-                $addMode=false,
-                $m,
-                $n,
-                $k,
-                $size,
-                $BB,$offB,1,
-                $AA,$offA,1,
-                $startAxis0,$sizeAxis0,
-                $startAxis1,$sizeAxis1,
-                $startAxis2,$sizeAxis2
-            );
-        }
+        $this->math->repeat(
+            $m,
+            $k,
+            $repeats,
+            $AA,$offA,
+            $BB,$offB
+        );
         return $B;
     }
 
@@ -2960,7 +2931,7 @@ class LinearAlgebra
         NDArray $A,
         NDArray $B=null,
         float $alpha=null
-        )
+        ) : NDArray
     {
         if($A->ndim()!=2) {
             throw new InvalidArgumentException('input array must be 2D.');
@@ -2996,6 +2967,73 @@ class LinearAlgebra
             $alpha,
             $AA,$offA,$ldA,
             $BB,$offB,$ldB
+        );
+        return $B;
+    }
+
+    public function imagecopy(
+        NDArray $A,
+        NDArray $B=null,
+        bool $channels_first=null,
+        int $heightShift=null,
+        int $widthShift=null,
+        bool $verticalFlip=null,
+        bool $horizontalFlip=null
+        ) : NDArray
+    {
+        if($A->ndim()!=3) {
+            throw new InvalidArgumentException('input array must be 3D.');
+        }
+        $shape = $A->shape();
+        if($B==null) {
+            $B = $this->alloc($shape,$A->dtype());
+            $this->zeros($B);
+        } else {
+            if($B->shape()!=$shape) {
+                throw new InvalidArgumentException('output shape must be transpose matrix of input.');
+            }
+            if($B->dtype()!=$A->dtype()) {
+                throw new InvalidArgumentException('output data type must be same with matrix of input.');
+            }
+        }
+        if($heightShift==null) {
+            $heightShift=0;
+        }
+        if($widthShift==null) {
+            $widthShift=0;
+        }
+        if($verticalFlip==null) {
+            $verticalFlip=false;
+        }
+        if($horizontalFlip==null) {
+            $horizontalFlip=false;
+        }
+        if($channels_first==null) {
+            $channels_first=false;
+            $height = $shape[0];
+            $width = $shape[1];
+            $channels = $shape[2];
+        } else {
+            $channels_first=true;
+            $channels = $shape[0];
+            $height = $shape[1];
+            $width = $shape[2];
+        }
+        $AA = $A->buffer();
+        $offA = $A->offset();
+        $BB = $B->buffer();
+        $offB = $B->offset();
+        $this->math->imagecopy(
+            $height,
+            $width,
+            $channels,
+            $AA, $offA,
+            $BB, $offB,
+            $channels_first,
+            $heightShift,
+            $widthShift,
+            $verticalFlip,
+            $horizontalFlip
         );
         return $B;
     }

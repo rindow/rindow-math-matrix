@@ -136,6 +136,7 @@ class OpenCLMath
     protected $fp64;
     protected $maxWorkItem;
     protected $kernelMultiple;
+    protected $testMode=null;
 
     public function __construct(object $context,object $queue)
     {
@@ -149,6 +150,11 @@ class OpenCLMath
             $this->fp64 = true;
         }
         $this->maxWorkItem = $devices->getInfo(0,OpenCL::CL_DEVICE_MAX_WORK_ITEM_SIZES);
+    }
+
+    public function setTestMode($testMode)
+    {
+        $this->testMode = $testMode;
     }
 
     public function fp64() : bool
@@ -1722,15 +1728,123 @@ class OpenCLMath
     }
 
     /**
-     *     B(k,n) := A(X(k),n)
-     */
-    public function selectAxis0(
-        int $m,
+    *      B(n,k) := A(X(n),k)
+    */
+    public function gather(
+        bool $reverse,
+        bool $addMode,
         int $n,
         int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $B, int $offsetB, int $ldB,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        EventList $events=null, EventList $waitEvents=null
+        ) : void
+    {
+        if($reverse==true && $addMode==true) {
+            $this->scatterAdd(
+                $n,
+                $k,
+                $numClass,
+                $X, $offsetX,
+                $A, $offsetA,
+                $B, $offsetB,
+                $events, $waitEvents
+            );
+            return;
+        }
+        $dtype = $A->dtype();
+        if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
+            throw new InvalidArgumentException("X must be 32bit integer:".
+                                            $this->dtypeToString($X->dtype()));
+        }
+        if($dtype!=$B->dtype()) {
+            throw new InvalidArgumentException("Unmatch data type A and B:".
+            $this->dtypeToString($dtype).",".$this->dtypeToString($B->dtype()));
+        }
+        if($dtype==NDArray::float64) {
+            $this->assertFP64();
+        }
+
+        if($addMode) {
+            $op = 'add';
+        } else {
+            $op = 'set';
+        }
+        if($reverse) {
+            $direction = 'r';
+        } else {
+            $direction = 'f';
+        }
+        $type = $this->dtypeToOpenCLType[$dtype];
+        $kernel_name = "gather_${op}_${type}_${direction}";
+        if(!isset($this->sources[$kernel_name])) {
+            $a_variable = "a[offset_a+label*k+p]";
+            $b_variable = "b[offset_b+j*k+p]";
+            if($reverse) {
+                $from = $b_variable;
+                $to = $a_variable;
+                $b_arg_type = 'const global';
+                $a_arg_type = '__global';
+            } else {
+                $from = $a_variable;
+                $to = $b_variable;
+                $a_arg_type = 'const global';
+                $b_arg_type = '__global';
+            }
+            if($addMode) {
+                $operator = '+=';
+            } else {
+                $operator = '=';
+            }
+            $this->sources[$kernel_name] =
+                "__kernel void ${kernel_name}(\n".
+                "    const        uint n,\n".
+                "    const        uint k,\n".
+                "    const        uint numClass,\n".
+                "    const global uint * x,\n".
+                "    const        uint offset_x,\n".
+                "    ${a_arg_type} ${type} * a,\n".
+                "    const        uint offset_a,\n".
+                "    ${b_arg_type} ${type} * b,\n".
+                "    const        uint offset_b)\n".
+                "{\n".
+                "    uint p = get_global_id(0);\n".
+                "    uint j = get_global_id(1);\n".
+                "    uint label = x[j+offset_x];\n".
+                "    if(label<numClass) {\n".
+                "        ${to} ${operator} ${from};\n".
+                "    }\n".
+                "}\n";
+        }
+        $kernel = $this->createKernel($kernel_name);
+        $kernel->setArg(0,$n,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$numClass,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$A);
+        $kernel->setArg(6,$offsetA,NDArray::uint32);
+        $kernel->setArg(7,$B);
+        $kernel->setArg(8,$offsetB,NDArray::uint32);
+        $global_work_size = [$k,$n];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
+            $events,$waitEvents);
+    }
+
+    /**
+    *      B(n,k) := A(X(n),k)
+    */
+    public function reduceGather(
+        bool $reverse,
+        bool $addMode,
+        int $m,
+        int $n,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
         EventList $events=null, EventList $waitEvents=null
         ) : void
     {
@@ -1747,105 +1861,68 @@ class OpenCLMath
             $this->assertFP64();
         }
 
+        if($addMode) {
+            $op = 'add';
+        } else {
+            $op = 'set';
+        }
+        if($reverse) {
+            $direction = 'r';
+        } else {
+            $direction = 'f';
+        }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "selectAxis0_${type}";
+        $kernel_name = "reduceGather_${op}_${type}_${direction}";
         if(!isset($this->sources[$kernel_name])) {
+            $a_variable = "a[offset_a+i*n*numClass+j+label*n]";
+            $b_variable = "b[offset_b+i*n+j]";
+            if($reverse) {
+                $from = $b_variable;
+                $to = $a_variable;
+                $b_arg_type = 'const global';
+                $a_arg_type = '__global';
+            } else {
+                $from = $a_variable;
+                $to = $b_variable;
+                $a_arg_type = 'const global';
+                $b_arg_type = '__global';
+            }
+            if($addMode) {
+                $operator = '+=';
+            } else {
+                $operator = '=';
+            }
             $this->sources[$kernel_name] =
                 "__kernel void ${kernel_name}(\n".
                 "    const        uint m,\n".
-                "    const global ${type} * a,\n".
-                "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
+                "    const        uint n,\n".
+                "    const        uint numClass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
-                "        __global ${type} * b,\n".
-                "    const        uint offset_b,\n".
-                "    const        uint ldb)\n".
+                "    ${a_arg_type} ${type} * a,\n".
+                "    const        uint offset_a,\n".
+                "    ${b_arg_type} ${type} * b,\n".
+                "    const        uint offset_b)\n".
                 "{\n".
-                "    uint i = get_global_id(0);\n".
-                "    uint j = get_global_id(1);\n".
-                "    ulong label = x[i*incx+offset_x];\n".
-                "    if(label<m) {\n".
-                "        b[i*ldb+j+offset_b] = a[label*lda+j+offset_a];\n".
+                "    uint j = get_global_id(0);\n".
+                "    uint i = get_global_id(1);\n".
+                "    uint label = x[j+offset_x+n*i];\n".
+                "    if(label<numClass) {\n".
+                "        ${to} ${operator} ${from};\n".
                 "    }\n".
                 "}\n";
         }
         $kernel = $this->createKernel($kernel_name);
         $kernel->setArg(0,$m,NDArray::uint32);
-        $kernel->setArg(1,$A);
-        $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$ldA,NDArray::uint32);
-        $kernel->setArg(4,$X);
-        $kernel->setArg(5,$offsetX,NDArray::uint32);
-        $kernel->setArg(6,$incX,NDArray::uint32);
+        $kernel->setArg(1,$n,NDArray::uint32);
+        $kernel->setArg(2,$numClass,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$A);
+        $kernel->setArg(6,$offsetA,NDArray::uint32);
         $kernel->setArg(7,$B);
         $kernel->setArg(8,$offsetB,NDArray::uint32);
-        $kernel->setArg(9,$ldB,NDArray::uint32);
-        $global_work_size = [$k,$n];
-        $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
-            $events,$waitEvents);
-    }
-
-    /**
-     *     Y(k) := A(k,X(m))
-     */
-    public function selectAxis1(
-        int $m,
-        int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY,
-        EventList $events=null, EventList $waitEvents=null
-        ) : void
-    {
-        $dtype = $A->dtype();
-        if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
-            throw new InvalidArgumentException("X must be 32bit integer:".
-                                            $this->dtypeToString($X->dtype()));
-        }
-        if($dtype!=$Y->dtype()) {
-            throw new InvalidArgumentException("Unmatch data type A and Y:".
-                $this->dtypeToString($A->dtype()).",".$this->dtypeToString($Y->dtype()));
-        }
-        if($dtype==NDArray::float64) {
-            $this->assertFP64();
-        }
-        $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "selectAxis1_${type}";
-        if(!isset($this->sources[$kernel_name])) {
-            $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        uint n,\n".
-                "    const global ${type} * a,\n".
-                "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
-                "    const global uint * x,\n".
-                "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
-                "        __global ${type} * y,\n".
-                "    const        uint offset_y,\n".
-                "    const        uint incy)\n".
-                "{\n".
-                "    uint gid = get_global_id(0);\n".
-                "    ulong label = x[gid*incx+offset_x];\n".
-                "    if(label<n) {\n".
-                "        y[gid*incy+offset_y] = a[lda*gid+label+offset_a];\n".
-                "    }\n".
-                "}\n";
-        }
-        $kernel = $this->createKernel($kernel_name);
-        $kernel->setArg(0,$n,NDArray::uint32);
-        $kernel->setArg(1,$A);
-        $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$ldA,NDArray::uint32);
-        $kernel->setArg(4,$X);
-        $kernel->setArg(5,$offsetX,NDArray::uint32);
-        $kernel->setArg(6,$incX,NDArray::uint32);
-        $kernel->setArg(7,$Y);
-        $kernel->setArg(8,$offsetY,NDArray::uint32);
-        $kernel->setArg(9,$incY,NDArray::uint32);
-        $global_work_size = [$m];
+        $global_work_size = [$n,$m];
         $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
             $events,$waitEvents);
     }
@@ -1869,13 +1946,13 @@ class OpenCLMath
         return $times;
     }
 
-    public function predictTimeScatterAddAxis0($mode,$numClass,$cols,$rows)
+    public function predictTimeScatterAdd($mode,$numClass,$cols,$rows)
     {
-        if(isset($this->timesPredictionScatterAddAxis0[$mode])) {
-            $times = $this->timesPredictionScatterAddAxis0[$mode];
+        if(isset($this->timesPredictionScatterAdd[$mode])) {
+            $times = $this->timesPredictionScatterAdd[$mode];
         } else {
             $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
-            $this->timesPredictionScatterAddAxis0[$mode] = $times;
+            $this->timesPredictionScatterAdd[$mode] = $times;
         }
         if($mode==4) {
             $numClass = 8;
@@ -1894,14 +1971,13 @@ class OpenCLMath
     /**
      * A(X[k],n) := B[k,n] ,  m > max(X[k])
      */
-    public function scatterAxis0(
-        int $m,
+    public function scatterAdd(
         int $n,
         int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $B, int $offsetB, int $ldB,
-        bool $addMode,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
         EventList $events=null, EventList $waitEvents=null
         ) : void
     {
@@ -1917,230 +1993,172 @@ class OpenCLMath
             $this->assertFP64();
         }
 
-        if($addMode) {
-            $small = $max_work_items = $this->maxWorkItem[0];
-            $mediam = $max_work_items*$max_work_items*2;
-            for($bm=8; $bm<$m;$bm<<=1) { ; }
-            for($bn=8; $bn<$n;$bn<<=1) { ; }
-            for($bk=8; $bk<$k;$bk<<=1) { ; }
-            //echo "($m,$n,$k)\n";
-            $mode0 = $this->predictTimeScatterAddAxis0(0,$bm,$bn,$bk);
-            //$mode1 = $this->predictTimeScatterAddAxis0(1,$bm,$bn,$bk);
-            $mode2 = $this->predictTimeScatterAddAxis0(2,$bm,$bn,$bk);
-            $mode3 = $this->predictTimeScatterAddAxis0(3,$bm,$bn,$bk);
-            $mode4 = $this->predictTimeScatterAddAxis0(4,$bm,$bn,$bk);
-            //echo 'mode0='.number_format($mode0)."\n";
-            ////echo 'mode1='.number_format($mode1)."\n";
-            //echo 'mode2='.number_format($mode2)."\n";
-            //echo 'mode3='.number_format($mode3)."\n";
-            //echo 'mode4='.number_format($mode4)."\n";
-            $imin1 = ($mode0 < $mode2) ? 0 : 2;
-            $min1 = ($mode0 < $mode2) ? $mode0 : $mode2;
-            $imin2 = ($mode3 < $mode4) ? 3 : 4;
-            $min2 = ($mode3 < $mode4) ? $mode3 : $mode4;
-            $mode = ($min1 < $min2) ? $imin1 : $imin2;
-            //$min = ($min1 < $min2) ? $min1 : $min2;
-            //if($min==PHP_INT_MAX) { echo "scatterAxis0,"; }
-            if($mode==2 && $bk<=$small) {
-                $mode=1;
-            }
-            //echo "mode=$mode($m,$n,$k)\n";
-            switch($mode) {
-                case 0:{
-                    $this->scatterAddAxis0_0(
-                        $m,$n,$k,
-                        $A, $offsetA, $ldA,
-                        $X, $offsetX, $incX,
-                        $B, $offsetB, $ldB,
-                        $addMode,
-                        $events, $waitEvents
-                    );
-                    break;
-                }
-                case 1:{
-                    $this->scatterAddAxis0_1(
-                        $m,$n,$k,
-                        $A, $offsetA, $ldA,
-                        $X, $offsetX, $incX,
-                        $B, $offsetB, $ldB,
-                        $addMode,
-                        $events, $waitEvents
-                    );
-                    break;
-                }
-                case 2:{
-                    $this->scatterAddAxis0_2(
-                        $m,$n,$k,
-                        $A, $offsetA, $ldA,
-                        $X, $offsetX, $incX,
-                        $B, $offsetB, $ldB,
-                        $addMode,
-                        $events, $waitEvents
-                    );
-                    break;
-                }
-                case 3:{
-                    $this->scatterAddAxis0_3(
-                        $m,$n,$k,
-                        $A, $offsetA, $ldA,
-                        $X, $offsetX, $incX,
-                        $B, $offsetB, $ldB,
-                        $addMode,
-                        $events, $waitEvents
-                    );
-                    break;
-                }
-                case 4:{
-                    $this->scatterAddAxis0_4(
-                        $m,$n,$k,
-                        $A, $offsetA, $ldA,
-                        $X, $offsetX, $incX,
-                        $B, $offsetB, $ldB,
-                        $addMode,
-                        $events, $waitEvents
-                    );
-                    break;
-                }
-            }
-            return;
+        $small = $max_work_items = $this->maxWorkItem[0];
+        $mediam = $max_work_items*$max_work_items*2;
+        // m(rows) => numClass
+        // n(cols) => k
+        // k       => n
+        for($bn=8; $bn<$n;$bn<<=1) { ; }
+        for($bk=8; $bk<$n;$bk<<=1) { ; }
+        for($bclass=8; $bclass<$numClass;$bclass<<=1) { ; }
+        //echo "($m,$n,$k)\n";
+        $mode0 = $this->predictTimeScatterAdd(0,$bclass,$bk,$bn);
+        //$mode1 = $this->predictTimeScatterAdd(1,$bm,$bn,$bk);
+        $mode2 = $this->predictTimeScatterAdd(2,$bclass,$bk,$bn);
+        $mode3 = $this->predictTimeScatterAdd(3,$bclass,$bk,$bn);
+        $mode4 = $this->predictTimeScatterAdd(4,$bclass,$bk,$bn);
+        //echo 'mode0='.number_format($mode0)."\n";
+        ////echo 'mode1='.number_format($mode1)."\n";
+        //echo 'mode2='.number_format($mode2)."\n";
+        //echo 'mode3='.number_format($mode3)."\n";
+        //echo 'mode4='.number_format($mode4)."\n";
+        $imin1 = ($mode0 < $mode2) ? 0 : 2;
+        $min1 = ($mode0 < $mode2) ? $mode0 : $mode2;
+        $imin2 = ($mode3 < $mode4) ? 3 : 4;
+        $min2 = ($mode3 < $mode4) ? $mode3 : $mode4;
+        $mode = ($min1 < $min2) ? $imin1 : $imin2;
+        //$min = ($min1 < $min2) ? $min1 : $min2;
+        if($mode==2 && $bk<=$small) {
+            $mode=1;
         }
-
-        $type = $this->dtypeToOpenCLType[$B->dtype()];
-        $kernel_name = "scatterAxis0_${type}_set";
-        if(!isset($this->sources[$kernel_name])) {
-            $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        uint m,\n".
-                "        __global ${type} * a,\n".
-                "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
-                "    const global uint * x,\n".
-                "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
-                "    const global ${type} * b,\n".
-                "    const        uint offset_b,\n".
-                "    const        uint ldb)\n".
-                "{\n".
-                "    uint i = get_global_id(0);\n".
-                "    uint j = get_global_id(1);\n".
-                "    uint label = x[i*incx+offset_x];\n".
-                "    if(label<m) {\n".
-                "        a[label*lda+j+offset_a] = b[i*ldb+j+offset_b];\n".
-                "    }\n".
-                "}\n";
+        if($this->testMode!==null) {
+            $mode = $this->testMode;
         }
-        $kernel = $this->createKernel($kernel_name);
-        $kernel->setArg(0,$m,NDArray::uint32);
-        $kernel->setArg(1,$A);
-        $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$ldA,NDArray::uint32);
-        $kernel->setArg(4,$X);
-        $kernel->setArg(5,$offsetX,NDArray::uint32);
-        $kernel->setArg(6,$incX,NDArray::uint32);
-        $kernel->setArg(7,$B);
-        $kernel->setArg(8,$offsetB,NDArray::uint32);
-        $kernel->setArg(9,$ldB,NDArray::uint32);
-        $global_work_size = [$k,$n];
-        $local_work_size = null;
-        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
-            $events,$waitEvents);
+        //echo "mode=$mode($m,$n,$k)\n";
+        switch($mode) {
+            case 0:{
+                $this->scatterAdd_0(
+                    $n,$k,$numClass,
+                    $X, $offsetX,
+                    $A, $offsetA,
+                    $B, $offsetB,
+                    $events, $waitEvents
+                );
+                break;
+            }
+            case 1:{
+                $this->scatterAdd_1(
+                    $n,$k,$numClass,
+                    $X, $offsetX,
+                    $A, $offsetA,
+                    $B, $offsetB,
+                    $events, $waitEvents
+                );
+                break;
+            }
+            case 2:{
+                $this->scatterAdd_2(
+                    $n,$k,$numClass,
+                    $X, $offsetX,
+                    $A, $offsetA,
+                    $B, $offsetB,
+                    $events, $waitEvents
+                );
+                break;
+            }
+            case 3:{
+                $this->scatterAdd_3(
+                    $n,$k,$numClass,
+                    $X, $offsetX,
+                    $A, $offsetA,
+                    $B, $offsetB,
+                    $events, $waitEvents
+                );
+                break;
+            }
+            case 4:{
+                $this->scatterAdd_4(
+                    $n,$k,$numClass,
+                    $X, $offsetX,
+                    $A, $offsetA,
+                    $B, $offsetB,
+                    $events, $waitEvents
+                );
+                break;
+            }
+        }
     }
 
     /**
-     * A(X[k],n) := B[k,n] ,  m > max(X[k])
-     */
-    public function scatterAddAxis0_0(
-        int $m,
+    *      B(m,X(m,n),k) += A(m,n,k)
+    */
+    public function scatterAdd_0(
         int $n,
         int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $B, int $offsetB, int $ldB,
-        bool $addMode,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
         EventList $events=null, EventList $waitEvents=null
         ) : void
     {
+//echo "mode=0\n";
         $dtype = $A->dtype();
-        $total_local_items = $k;
+        $total_local_items = $n;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAxis0_0_${type}_add";
+        $kernel_name = "scatterAdd_0_${type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
                 "__kernel void ${kernel_name}(\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * a,\n".
-                "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
+                "    const        uint k,\n".
+                "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
+                "        __global ${type} * a,\n".
+                "    const        uint offset_a,\n".
                 "    const global ${type} * b,\n".
-                "    const        uint offset_b,\n".
-                "    const        uint ldb,\n".
-                "    const        uint rows,\n".
-                "    const        uint cols)\n".
+                "    const        uint offset_b)\n".
                 "{\n".
-                "    const uint row = get_global_id(0);\n".  // A row id
-                "    const uint col = get_global_id(1);\n".  // A col id
+                "    const uint p = get_global_id(0);\n".  // A col id(p)
+                "    const uint i = get_global_id(1);\n".  // A row id(i)
                 "    uint pos_x = offset_x;\n".  // A col id
-                "    uint pos_b = col+offset_b;\n".  // A col id
+                "    uint pos_b = offset_b+p;\n".  // A col id
                 "    ${type} sum = 0;\n".
-                //"    if(row<rows && col<cols) {\n".
-                "        for(int i=0;i<total_local_items;i++,pos_x+=incx,pos_b+=ldb) {\n".
+                //"    if(p<k && i<numclass) {\n".
+                "        for(int j=0;j<total_local_items;j++,pos_x++,pos_b+=k) {\n".
                 "            uint label = x[pos_x];\n".
-                "            if(label==row) {\n".
+                "            if(label==i) {\n".
                 "                sum += b[pos_b];\n".
                 "            }\n".
                 "        }\n".
-                "        a[row*lda+col+offset_a] += sum;\n".
+                "        a[offset_a+i*k+p] += sum;\n".
                 //"    }\n".
                 "}\n";
         }
         $kernel = $this->createKernel($kernel_name);
 
         $kernel->setArg(0,$total_local_items,NDArray::uint32);
-        $kernel->setArg(1,$A);
-        $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$ldA,NDArray::uint32);
-        $kernel->setArg(4,$X);
-        $kernel->setArg(5,$offsetX,NDArray::uint32);
-        $kernel->setArg(6,$incX,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$numClass,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$A);
+        $kernel->setArg(6,$offsetA,NDArray::uint32);
         $kernel->setArg(7,$B);
         $kernel->setArg(8,$offsetB,NDArray::uint32);
-        $kernel->setArg(9,$ldB,NDArray::uint32);
-        $kernel->setArg(10,$m,NDArray::uint32);
-        $kernel->setArg(11,$n,NDArray::uint32);
-        //$multiple = $this->kernelMultiple($kernel);
-        //$global_work_size = [$this->ceil($m,$multiple),$n];
-        //$local_work_size = [$multiple,1];
-        //$global_work_size = [$m,$this->ceil($n,$multiple)];
-        //$local_work_size = [1,$multiple];
-        //$global_work_size = [$this->ceil($m,8),$this->ceil($n,4)];
-        //$local_work_size = [8,4];
-        $global_work_size = [$m,$n];
+        $global_work_size = [$k,$numClass];
         $local_work_size = null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
-
     }
 
     /**
-     * A(X[k],n) := B[k,n] ,  m > max(X[k])
-     */
-    public function scatterAddAxis0_1(
-        int $m,
+    * A(X[k],n) := B[k,n] ,  m > max(X[k])
+    */
+    public function scatterAdd_1(
         int $n,
         int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $B, int $offsetB, int $ldB,
-        bool $addMode,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
         EventList $events=null, EventList $waitEvents=null
         ) : void
     {
 //echo "mode=1\n";
         $dtype = $A->dtype();
-        $total_local_items = $k;
+        $total_local_items = $n;
         $max_work_items = $this->maxWorkItem[0];
         if($total_local_items>$max_work_items) {
             throw new InvalidArgumentException('too many cols');
@@ -2153,74 +2171,71 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAxis0_S_${type}_add";
+        $kernel_name = "scatterAdd_S_${type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
                 "__kernel void ${kernel_name}(\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * a,\n".
-                "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
+                "    const        uint k,\n".
+                "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
+                "        __global ${type} * a,\n".
+                "    const        uint offset_a,\n".
                 "    const global ${type} * b,\n".
                 "    const        uint offset_b,\n".
-                "    const        uint ldb,\n".
                 "         __local ${type} * local_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
-                "    const uint grid = get_group_id(0);\n".  // A row id
-                "    const uint gid1 = get_global_id(1);\n".  // A col id
+                "    const uint grid = get_group_id(0);\n".  // A col id (p)
+                "    const uint gid1 = get_global_id(1);\n". // A row id(i)
+                "    const uint pos_b = grid+offset_b;\n".
                      $this->kernelTemplateSSum(
-                         "uint label = x[lid*incx+offset_x];\n".
-                         "if(label==grid) {\n".
-                         "    local_work[lid] = b[lid*ldb+gid1+offset_b];\n".
+                         "uint label = x[lid+offset_x];\n".  // pos_x (j)
+                         "if(label==gid1) {\n".
+                         "    local_work[lid] = b[lid*k+pos_b];\n".
                          "} else {\n".
                          "    local_work[lid] = 0;\n".
                          "}\n",
-                         "a[grid*lda+gid1+offset_a] += local_work[0];\n"
+                         "a[gid1*k+grid+offset_a] += local_work[0];\n"
                      ).
                 "}\n";
         }
         $kernel = $this->createKernel($kernel_name);
 
         $kernel->setArg(0,$total_local_items,NDArray::uint32);
-        $kernel->setArg(1,$A);
-        $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$ldA,NDArray::uint32);
-        $kernel->setArg(4,$X);
-        $kernel->setArg(5,$offsetX,NDArray::uint32);
-        $kernel->setArg(6,$incX,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$numClass,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$A);
+        $kernel->setArg(6,$offsetA,NDArray::uint32);
         $kernel->setArg(7,$B);
         $kernel->setArg(8,$offsetB,NDArray::uint32);
-        $kernel->setArg(9,$ldB,NDArray::uint32);
-        $kernel->setArg(10,null,$max_work_items*$value_size);
-        $kernel->setArg(11,$work_items,NDArray::uint32);
-        $global_work_size = [$max_work_items*$m,$n];
+        $kernel->setArg(9,null,$max_work_items*$value_size);
+        $kernel->setArg(10,$work_items,NDArray::uint32);
+        $global_work_size = [$max_work_items*$k,$numClass];
         $local_work_size = [$max_work_items,1];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
-
     }
 
     /**
-     * A(X[k],n) := B[k,n] ,  m > max(X[k])
-     */
-    public function scatterAddAxis0_2(
-        int $m,
+    * A(X[k],n) := B[k,n] ,  m > max(X[k])
+    */
+    public function scatterAdd_2(
         int $n,
         int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $B, int $offsetB, int $ldB,
-        bool $addMode,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
         EventList $events=null, EventList $waitEvents=null
         ) : void
     {
 //echo "mode=2\n";
         $dtype = $A->dtype();
-        $total_local_items = $k;
+        $total_local_items = $n;
         $max_work_items = $this->maxWorkItem[0];
         if($total_local_items>$max_work_items) {
             $segments = (int)ceil($total_local_items/$max_work_items); // round up float
@@ -2234,77 +2249,75 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAxis0_M_${type}_add";
+        $kernel_name = "scatterAdd_M_${type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
                 "__kernel void ${kernel_name}(\n".
-                "    const        uint total_local_items,\n".
-                "        __global ${type} * a,\n".
-                "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
+                "    const        uint total_local_items,\n". // k => n
+                "    const        uint k,\n".
+                "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
+                "        __global ${type} * a,\n".
+                "    const        uint offset_a,\n".
                 "    const global ${type} * b,\n".
                 "    const        uint offset_b,\n".
-                "    const        uint ldb,\n".
                 "    const        uint segments,\n".
                 "         __local ${type} * local_work,\n".
                 "         __local ${type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
-                "    const uint grid = get_group_id(0);\n".  // A row id
-                "    const uint gid1 = get_global_id(1);\n".  // A col id
+                "    const uint grid = get_group_id(0);\n".  // A col id(p)(n => k)
+                "    const uint gid1 = get_global_id(1);\n".  // A row id(i)(m => class)
+                "    const uint pos_b = grid+offset_b;\n".
                      $this->kernelTemplateQSum(
-                         "uint label = x[(seg*lws+lid)*incx+offset_x];\n".
-                         "if(label==grid) {\n".
-                         "    local_work[lid] = b[(seg*lws+lid)*ldb+gid1+offset_b];\n".
+                         "uint label = x[seg*lws+lid+offset_x];\n". // pos_x (i)
+                         "if(label==gid1) {\n".
+                         "    local_work[lid] = b[(seg*lws+lid)*k+pos_b];\n".
                          "} else {\n".
                          "    local_work[lid] = 0;\n".
                          "}\n",
-                         "a[grid*lda+gid1+offset_a] += seg_work[0];\n"
+                         "a[gid1*k+grid+offset_a] += seg_work[0];\n"
                      ).
                 "}\n";
         }
         $kernel = $this->createKernel($kernel_name);
 
         $kernel->setArg(0,$total_local_items,NDArray::uint32);
-        $kernel->setArg(1,$A);
-        $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$ldA,NDArray::uint32);
-        $kernel->setArg(4,$X);
-        $kernel->setArg(5,$offsetX,NDArray::uint32);
-        $kernel->setArg(6,$incX,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$numClass,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$A);
+        $kernel->setArg(6,$offsetA,NDArray::uint32);
         $kernel->setArg(7,$B);
         $kernel->setArg(8,$offsetB,NDArray::uint32);
-        $kernel->setArg(9,$ldB,NDArray::uint32);
-        $kernel->setArg(10,$segments,NDArray::uint32);
-        $kernel->setArg(11,null,$max_work_items*$value_size);
-        $kernel->setArg(12,null,$segments*$value_size);
-        $kernel->setArg(13,$work_items,NDArray::uint32);
-        $global_work_size = [$max_work_items*$m,$n];
+        $kernel->setArg(9,$segments,NDArray::uint32);
+        $kernel->setArg(10,null,$max_work_items*$value_size);
+        $kernel->setArg(11,null,$segments*$value_size);
+        $kernel->setArg(12,$work_items,NDArray::uint32);
+        $global_work_size = [$max_work_items*$k,$numClass];
         $local_work_size = [$max_work_items,1];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
     }
 
     /**
-     * A(X[k],n) := B[k,n] ,  m > max(X[k])
-     */
-    public function scatterAddAxis0_3(
-        int $m,
+    * A(X[k],n) := B[k,n] ,  m > max(X[k])
+    */
+    public function scatterAdd_3(
         int $n,
         int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $B, int $offsetB, int $ldB,
-        bool $addMode,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
         EventList $events=null, EventList $waitEvents=null
         ) : void
     {
 //echo "mode=3\n";
         $dtype = $A->dtype();
-        $total_local_items = $k;
+        $total_local_items = $n;
         $work_items1 = $this->maxWorkItem[0];
         $work_items2 = $this->maxWorkItem[0];
         if($total_local_items<$work_items1) {
@@ -2320,34 +2333,33 @@ class OpenCLMath
         $value_size = $A->value_size();
         $temp_size = 2*$work_items2;
         $temp_buffer = $this->newBuffer(
-            $value_size*$temp_size*$m*$n,
+            $value_size*$temp_size*$k*$numClass,
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "scatterAxis0_L1_${type}_add";
-        $kernel_name2 = "scatterAxis0_L2_${type}_add";
+        $kernel_name1 = "scatterAdd_L1_${type}";
+        $kernel_name2 = "scatterAdd_L2_${type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
                 "__kernel void ${kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
-                "    const        uint cols,\n".
+                "    const        uint k,\n".
+                "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
                 "    const global ${type} * b,\n".
                 "    const        uint offset_b,\n".
-                "    const        uint ldb,\n".
                 "        __global ${type} * temp_buffer,\n".
                 "         __local ${type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                     $this->kernelTemplateLSum1(
                         "${type} input;\n".
-                        "const uint row_id = parallel_item_id/cols;\n".
-                        "const uint col_id = parallel_item_id%cols;\n".
-                        "const uint label = x[local_item_id*incx+offset_x];\n".
-                        "if(label==row_id) {\n".
-                        "    input = b[local_item_id*ldb+col_id+offset_b];\n".
+                        "const uint inner_id = parallel_item_id%k;\n". // (p)(cols k)
+                        "const uint outer_id = parallel_item_id/k;\n". // (i)(rows class)
+                        "const uint label = x[local_item_id+offset_x];\n".
+                        "if(label==outer_id) {\n".
+                        "    input = b[local_item_id*k+inner_id+offset_b];\n".
                         "} else {\n".
                         "    input = 0;\n".
                         "}\n",
@@ -2360,46 +2372,43 @@ class OpenCLMath
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
                 "__kernel void ${kernel_name2}(\n".
-                "    const        uint cols,\n".
+                "    const        uint k,\n".
                 "    const __global ${type} * temp_buffer,\n".
-                "        __global ${type} * a,\n".
+                "          __global ${type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
                 "         __local ${type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                     $this->kernelTemplateLSum2(
-                        "const uint row_id = parallel_item_id/cols;\n".
-                        "const uint col_id = parallel_item_id%cols;\n".
-                        "a[row_id*lda+col_id+offset_a] += local_work[0];\n"
+                        #"const uint inner_id = parallel_item_id%k;\n". // (p)(cols k)
+                        #"const uint outer_id = parallel_item_id/k;\n". // (i)(rows class)
+                        "a[parallel_item_id+offset_a] += local_work[0];\n"
                     ).
                 "}\n";
         }
         $kernel2 = $this->createKernel($kernel_name2);
-
+        //
         $kernel->setArg(0,$total_local_items,NDArray::uint32);
-        $kernel->setArg(1,$n,NDArray::uint32);
-        $kernel->setArg(2,$X);
-        $kernel->setArg(3,$offsetX,NDArray::uint32);
-        $kernel->setArg(4,$incX,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$numClass,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
         $kernel->setArg(5,$B);
         $kernel->setArg(6,$offsetB,NDArray::uint32);
-        $kernel->setArg(7,$ldB,NDArray::uint32);
-        $kernel->setArg(8,$temp_buffer);
-        $kernel->setArg(9,null,$work_items1*$value_size);
-        $global_work_size = [$work_items1*$temp_size,$m*$n];
+        $kernel->setArg(7,$temp_buffer);
+        $kernel->setArg(8,null,$work_items1*$value_size);
+        $global_work_size = [$work_items1*$temp_size,$k*$numClass];
         $local_work_size = [$work_items1,1];
         $phase1Events = $this->newEventList();
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $phase1Events,$waitEvents);
-
-        $kernel2->setArg(0,$n,NDArray::uint32);
+        //
+        $kernel2->setArg(0,$k,NDArray::uint32);
         $kernel2->setArg(1,$temp_buffer);
         $kernel2->setArg(2,$A);
         $kernel2->setArg(3,$offsetA,NDArray::uint32);
-        $kernel2->setArg(4,$ldA,NDArray::uint32);
-        $kernel2->setArg(5,null,$work_items2*$value_size);
-        $global_work_size = [$work_items2,$m*$n];
+        $kernel2->setArg(4,null,$work_items2*$value_size);
+        $global_work_size = [$work_items2,$k*$numClass];
         $local_work_size = [$work_items2,1];
         $kernel2->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$phase1Events);
@@ -2408,45 +2417,41 @@ class OpenCLMath
     /**
      * A(X[k],n) := B[k,n] ,  m > max(X[k])
      */
-    public function scatterAddAxis0_4(
-        int $m,
-        int $n,
-        int $k,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $B, int $offsetB, int $ldB,
-        bool $addMode,
-        EventList $events=null, EventList $waitEvents=null
-        ) : void
+     public function scatterAdd_4(
+         int $n,
+         int $k,
+         int $numClass,
+         Buffer $X, int $offsetX,
+         Buffer $A, int $offsetA,
+         Buffer $B, int $offsetB,
+         EventList $events=null, EventList $waitEvents=null
+         ) : void
     {
-        //echo "mode=4($m,$n,$k)\n";
+//echo "mode=4\n";
         $type = $this->dtypeToOpenCLType[$B->dtype()];
-        $kernel_name = "scatterAxis0_4_${type}_add";
+        $kernel_name = "scatterAdd_4_${type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
                 "__kernel void ${kernel_name}(\n".
-                "    const        uint m,\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
-                "        __global ${type} * a,\n".
-                "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
+                "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
+                "        __global ${type} * a,\n".
+                "    const        uint offset_a,\n".
                 "    const global ${type} * b,\n".
-                "    const        uint offset_b,\n".
-                "    const        uint ldb)\n".
+                "    const        uint offset_b)\n".
                 "{\n".
                 "    const uint gid = get_global_id(0);\n".
                 //"    if(gid<n) {\n".
                 "        uint pos_x = offset_x;\n".
                 "        uint pos_b = offset_b;\n".
                 "        uint pos_a = gid+offset_a;\n".
-                "        for(uint i=0;i<k;i++,pos_x+=incx,pos_b+=ldb) {\n".
+                "        for(uint j=0;j<n;j++,pos_x++,pos_b+=k) {\n".
                 "            uint label = x[pos_x];\n".
-                "            if(label<m) {\n".
-                "                a[label*lda+pos_a] += b[pos_b+gid];\n".
+                "            if(label<numclass) {\n".
+                "                a[label*k+pos_a] += b[pos_b+gid];\n".
                 "            }\n".
                 "        }\n".
                 //"    }\n".
@@ -2454,90 +2459,75 @@ class OpenCLMath
         }
         $kernel = $this->createKernel($kernel_name);
 
-        $kernel->setArg(0,$m,NDArray::uint32);
-        $kernel->setArg(1,$n,NDArray::uint32);
-        $kernel->setArg(2,$k,NDArray::uint32);
-        $kernel->setArg(3,$A);
-        $kernel->setArg(4,$offsetA,NDArray::uint32);
-        $kernel->setArg(5,$ldA,NDArray::uint32);
-        $kernel->setArg(6,$X);
-        $kernel->setArg(7,$offsetX,NDArray::uint32);
-        $kernel->setArg(8,$incX,NDArray::uint32);
-        $kernel->setArg(9,$B);
-        $kernel->setArg(10,$offsetB,NDArray::uint32);
-        $kernel->setArg(11,$ldB,NDArray::uint32);
+        $kernel->setArg(0,$n,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$numClass,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$A);
+        $kernel->setArg(6,$offsetA,NDArray::uint32);
+        $kernel->setArg(7,$B);
+        $kernel->setArg(8,$offsetB,NDArray::uint32);
         //$multiple = $this->kernelMultiple($kernel);
-        //$global_work_size = [$this->ceil($n,$multiple)];
+        //$global_work_size = [$this->ceil($k,$multiple)];
         //$local_work_size = [$multiple];
-        $global_work_size = [$n];
+        $global_work_size = [$k];
         $local_work_size = null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
     }
 
     /**
-     *      A(m,n) := B(m,1)  ( n = X(m) )
+     *
      */
-    public function scatterAxis1(
-        int $m,
-        int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY,
-        bool $addMode,
-        EventList $events=null, EventList $waitEvents=null
-        ) : void
+     public function repeat(
+         int $m,
+         int $k,
+         int $repeats,
+         Buffer $A, int $offsetA,
+         Buffer $B, int $offsetB,
+         EventList $events=null, EventList $waitEvents=null
+         ) : void
     {
-        if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
-            throw new InvalidArgumentException("X must be 32bit integer:".
-                                            $this->dtypeToString($X->dtype()));
-        }
-        if($A->dtype()!=$Y->dtype()) {
-            throw new InvalidArgumentException("Unmatch data type A and Y:".
-            $this->dtypeToString($A->dtype()).",".$this->dtypeToString($Y->dtype()));
-        }
-        if($A->dtype()==NDArray::float64) {
-            $this->assertFP64();
-        }
-
-        $type = $this->dtypeToOpenCLType[$Y->dtype()];
-        $mode = $addMode ? 'add' : 'set';
-        $operator = $addMode ? '+=' : '=';
-        if(!isset($this->sources["scatterAxis1_${type}_${mode}"])) {
-            $this->sources["scatterAxis1_${type}_${mode}"] =
-                "__kernel void scatterAxis1_${type}_${mode}(\n".
-                "    const        uint n,\n".
-                "        __global ${type} * a,\n".
+//echo "mode=4\n";
+        $type = $this->dtypeToOpenCLType[$B->dtype()];
+        $kernel_name = "repeat_${type}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void ${kernel_name}(\n".
+                "    const        uint m,\n".
+                "    const        uint k,\n".
+                "    const        uint repeats,\n".
+                "    const global ${type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const        uint lda,\n".
-                "    const global uint * x,\n".
-                "    const        uint offset_x,\n".
-                "    const        uint incx,\n".
-                "    const global ${type} * y,\n".
-                "    const        uint offset_y,\n".
-                "    const        uint incy)\n".
+                "        __global ${type} * b,\n".
+                "    const        uint offset_b)\n".
                 "{\n".
-                "    uint gid = get_global_id(0);\n".
-                "    uint label = x[gid*incx+offset_x];\n".
-                "    if(label<n) {\n".
-                "        a[gid*lda+label+offset_a] ${operator} y[gid*incy+offset_y];\n".
-                "    }\n".
+                "    const uint p = get_global_id(0)%k;\n".
+                "    const uint j = get_global_id(0)/k;\n".
+                "    const uint i = get_global_id(1);\n".
+                //"    if(gid<n) {\n".
+                "        uint pos_a = i*k+offset_a;\n".
+                "        uint pos_b = i*repeats*k+offset_b;\n".
+                "        b[pos_b+j*k+p] = a[pos_a+p];\n".
+                //"    }\n".
                 "}\n";
         }
-        $kernel = $this->createKernel("scatterAxis1_${type}_${mode}");
+        $kernel = $this->createKernel($kernel_name);
 
-        $kernel->setArg(0,$n,NDArray::uint32);
-        $kernel->setArg(1,$A);
-        $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$ldA,NDArray::uint32);
-        $kernel->setArg(4,$X);
-        $kernel->setArg(5,$offsetX,NDArray::uint32);
-        $kernel->setArg(6,$incX,NDArray::uint32);
-        $kernel->setArg(7,$Y);
-        $kernel->setArg(8,$offsetY,NDArray::uint32);
-        $kernel->setArg(9,$incY,NDArray::uint32);
-        $global_work_size = [$m];
-        $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
+        $kernel->setArg(0,$m,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$repeats,NDArray::uint32);
+        $kernel->setArg(3,$A);
+        $kernel->setArg(4,$offsetA,NDArray::uint32);
+        $kernel->setArg(5,$B);
+        $kernel->setArg(6,$offsetB,NDArray::uint32);
+        //$multiple = $this->kernelMultiple($kernel);
+        //$global_work_size = [$this->ceil($k,$multiple)];
+        //$local_work_size = [$multiple];
+        $global_work_size = [$k*$repeats,$m];
+        $local_work_size = null;
+        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
     }
 
@@ -2659,6 +2649,9 @@ class OpenCLMath
         $mode =  ($mode3 < $min1)  ? 3 : $imin1;
         if($mode==2 && $n<=256) {
             $mode = 1;
+        }
+        if($this->testMode!==null) {
+            $mode = $this->testMode;
         }
         //echo "mode=$mode\n";
         switch($mode) {
@@ -3068,6 +3061,9 @@ class OpenCLMath
         $mode =  ($mode3 < $min1)  ? 3 : $imin1;
         if($mode==2 && $n<=256) {
             $mode = 1;
+        }
+        if($this->testMode!==null) {
+            $mode = $this->testMode;
         }
         //echo "mode=$mode\n";
         switch($mode) {
@@ -3484,6 +3480,9 @@ class OpenCLMath
         $mode =  ($mode3 < $min1)  ? 3 : $imin1;
         if($mode==2 && $n<=256) {
             $mode = 1;
+        }
+        if($this->testMode!==null) {
+            $mode = $this->testMode;
         }
         //echo "mode=$mode\n";
         switch($mode) {
@@ -4283,6 +4282,114 @@ class OpenCLMath
         $kernel->setArg(13,$sizeAxis2,NDArray::uint32);
         $kernel->setArg(14,$size,NDArray::uint32);
         $global_work_size = [$size*$sizeAxis2,$sizeAxis1*$sizeAxis0];
+        $local_work_size=null;
+        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
+            $events,$waitEvents);
+    }
+
+    /**
+    * imagecopy
+    */
+    public function imagecopy(
+        int $height,
+        int $width,
+        int $channels,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        bool $channelsFirst,
+        int $heightShift,
+        int $widthShift,
+        bool $verticalFlip,
+        bool $horizontalFlip,
+        EventList $events=null, EventList $waitEvents=null
+        )
+    {
+        if($A->dtype()!=$B->dtype()) {
+            throw new InvalidArgumentException("Unmatch data type A and Y:".
+            $this->dtypeToString($A->dtype()).",".$this->dtypeToString($Y->dtype()));
+        }
+        if($A->dtype()==NDArray::float64) {
+            $this->assertFP64();
+        }
+
+        if($channelsFirst) {
+            $ldC = $width*$height;
+            $ldY = $width;
+            $ldX = 1;
+        } else {
+            $ldY = $width*$channels;
+            $ldX = $channels;
+            $ldC = 1;
+        }
+        $directionY = $directionX = 1;
+        $biasY = $biasX = 0;
+        if($verticalFlip) {
+            $directionY = -$directionY;
+            $biasY = $height-1;
+        }
+        if($horizontalFlip) {
+            $directionX = -$directionX;
+            $biasX = $width-1;
+        }
+        $biasY -= $heightShift*$directionY;
+        $biasX -= $widthShift*$directionX;
+
+        $type = $this->dtypeToOpenCLType[$A->dtype()];
+        $kernel_name = "imagecopy_${type}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void ${kernel_name}(\n".
+                "    const        int height,\n".
+                "    const        int width,\n".
+                "    const        int directionY,\n".
+                "    const        int biasY,\n".
+                "    const        int directionX,\n".
+                "    const        int biasX,\n".
+                "    const        int ldY,\n".
+                "    const        int ldX,\n".
+                "    const        int ldC,\n".
+                "    const global ${type} * a,\n".
+                "    const        uint offset_a,\n".
+                "        __global ${type} * b,\n".
+                "    const        uint offset_b)\n".
+                "{\n".
+                "    uint gid0 = get_global_id(0);\n".
+                "    uint gid1 = get_global_id(1);\n".
+                "    int c  = gid0;\n".
+                "    int x   = gid1 % width;\n".
+                "    int y   = gid1 / width;\n".
+                "    int sy = y*directionY+biasY;\n".
+                "    int sx = x*directionX+biasX;\n".
+                "    if(sy<0) {\n".
+                "        sy = 0;\n".
+                "    } else if(sy>=height) {\n".
+                "        sy = height-1;\n".
+                "    }\n".
+                "    if(sx<0) {\n".
+                "        sx = 0;\n".
+                "    } else if(sx>=width) {\n".
+                "        sx = width-1;\n".
+                "    }\n".
+                "    b[y*ldY+x*ldX+c*ldC+offset_b] =\n".
+                "        a[sy*ldY+sx*ldX+c*ldC+offset_a];\n".
+                "}\n";
+        }
+
+        $kernel = $this->createKernel($kernel_name);
+        $kernel->setArg(0,$height,NDArray::int32);
+        $kernel->setArg(1,$width,NDArray::int32);
+        $kernel->setArg(2,$directionY,NDArray::int32);
+        $kernel->setArg(3,$biasY,NDArray::int32);
+        $kernel->setArg(4,$directionX,NDArray::int32);
+        $kernel->setArg(5,$biasX,NDArray::int32);
+        $kernel->setArg(6,$ldY,NDArray::int32);
+        $kernel->setArg(7,$ldX,NDArray::int32);
+        $kernel->setArg(8,$ldC,NDArray::int32);
+        $kernel->setArg(9,$A);
+        $kernel->setArg(10,$offsetA,NDArray::uint32);
+        $kernel->setArg(11,$B);
+        $kernel->setArg(12,$offsetB,NDArray::uint32);
+        $global_work_size = [$channels,$width*$height];
         $local_work_size=null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
