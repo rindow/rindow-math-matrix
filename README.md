@@ -1,6 +1,13 @@
+
 The fundamental package for scientific matrix operation
 =======================================================
-Master: [![Build Status](https://travis-ci.com/rindow/rindow-math-matrix.png?branch=master)](https://travis-ci.com/rindow/rindow-math-matrix)
+Status:
+[![Build Status](https://github.com/rindow/rindow-math-matrix/workflows/tests/badge.svg)](https://github.com/rindow/rindow-math-matrix/actions)
+[![Downloads](https://img.shields.io/packagist/dt/rindow/rindow-math-matrix)](https://packagist.org/packages/rindow/rindow-math-matrix)
+[![Latest Stable Version](https://img.shields.io/packagist/v/rindow/rindow-math-matrix)](https://packagist.org/packages/rindow/rindow-math-matrix)
+[![License](https://img.shields.io/packagist/l/rindow/rindow-math-matrix)](https://packagist.org/packages/rindow/rindow-math-matrix)
+
+
 
 Rindow Math Matrix is the fundamental package for scientific matrix operation
 

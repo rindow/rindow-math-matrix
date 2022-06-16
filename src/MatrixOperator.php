@@ -3,6 +3,7 @@ namespace Rindow\Math\Matrix;
 
 use ArrayObject;
 use InvalidArgumentException;
+use LogicException;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\OpenCL;
