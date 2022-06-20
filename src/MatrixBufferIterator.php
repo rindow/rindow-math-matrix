@@ -25,7 +25,7 @@ class MatrixBufferIterator implements Iterator
         return $this->current;
     }
 
-    public function current()
+    public function current() : mixed
     {
         if($this->endOfItem) {
             throw new RangeException('End of buffer');
@@ -39,12 +39,12 @@ class MatrixBufferIterator implements Iterator
         return $pos;
     }
 
-    public function key()
+    public function key() : mixed
     {
         return null;
     }
 
-    public function next()
+    public function next() : void
     {
         if($this->endOfItem)
             return;
@@ -61,13 +61,13 @@ class MatrixBufferIterator implements Iterator
         $this->endOfItem = true;
     }
 
-    public function rewind()
+    public function rewind() : void
     {
         $this->current = array_fill(0,count($this->shape),0);
         $this->endOfItem = false;
     }
 
-    public function valid()
+    public function valid() : bool
     {
         if($this->endOfItem)
             return false;
