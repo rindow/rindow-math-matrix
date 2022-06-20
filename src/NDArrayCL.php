@@ -211,7 +211,7 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         return true;
     }
 
-    public function offsetGet( $offset )
+    public function offsetGet( $offset ) : mixed
     {
         if(!$this->offsetExists($offset)) {
             if(count($this->shape)==0) {

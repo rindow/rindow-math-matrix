@@ -244,7 +244,7 @@ class NDArrayPhp implements NDArray,Countable,Serializable,IteratorAggregate
         return true;
     }
 
-    public function offsetGet( $offset )
+    public function offsetGet( $offset ) : mixed
     {
         if(!$this->offsetExists($offset))
             throw new OutOfRangeException("Index is out of range");
