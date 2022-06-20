@@ -27,16 +27,6 @@ class Test extends ORGTest
         return $mo;
     }
 
-    public function testRotg()
-    {
-        $this->markTestSkipped('Unsuppored function on clblast');
-    }
-
-    public function testRot()
-    {
-        $this->markTestSkipped('Unsuppored function on clblast');
-    }
-
     public function testTrmmNormal()
     {
         $this->markTestSkipped('Unsuppored function on clblast');

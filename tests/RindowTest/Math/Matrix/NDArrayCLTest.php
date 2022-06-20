@@ -98,4 +98,27 @@ class Test extends TestCase
 
     }
 
+    public function testClone()
+    {
+        $hostArray = new NDArrayPHP([[1,2],[3,4],[5,6]],NDArray::int32);
+        $context = $this->getContext();
+        $queue = $this->getQueue($context);
+        $array = new NDArrayCL($context,$queue,$hostArray->buffer(),$hostArray->dtype(),
+            $hostArray->shape(),$hostArray->offset(),
+            OpenCL::CL_MEM_READ_ONLY|OpenCL::CL_MEM_COPY_HOST_PTR);
+        $this->assertEquals([3,2],$array->shape());
+        $this->assertEquals(NDArray::int32,$array->dtype());
+
+        $pattern=new NDArrayPhp([0],NDArray::int32);
+        $array2 = clone $array;
+        $events = new \Rindow\OpenCL\EventList();
+        $array->buffer()->fill($queue,$pattern->buffer(),$array->buffer()->bytes(),0,
+                    $pattern_size=1,$pattern_offset=0,$events);
+        $events->wait();
+
+        $this->assertEquals([[0,0],[0,0],[0,0]],$array->toArray());
+        $this->assertEquals(NDArray::int32,$array2->dtype());
+        $this->assertEquals(NDArray::int32,$array2->buffer()->dtype());
+        $this->assertEquals([[1,2],[3,4],[5,6]],$array2->toArray());
+    }
 }

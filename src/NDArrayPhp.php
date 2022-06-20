@@ -5,16 +5,17 @@ use SplFixedArray;
 use ArrayObject;
 use ArrayAccess;
 use Countable;
+use Traversable;
+use Serializable;
 use IteratorAggregate;
 use InvalidArgumentException;
 use OutOfRangeException;
 use LogicException;
 use RuntimeException;
-use Serializable;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 
-class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
+class NDArrayPhp implements NDArray,Countable,Serializable,IteratorAggregate
 {
     protected $_shape;
     protected $_buffer;
@@ -24,7 +25,7 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
 
     public function __construct($array = null, $dtype=null ,array $shape = null,$offset=null)
     {
-        if($dtype==null) {
+        if($dtype===null) {
             $dtype = NDArray::float32;
         } else {
             $dtype = $dtype;
@@ -38,14 +39,14 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
             $idx = 0;
             $this->array2Flat($array,$this->_buffer,$idx,$prepare=false);
             $this->_offset = 0;
-            if($shape==null) {
+            if($shape===null) {
                 $shape = $this->genShape($array);
             }
         } elseif(is_numeric($array)) {
             $this->_buffer = $this->newBuffer(1,$dtype);
             $this->_buffer[0] = $array;
             $this->_offset = 0;
-            if($shape==null) {
+            if($shape===null) {
                 $shape = [];
             }
             $this->assertShape($shape);
@@ -59,7 +60,7 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
         } elseif($this->isBuffer($array)) {
             if($offset===null||!is_int($offset))
                 throw new InvalidArgumentException("Must specify offset with the buffer");
-            if($shape==null)
+            if($shape===null)
                 throw new InvalidArgumentException("Invalid dimension size");
             $this->_buffer = $array;
             $this->_offset = $offset;
@@ -217,7 +218,7 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
         return $this->flat2Array($this->_buffer, $idx, $this->_shape);
     }
 
-    public function offsetExists( $offset )
+    public function offsetExists( $offset ) : bool
     {
         if(count($this->_shape)==0)
             return false;
@@ -278,7 +279,7 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
         return $new;
     }
 
-    public function offsetSet( $offset , $value )
+    public function offsetSet( $offset , $value ) : void
     {
         if(!$this->offsetExists($offset))
             throw new OutOfRangeException("Index is out of range");
@@ -308,19 +309,19 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
         }
     }
 
-    public function offsetUnset( $offset )
+    public function offsetUnset( $offset ) : void
     {
         throw new LogicException("Unsuppored Operation");
     }
 
-    public function count()
+    public function count() : int
     {
         if(count($this->_shape)==0)
             return 0;
         return $this->_shape[0];
     }
 
-    public function  getIterator()
+    public function  getIterator() : Traversable
     {
         if(count($this->_shape)==0)
             return [];
@@ -342,46 +343,59 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
 
     public function serialize()
     {
+        // Never called at the time of serialization.
+        // Interface for convenience.
+        return serialize($this->__serialize());
+    }
+
+    public function unserialize($data)
+    {
+        // Never called at the time of unserialization.
+        // Interface for convenience.
+        $this->__unserialize(unserialize($data));
+    }
+
+    public function __serialize()
+    {
         if(extension_loaded('rindow_openblas')) {
             if(!$this->_portableSerializeMode) {
-                return serialize([
+                return [
                     'm'=>'rindow_openblas',
                     's'=>$this->_shape,
                     'o'=>$this->_offset,
                     't'=>$this->_dtype,
                     'z'=>count($this->_buffer),
                     'b'=>$this->_buffer->dump()
-                ]);
+                ];
             }
             $count = count($this->_buffer);
             $array = [];
             for($i=0;$i<$count;$i++) {
                 $array[$i] = $this->_buffer[$i];
             }
-            return serialize([
+            return [
                 'm'=>'linear-array',
                 's'=>$this->_shape,
                 'o'=>$this->_offset,
                 't'=>$this->_dtype,
                 'z'=>count($this->_buffer),
                 'b'=>$array
-            ]);
+            ];
 
         } else {
-            return serialize([
+            return [
                 'm'=>'linear-array',
                 's'=>$this->_shape,
                 'o'=>$this->_offset,
                 't'=>$this->_dtype,
                 'z'=>count($this->_buffer),
                 'b'=>$this->_buffer->toArray()
-            ]);
+            ];
         }
     }
 
-    public function unserialize($serialized)
+    public function __unserialize($data)
     {
-        $data = unserialize($serialized);
         $mode = $data['m'];
         $this->_shape = $data['s'];
         $this->_offset = $data['o'];
@@ -403,6 +417,20 @@ class NDArrayPhp implements NDArray,Serializable,Countable,IteratorAggregate
             }
         } else {
             throw new RuntimeException('Illegal save mode: '.$mode);
+        }
+    }
+
+    public function __clone()
+    {
+        if($this->_buffer instanceof OpenBlasBuffer) {
+            $newBuffer =  new OpenBlasBuffer(
+                count($this->_buffer),$this->_buffer->dtype());
+            $newBuffer->load($this->_buffer->dump());
+            $this->_buffer = $newBuffer;
+        } elseif($this->_buffer instanceof SplFixedArray) {
+            $this->_buffer = clone $this->_buffer;
+        } else {
+            throw new RuntimeException('Unknown buffer type is uncloneable:'.get_class($this->_buffer));
         }
     }
 }

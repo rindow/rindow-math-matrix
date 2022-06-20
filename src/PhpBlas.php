@@ -2,6 +2,7 @@
 namespace Rindow\Math\Matrix;
 
 use ArrayAccess as Buffer;
+use SplFixedArray;
 use RuntimeException;
 use InvalidArgumentException;
 use Interop\Polite\Math\Matrix\BLAS;
@@ -79,7 +80,6 @@ class PhpBlas //implements BLASLevel1
             $X[$idx] = $X[$idx] * $alpha;
         }
     }
-
     /**
      *  Y := alpha * X + Y
      */
@@ -243,7 +243,52 @@ class PhpBlas //implements BLASLevel1
             $this->blas->rotg($A,$offsetA,$B,$offsetB,$C,$offsetC,$S,$offsetS);
             return;
         }
-        throw new RuntimeException("Unsupported function yet without rindow_openblas");
+        $a = $A[$offsetA];
+        $b = $B[$offsetB];
+        // r
+        if(abs($a)>abs($b)) {
+            $r = $this->sign(sqrt($a**2 + $b**2),$a);
+        } else {
+            $r = $this->sign(sqrt($a**2 + $b**2),$b);
+        }
+        // c
+        if($r!=0) {
+            $c = $a/$r;
+        } else {
+            $c = 1;
+        }
+        // s
+        if($r!=0) {
+            $s = $a/$r;
+        } else {
+            $s = 0;
+        }
+        // z
+        if(abs($a)>abs($b)) {
+            $z = $s;
+        } else {
+            if($r!=0) {
+                if($c!=0) {
+                    $z = 1/$c;
+                } else {
+                    $z = 1;
+                }
+            } else {
+                $z = 0;
+            }
+        }
+        $A[$offsetA] = $r;
+        $B[$offsetB] = $z;
+        $C[$offsetC] = $c;
+        $S[$offsetS] = $s;
+    }
+
+    protected function sign(float $x,float $y) : float
+    {
+        if($y<0) {
+            $x = -$x;
+        }
+        return $x;
     }
 
     public function rot(

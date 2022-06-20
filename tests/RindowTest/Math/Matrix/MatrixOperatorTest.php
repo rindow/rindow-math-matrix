@@ -1154,7 +1154,7 @@ class Test extends TestCase
         $this->assertEquals([5,14,23],$mo->projection($X,[-1,1,1])->toArray());
     }
 
-    public function testBroadCastOprators()
+    public function testBroadCastOpratorsFloat()
     {
         $mo = $this->newMatrixOperator();
         // Matrix + Numeric
@@ -1191,6 +1191,59 @@ class Test extends TestCase
         // Matrix + Matrix
         $X = $mo->array([[2.0,4.0],[6.0,8.0]],NDArray::float64);
         $Y = $mo->array([[1.0,2.0],[3.0,4.0]],NDArray::float64);
+
+        $this->assertEquals([[3,6],[9,12]],$mo->op($X,'+',$Y)->toArray());
+        $this->assertEquals([[1,2],[3,4]],$mo->op($X,'-',$Y)->toArray());
+        $this->assertEquals([[2,8],[18,32]],$mo->op($X,'*',$Y)->toArray());
+        $this->assertEquals([[2,2],[2,2]],$mo->op($X,'/',$Y)->toArray());
+        $this->assertEquals([[0,0],[0,0]],$mo->op($X,'%',$Y)->toArray());
+        $this->assertEquals([[2,16],[216,4096]],$mo->op($X,'**',$Y)->toArray());
+        $this->assertEquals([[false,false],[false,false]],$mo->op($X,'==',$Y)->toArray());
+        $this->assertEquals([[true,true],[true,true]],$mo->op($X,'!=',$Y)->toArray());
+        $this->assertEquals([[true,true],[true,true]],$mo->op($X,'>',$Y)->toArray());
+        $this->assertEquals([[true,true],[true,true]],$mo->op($X,'>=',$Y)->toArray());
+        $this->assertEquals([[false,false],[false,false]],$mo->op($X,'<',$Y)->toArray());
+        $this->assertEquals([[false,false],[false,false]],$mo->op($X,'<=',$Y)->toArray());
+    }
+
+    public function testBroadCastOpratorsInteger()
+    {
+        $mo = $this->newMatrixOperator();
+        // Matrix + Numeric
+        $X = $mo->array([[1,2],[3,4]],NDArray::int64);
+        $this->assertEquals([[2,3],[4,5]],$mo->op($X,'+',1)->toArray());
+        $this->assertEquals([[0,1],[2,3]],$mo->op($X,'-',1)->toArray());
+        $this->assertEquals([[2,4],[6,8]],$mo->op($X,'*',2)->toArray());
+        $Xtmp = $mo->array([[2,4],[6,8]],NDArray::int64);
+        $this->assertEquals([[1,2],[3,4]],$mo->op($Xtmp,'/',2)->toArray());
+
+        $this->assertEquals([[1,0],[1,0]],$mo->op($X,'%',2)->toArray());
+        $this->assertEquals([[1,4],[9,16]],$mo->op($X,'**',2)->toArray());
+        $this->assertEquals([[false,true],[false,false]],$mo->op($X,'==',2)->toArray());
+        $this->assertEquals([[true,false],[true,true]],$mo->op($X,'!=',2)->toArray());
+        $this->assertEquals([[false,false],[true,true]],$mo->op($X,'>',2)->toArray());
+        $this->assertEquals([[false,true],[true,true]],$mo->op($X,'>=',2)->toArray());
+        $this->assertEquals([[true,false],[false,false]],$mo->op($X,'<',2)->toArray());
+        $this->assertEquals([[true,true],[false,false]],$mo->op($X,'<=',2)->toArray());
+
+        // Numeric + Matrix
+        $X = $mo->array([[1,2],[3,4]],NDArray::int64);
+        $this->assertEquals([[2,3],[4,5]],$mo->op(1,'+',$X)->toArray());
+        $this->assertEquals([[0,-1],[-2,-3]],$mo->op(1,'-',$X)->toArray());
+        $this->assertEquals([[2,4],[6,8]],$mo->op(2,'*',$X)->toArray());
+        $this->assertEquals([[12,6],[4,3]],$mo->op(12,'/',$X)->toArray());
+        $this->assertEquals([[0,1],[1,3]],$mo->op(7,'%',$X)->toArray());
+        $this->assertEquals([[2,4],[8,16]],$mo->op(2,'**',$X)->toArray());
+        $this->assertEquals([[false,true],[false,false]],$mo->op(2,'==',$X)->toArray());
+        $this->assertEquals([[true,false],[true,true]],$mo->op(2,'!=',$X)->toArray());
+        $this->assertEquals([[true,false],[false,false]],$mo->op(2,'>',$X)->toArray());
+        $this->assertEquals([[true,true],[false,false]],$mo->op(2,'>=',$X)->toArray());
+        $this->assertEquals([[false,false],[true,true]],$mo->op(2,'<',$X)->toArray());
+        $this->assertEquals([[false,true],[true,true]],$mo->op(2,'<=',$X)->toArray());
+
+        // Matrix + Matrix
+        $X = $mo->array([[2.0,4.0],[6.0,8.0]],NDArray::int64);
+        $Y = $mo->array([[1.0,2.0],[3.0,4.0]],NDArray::int64);
 
         $this->assertEquals([[3,6],[9,12]],$mo->op($X,'+',$Y)->toArray());
         $this->assertEquals([[1,2],[3,4]],$mo->op($X,'-',$Y)->toArray());

@@ -4,18 +4,17 @@ namespace Rindow\Math\Matrix;
 use ArrayAccess;
 use Countable;
 use IteratorAggregate;
+use Traversable;
 use InvalidArgumentException;
 use OutOfRangeException;
 use LogicException;
 use RuntimeException;
-use Serializable;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\LinearBuffer;
 use Interop\Polite\Math\Matrix\OpenCL;
-#use Rindow\Math\Matrix\NDArrayPhp;
 
-class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
+class NDArrayCL implements NDArray,Countable,IteratorAggregate
 {
     static protected $valueSizeTable = [
         NDArray::bool  => 1,
@@ -188,7 +187,7 @@ class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
         return $array;
     }
 
-    public function offsetExists( $offset )
+    public function offsetExists( $offset ) : bool
     {
         if(is_array($offset)) {
             if(count($offset)!=2 ||
@@ -256,7 +255,7 @@ class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
         return $new;
     }
 
-    public function offsetSet( $offset , $value )
+    public function offsetSet( $offset , $value ) : void
     {
         if(!$this->offsetExists($offset)) {
             if(count($this->shape)==0) {
@@ -297,17 +296,17 @@ class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
             $src_idx*$valueSize ,$idx*$valueSize);
     }
 
-    public function offsetUnset( $offset )
+    public function offsetUnset( $offset ) : void
     {
         throw new LogicException("Unsuppored Operation");
     }
 
-    public function count()
+    public function count() : int
     {
         return $this->shape[0];
     }
 
-    public function  getIterator()
+    public function  getIterator() : Traversable
     {
         $count = $this->shape[0];
         for($i=0;$i<$count;$i++) {
@@ -325,12 +324,12 @@ class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
         return $this->portableSerializeMode;
     }
 
-    public function serialize()
+    public function __serialize()
     {
         throw new LogicException("Unsuppored Operation");
     }
 
-    public function unserialize($serialized)
+    public function __unserialize($serialized)
     {
         throw new LogicException("Unsuppored Operation");
     }
@@ -343,5 +342,22 @@ class NDArrayCL implements NDArray,Serializable,Countable,IteratorAggregate
     public function getEvents()
     {
         return $this->events = $events;
+    }
+
+    public function __clone()
+    {
+        if(!($this->buffer instanceof OpenCLBuffer)) {
+            throw new RuntimeException('Unknown buffer type is uncloneable:'.get_class($this->_buffer));
+        }
+        $bytes = $this->buffer->bytes();
+        $dtype = $this->buffer->dtype();
+        $flags = $this->flags & ~OpenCL::CL_MEM_COPY_HOST_PTR;
+        $newBuffer = new OpenCLBuffer($this->context,$bytes,
+                $flags,null,0,$dtype);
+        $events = new \Rindow\OpenCL\EventList();
+        $this->buffer->copy($this->queue,$newBuffer,0,0,0,$events);
+        $events->wait();
+        $this->flags = $flags;
+        $this->buffer = $newBuffer;
     }
 }

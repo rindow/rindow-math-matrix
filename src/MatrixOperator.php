@@ -17,15 +17,15 @@ use Rindow\OpenCL\CommandQueue;
 
 class MatrixOperator
 {
-    const LOWEST_RINDOW_OPENBLAS_VERSION = '0.2.4';
-    const OVER_RINDOW_OPENBLAS_VERSION = '0.3.0';
+    const LOWEST_RINDOW_OPENBLAS_VERSION = '0.3.0';
+    const OVER_RINDOW_OPENBLAS_VERSION = '0.4.0';
 
     const LOWEST_RINDOW_OPENCL_VERSION = '0.1.3';
     const OVER_RINDOW_OPENCL_VERSION = '0.2.0';
     
     const LOWEST_RINDOW_CLBLAST_VERSION = '0.1.2';
     const OVER_RINDOW_CLBLAST_VERSION = '0.2.0';
-
+    
     protected $blas;
     protected $openblas;
     protected $lapack;
@@ -146,6 +146,13 @@ class MatrixOperator
         $this->assertExtensionVersion('rindow_opencl',
             self::LOWEST_RINDOW_OPENCL_VERSION,
             self::OVER_RINDOW_OPENCL_VERSION);
+    }
+
+    protected function assertCLBlastExtensionVersion()
+    {
+        $this->assertExtensionVersion('rindow_clblast',
+            self::LOWEST_RINDOW_CLBLAST_VERSION,
+            self::OVER_RINDOW_CLBLAST_VERSION);
     }
 
     //public function close()
@@ -772,7 +779,7 @@ class MatrixOperator
         }
         if(($X instanceof NDArray)&&($Y instanceof NDArray)) {
             if($X->shape()==$Y->shape()) {
-                if($X->dtype()==$Y->dtype()) {
+                if($X->dtype()==$Y->dtype() && in_array($X->dtype(),$this->floatTypes)) {
                     if($operator=='+') {
                         if($R===null) {
                             $R = $this->alloc(null,$Y->dtype(),$Y->shape());
@@ -814,13 +821,13 @@ class MatrixOperator
             }
         } elseif(($X instanceof NDArray)||($Y instanceof NDArray)) {
             if($operator=='*') {
-                if($X instanceof NDArray && is_numeric($Y)) {
+                if($X instanceof NDArray && is_numeric($Y) && in_array($X->dtype(),$this->floatTypes)) {
                     if($R===null) {
                         $R = $this->alloc(null,$X->dtype(),$X->shape());
                     }
                     $this->la()->copy($X,$R);
                     return $this->la()->scal($Y,$R);
-                } elseif($Y instanceof NDArray && is_numeric($X)) {
+                } elseif($Y instanceof NDArray && is_numeric($X) && in_array($Y->dtype(),$this->floatTypes)) {
                     if($R===null) {
                         $R = $this->alloc(null,$Y->dtype(),$Y->shape());
                     }
@@ -828,7 +835,7 @@ class MatrixOperator
                     return $this->la()->scal($X,$R);
                 }
             } elseif($operator=='/') {
-                if($X instanceof NDArray && is_numeric($Y)) {
+                if($X instanceof NDArray && is_numeric($Y) && in_array($X->dtype(),$this->floatTypes)) {
                     if($Y==0.0) {
                         throw new RuntimeException('Zero divide error');
                     }
@@ -1131,6 +1138,7 @@ class MatrixOperator
         }
         return $this->dtypeToString[$dtype];
     }
+
     public function toString(
         NDArray $array,
         string $format=null,
@@ -1230,15 +1238,18 @@ class MatrixOperator
                 return $this->clblastLA;
             }
             if(!extension_loaded('rindow_clblast')) {
-                throw new InvalidArgumentException('extension is not loaded');
+                throw new InvalidArgumentException('clblast extension is not loaded');
             }
+            $this->assertCLblastExtensionVersion();
             if(isset($options['deviceType'])) {
                 $deviceType = $options['deviceType'];
             } else {
                 $deviceType = OpenCL::CL_DEVICE_TYPE_DEFAULT;
             }
+            if(!extension_loaded('rindow_opencl')) {
+                throw new InvalidArgumentException('opencl extension is not loaded');
+            }
             $this->assertOpenCLExtensionVersion();
-            $this->assertCLblastExtensionVersion();
             $context = new Context($deviceType);
             $queue = new CommandQueue($context);
             $clblastblas = new CLBlastBlas();

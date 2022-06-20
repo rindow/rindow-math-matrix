@@ -1,4 +1,3 @@
-
 The fundamental package for scientific matrix operation
 =======================================================
 Status:
@@ -6,8 +5,6 @@ Status:
 [![Downloads](https://img.shields.io/packagist/dt/rindow/rindow-math-matrix)](https://packagist.org/packages/rindow/rindow-math-matrix)
 [![Latest Stable Version](https://img.shields.io/packagist/v/rindow/rindow-math-matrix)](https://packagist.org/packages/rindow/rindow-math-matrix)
 [![License](https://img.shields.io/packagist/l/rindow/rindow-math-matrix)](https://packagist.org/packages/rindow/rindow-math-matrix)
-
-
 
 Rindow Math Matrix is the fundamental package for scientific matrix operation
 
@@ -20,6 +17,11 @@ Rindow Math Matrix is the fundamental package for scientific matrix operation
 
 Please see the documents on [Rindow projects](https://rindow.github.io/) web pages.
 
+Requirements
+============
+
+- PHP7.2 or PHP7.3 or PHP7.4 or PHP8.0
+- PHP 8.1 is not supported in this release. Please use Release 1.2 or later, which supports PHP 8.1.
 
 
 

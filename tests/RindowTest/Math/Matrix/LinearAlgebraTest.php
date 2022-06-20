@@ -9,6 +9,7 @@ use Rindow\Math\Plot\Plot;
 use ArrayObject;
 use SplFixedArray;
 use InvalidArgumentException;
+use Rindow\Math\Matrix\LinearAlgebraCL;
 
 class Test extends TestCase
 {
@@ -89,6 +90,72 @@ class Test extends TestCase
         // the corresponding test individually.
         // ==============================================
         $this->assertFalse(self::$speedtest);
+    }
+
+    public function testExpandDims()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->alloc([2,3]);
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([1,2,3],$la->expandDims($x,$axis=0)->shape());
+        $this->assertEquals([2,1,3],$la->expandDims($x,$axis=1)->shape());
+        $this->assertEquals([2,3,1],$la->expandDims($x,$axis=2)->shape());
+        $this->assertEquals([2,3,1],$la->expandDims($x,$axis=-1)->shape());
+        $this->assertEquals([2,1,3],$la->expandDims($x,$axis=-2)->shape());
+        $this->assertEquals([1,2,3],$la->expandDims($x,$axis=-3)->shape());
+
+        $x = $la->alloc([]);
+        $this->assertEquals([],$x->shape());
+        $this->assertEquals(1,$x->size());
+        $this->assertEquals(1,count($x->buffer()));
+        $this->assertEquals([1],$la->expandDims($x,$axis=0)->shape());
+        $this->assertEquals([1],$la->expandDims($x,$axis=-1)->shape());
+    }
+
+    public function testExpandDimsOutofDims()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->alloc([2,3]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('axis is out of range: -4');
+        $la->expandDims($x,$axis=-4);
+    }
+
+    public function testSqueeze()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->alloc([1,2,1,3,1]);
+        $this->assertEquals([1,2,1,3,1],$x->shape());
+        $this->assertEquals([2,3],$la->squeeze($x)->shape());
+        $this->assertEquals([2,1,3,1],$la->squeeze($x,$axis=0)->shape());
+        $this->assertEquals([1,2,3,1],$la->squeeze($x,$axis=2)->shape());
+        $this->assertEquals([1,2,1,3],$la->squeeze($x,$axis=4)->shape());
+        $this->assertEquals([1,2,1,3],$la->squeeze($x,$axis=-1)->shape());
+        $this->assertEquals([1,2,3,1],$la->squeeze($x,$axis=-3)->shape());
+        $this->assertEquals([2,1,3,1],$la->squeeze($x,$axis=-5)->shape());
+    }
+
+    public function testSqueezeOutofDims()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->alloc([1,2,1,3,1]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('axis is out of range: -6');
+        $la->squeeze($x,$axis=-6);
+    }
+
+    public function testSqueezeCanNot()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $x = $la->alloc([1,2,1,3,1]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Can not squeeze dim[3]');
+        $la->squeeze($x,$axis=3);
     }
 
     public function testAlloc()
@@ -200,13 +267,34 @@ class Test extends TestCase
     /**
     *    ret := max X(i)
     */
-    public function testmax()
+    public function testMaxNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
         $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
         $ret = $la->max($x);
         $this->assertEquals(5,$ret);
+
+
+        // INFINITY & NaN
+        // *** CAUTION ****
+        // This function is not compatible with numpy
+        // and is compatible with argmax in tensorflow 2.6.
+        $x = $la->array([0,INF,-INF],NDArray::float32);
+        $ret = $la->max($x);
+        $this->assertTrue(INF==$ret);
+
+        $x = $la->array([0,INF,-INF,NAN],NDArray::float32);
+        $ret = $la->max($x);
+        $this->assertTrue($ret==INF);
+
+        $x = $la->array([0,1,-1,NAN],NDArray::float32);
+        $ret = $la->max($x);
+        $this->assertEquals(1.0,$ret);
+
+        $x = $la->array([NAN,1,-1,0],NDArray::float32);
+        $ret = $la->max($x);
+        $this->assertEquals(1.0,$ret);
     }
 
     /**
@@ -219,18 +307,57 @@ class Test extends TestCase
         $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
         $ret = $la->amax($x);
         $this->assertEquals(-6,$ret);
+
+        // INFINITY & NaN
+        // *** CAUTION ****
+        // This function is not compatible with numpy
+        // and is compatible with argmax in tensorflow 2.6.
+        $x = $la->array([0,INF,-INF],NDArray::float32);
+        $ret = $la->amax($x);
+        //$this->assertTrue(INF==$ret);
+        // -INF or INF
+        $this->assertTrue($ret!=0);
+
+        $x = $la->array([0,INF,-INF,NAN],NDArray::float32);
+        $ret = $la->amax($x);
+        //$this->assertTrue($ret==INF);
+        // -INF or INF
+        $this->assertTrue($ret!=0);
+        $this->assertTrue(!is_nan($ret));
+
+        $x = $la->array([0,1,-1,NAN],NDArray::float32);
+        $ret = $la->amax($x);
+        // -1 or 1
+        $this->assertTrue($ret!=0);
+        $this->assertTrue(!is_nan($ret));
     }
 
     /**
     *    ret := min X(i)
     */
-    public function testmin()
+    public function testminNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
         $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
         $ret = $la->min($x);
         $this->assertEquals(-6,$ret);
+
+        // INFINITY & NaN
+        // *** CAUTION ****
+        // This function is not compatible with numpy
+        // and is compatible with argmax in tensorflow 2.6.
+        $x = $la->array([0,INF,-INF],NDArray::float32);
+        $ret = $la->min($x);
+        $this->assertTrue(-INF==$ret);
+
+        $x = $la->array([0,INF,-INF,NAN],NDArray::float32);
+        $ret = $la->min($x);
+        $this->assertTrue($ret==-INF);
+
+        $x = $la->array([0,1,-1,NAN],NDArray::float32);
+        $ret = $la->min($x);
+        $this->assertEquals(-1.0,$ret);
     }
 
     /**
@@ -243,6 +370,26 @@ class Test extends TestCase
         $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
         $ret = $la->amin($x);
         $this->assertEquals(-1,$ret);
+
+        // INFINITY & NaN
+        // *** CAUTION ****
+        // This function is not compatible with numpy
+        // and is compatible with argmax in tensorflow 2.6.
+        $x = $la->array([0,INF,-INF],NDArray::float32);
+        $ret = $la->amin($x);
+        $this->assertTrue(0==$ret);
+
+        $x = $la->array([0,INF,-INF,NAN],NDArray::float32);
+        $ret = $la->amin($x);
+        // *** CAUTION ***
+        // Platform dependent
+        // $this->assertTrue($ret==0);
+
+        $x = $la->array([0,1,-1,NAN],NDArray::float32);
+        $ret = $la->amin($x);
+        // *** CAUTION ***
+        // Platform dependent
+        // $this->assertEquals(0,$ret);
     }
 
     /**
@@ -1540,44 +1687,182 @@ class Test extends TestCase
         $this->assertEquals(
             [[1,0.5,0.25],[0.125,0.0625, 0.03125]]
         ,$X->toArray());
+
+        // INFINITY & NaN
+        $X = $la->array([4,2,0,INF,-INF,NAN]);
+        $la->reciprocal($X);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.25,$X[0]);
+        $this->assertEquals(0.5, $X[1]);
+        $this->assertTrue(INF==$X[2]);
+        $this->assertEquals(0, $X[3]);
+        $this->assertEquals(0, $X[4]);
+        $this->assertTrue(is_nan($X[5]));
     }
 
-    public function testMaximum()
+    public function testMaximumFloat()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
         // X := maximum(1,X)
         $X = $la->array([[-1,0,1],[2,3,4]]);
-        $la->maximum(1,$X);
+        $la->maximum($X,1);
         $this->assertEquals(
             [[1,1,1],[2,3,4]]
         ,$X->toArray());
+
+        // INFINITY & NaN
+        // Compatible with tenserflow 2.6
+        $X = $la->array([1,0,-1,INF,-INF,NAN]);
+        $la->maximum($X,0);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(1,   $X[0]);
+        $this->assertEquals(0,   $X[1]);
+        $this->assertEquals(0,   $X[2]);
+        $this->assertTrue(INF==  $X[3]);
+        $this->assertEquals(0,   $X[4]);
+        $this->assertTrue(is_nan($X[5]));
+
+        $X = $la->array([1,0,-1,INF,-INF,NAN]);
+        $la->maximum($X,NAN);
+        $X = $la->toNDArray($X);
+        $this->assertTrue(is_nan($X[0]));
+        $this->assertTrue(is_nan($X[1]));
+        $this->assertTrue(is_nan($X[2]));
+        $this->assertTrue(is_nan($X[3]));
+        $this->assertTrue(is_nan($X[4]));
+        $this->assertTrue(is_nan($X[5]));
     }
 
-    public function testMinimum()
+    public function testMaximumCompDim()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Same dim
+        $X = $la->array([[-1,0,1], [2,3,4]]);
+        $Y = $la->array([[-2,-1,2],[4,3,2]]);
+        $la->maximum($X,$Y);
+        $this->assertEquals(
+            [[-1,0,2],[4,3,4]]
+        ,$X->toArray());
+
+        // Broadcast
+        $X = $la->array([[-1,0,4], [2,4,1]]);
+        $Y = $la->array([-2,1,2]);
+        $la->maximum($X,$Y);
+        $this->assertEquals(
+            [[-1,1,4],[2,4,2]]
+        ,$X->toArray());
+    }
+
+    public function testMinimumFloat()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
         // X := minimum(1,X)
         $X = $la->array([[-1,0,1],[2,3,4]]);
-        $la->minimum(1,$X);
+        $la->minimum($X,1);
         $this->assertEquals(
             [[-1,0,1],[1,1,1]]
         ,$X->toArray());
+
+        // INFINITY & NaN
+        // Compatible with tenserflow 2.6
+        $X = $la->array([1,0,-1,INF,-INF,NAN]);
+        $la->minimum($X,0);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0,   $X[0]);
+        $this->assertEquals(0,   $X[1]);
+        $this->assertEquals(-1,  $X[2]);
+        $this->assertEquals(0,   $X[3]);
+        $this->assertTrue(-INF== $X[4]);
+        $this->assertTrue(is_nan($X[5]));
+
+        $X = $la->array([1,0,-1,INF,-INF,NAN]);
+        $la->minimum($X,NAN);
+        $X = $la->toNDArray($X);
+        $this->assertTrue(is_nan($X[0]));
+        $this->assertTrue(is_nan($X[1]));
+        $this->assertTrue(is_nan($X[2]));
+        $this->assertTrue(is_nan($X[3]));
+        $this->assertTrue(is_nan($X[4]));
+        $this->assertTrue(is_nan($X[5]));
     }
 
-    public function testGreaterNormal()
+    public function testMinimumCompDim()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
-        // X := greater(1,X)
-        $X = $la->array([[-1,0,1],[2,3,4]]);
-        $la->greater(1,$X);
+        // Same dim
+        $X = $la->array([[-1,0,1], [2,3,4]]);
+        $Y = $la->array([[-2,-1,2],[4,3,2]]);
+        $la->minimum($X,$Y);
+        $this->assertEquals(
+            [[-2,-1,1],[2,3,2]]
+        ,$X->toArray());
+
+        // Broadcast
+        $X = $la->array([[-1,0,4], [2,4,1]]);
+        $Y = $la->array([-2,1,2]);
+        $la->minimum($X,$Y);
+        $this->assertEquals(
+            [[-2,0,2],[-2,1,1]]
+        ,$X->toArray());
+    }
+
+    public function testGreaterFloat()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := greater(X,1)
+        $X = $la->array([[-1,0,1],[1.5,2,3]]);
+        $la->greater($X,1);
         $this->assertEquals(
             [[0,0,0],[1,1,1]]
+        ,$X->toArray());
+
+        // INFINITY & NaN
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->greater($X,0);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(1.0, $X[0]); // INF
+        $this->assertEquals(0.0, $X[1]); // 0
+        $this->assertEquals(0.0, $X[2]); // -INF
+        $this->assertEquals(0.0, $X[3]); // NAN
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->greater($X,NAN);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
+    }
+
+    public function testGreaterCompDim()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Same dim
+        $X = $la->array([[-1,0,1], [2,3,4]]);
+        $Y = $la->array([[-2,-1,2],[4,3,2]]);
+        $la->greater($X,$Y);
+        $this->assertEquals(
+            [[1,1,0],[0,0,1]]
+        ,$X->toArray());
+
+        // Broadcast
+        $X = $la->array([[-1,0,4], [2,4,1]]);
+        $Y = $la->array([-2,1,2]);
+        $la->greater($X,$Y);
+        $this->assertEquals(
+            [[1,0,1],[1,1,0]]
         ,$X->toArray());
     }
 
@@ -1600,24 +1885,167 @@ class Test extends TestCase
         $n = 1000000;
         $X = $la->alloc([$n]);
         $la->ones($X);
-        $la->greater(1,$X);
+        $la->greater($X,1);
         $start = hrtime(true);
-        $la->greater(1,$X);
+        $la->greater($X,1);
         $end = hrtime(true);
         echo (explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
         $this->assertTrue(true);
     }
 
-    public function testLess()
+    public function testGreaterEqualFloat()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := greater_equal(X,1)
+        $X = $la->array([[-1,0,0.5],[1,2,3]]);
+        $la->greaterEqual($X,1);
+        $this->assertEquals(
+            [[0,0,0],[1,1,1]]
+        ,$X->toArray());
+
+        // INFINITY & NaN
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->greaterEqual($X,0);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(1.0, $X[0]); // INF
+        $this->assertEquals(1.0, $X[1]); // 0
+        $this->assertEquals(0.0, $X[2]); // -INF
+        $this->assertEquals(0.0, $X[3]); // NAN
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->greaterEqual($X,NAN);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
+    }
+
+    public function testGreaterEqualCompDim()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Same dim
+        $X = $la->array([[-1,0,1], [2,3,4]]);
+        $Y = $la->array([[-2,-1,2],[4,3,2]]);
+        $la->greaterEqual($X,$Y);
+        $this->assertEquals(
+            [[1,1,0],[0,1,1]]
+        ,$X->toArray());
+
+        // Broadcast
+        $X = $la->array([[-1,0,4], [2,0,2]]);
+        $Y = $la->array([-2,1,2]);
+        $la->greaterEqual($X,$Y);
+        $this->assertEquals(
+            [[1,0,1],[1,0,1]]
+        ,$X->toArray());
+    }
+
+    public function testLessFloat()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
         // X := less(1,X)
-        $X = $la->array([[-1,0,1],[2,3,4]]);
-        $la->less(1,$X);
+        $X = $la->array([[-1,0,0.5],[1,2,3]]);
+        $la->less($X,1);
         $this->assertEquals(
-            [[1,1,0],[0,0,0]]
+            [[1,1,1],[0,0,0]]
+        ,$X->toArray());
+
+        // INFINITY & NaN
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->less($X,0);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]); // INF
+        $this->assertEquals(0.0, $X[1]); // 0
+        $this->assertEquals(1.0, $X[2]); // -INF
+        $this->assertEquals(0.0, $X[3]); // NAN
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->less($X,NAN);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
+    }
+
+    public function testLessCompDim()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Same dim
+        $X = $la->array([[-1,0,1], [2,3,4]]);
+        $Y = $la->array([[-2,-1,2],[4,3,2]]);
+        $la->less($X,$Y);
+        $this->assertEquals(
+            [[0,0,1],[1,0,0]]
+        ,$X->toArray());
+
+        // Broadcast
+        $X = $la->array([[-1,0,4], [2,0,2]]);
+        $Y = $la->array([-2,1,2]);
+        $la->less($X,$Y);
+        $this->assertEquals(
+            [[0,1,0],[0,1,0]]
+        ,$X->toArray());
+    }
+
+    public function testLessEqualFloat()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := less(1,X)
+        $X = $la->array([[-1,0,1],[1.5,2,3]]);
+        $la->lessEqual($X,1);
+        $this->assertEquals(
+            [[1,1,1],[0,0,0]]
+        ,$X->toArray());
+
+        // INFINITY & NaN
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->lessEqual($X,0);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);
+        $this->assertEquals(1.0, $X[1]);
+        $this->assertEquals(1.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->lessEqual($X,NAN);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
+    }
+
+    public function testLessEqualCompDim()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Same dim
+        $X = $la->array([[-1,0,1], [2,3,4]]);
+        $Y = $la->array([[-2,-1,2],[4,3,2]]);
+        $la->lessEqual($X,$Y);
+        $this->assertEquals(
+            [[0,0,1],[1,1,0]]
+        ,$X->toArray());
+
+        // Broadcast
+        $X = $la->array([[-1,0,4], [2,0,2]]);
+        $Y = $la->array([-2,1,2]);
+        $la->lessEqual($X,$Y);
+        $this->assertEquals(
+            [[0,1,0],[0,1,1]]
         ,$X->toArray());
     }
 
@@ -1834,6 +2262,18 @@ class Test extends TestCase
         $this->assertEquals(
             [[1,2,3],[4,5,6]]
         ,$X->toArray());
+
+        // INFINITY & NaN
+        $X = $la->array([4,1,0,-1,INF,-INF,NAN]);
+        $la->sqrt($X);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(2.0, $X[0]);
+        $this->assertEquals(1.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]);
+        $this->assertTrue(is_nan($X[3])); // -NAN
+        $this->assertTrue(INF==  $X[4]);
+        $this->assertTrue(is_nan($X[5]));
+        $this->assertTrue(is_nan($X[6]));
     }
 
     public function testRsqrt()
@@ -1860,6 +2300,19 @@ class Test extends TestCase
             $X,
             $la->array([[10,40],[80,160]]),-1
         )));
+
+
+        // INFINITY & NaN
+        $X = $la->array([4,1,0,-1,INF,-INF,NAN]);
+        $la->rsqrt($X);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.5, $X[0]);
+        $this->assertEquals(1.0, $X[1]);
+        $this->assertTrue(INF==  $X[2]);
+        $this->assertTrue(is_nan($X[3])); // -NAN
+        $this->assertEquals(0, $X[4]);
+        $this->assertTrue(is_nan($X[5]));
+        $this->assertTrue(is_nan($X[6]));
     }
 
     public function testPow()
@@ -1903,6 +2356,17 @@ class Test extends TestCase
         $trues = $la->array($trues);
         $la->log($X);
         $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
+
+        // INFINITY & NaN
+        $X = $la->array([1,0,-1,INF,-INF,NAN]);
+        $la->log($X);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0,  $X[0]);
+        $this->assertTrue(-INF==  $X[1]);
+        $this->assertTrue(is_nan( $X[2]));
+        $this->assertTrue(INF==   $X[3]);
+        $this->assertTrue(is_nan( $X[4]));
+        $this->assertTrue(is_nan( $X[5]));
     }
 
     public function testTanh()
@@ -1917,6 +2381,51 @@ class Test extends TestCase
         $X = $la->array($X);
         $trues = $la->array($trues);
         $la->tanh($X);
+        $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
+    }
+
+    public function testSin()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := sin(X)
+        $X = $mo->array([[1,2,3],[4,5,6]]);
+        $trues = $mo->f(function ($x) { return sin($x);},$X);
+
+        $X = $la->array($X);
+        $trues = $la->array($trues);
+        $la->sin($X);
+        $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
+    }
+
+    public function testCos()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := cos(X)
+        $X = $mo->array([[1,2,3],[4,5,6]]);
+        $trues = $mo->f(function ($x) { return cos($x);},$X);
+
+        $X = $la->array($X);
+        $trues = $la->array($trues);
+        $la->cos($X);
+        $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
+    }
+
+    public function testTan()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := tan(X)
+        $X = $mo->array([[1,2,3],[4,5,6]]);
+        $trues = $mo->f(function ($x) { return tan($x);},$X);
+
+        $X = $la->array($X);
+        $trues = $la->array($trues);
+        $la->tan($X);
         $this->assertLessThan(1e-5,$la->asum($la->axpy($trues,$X,-1)));
     }
 
@@ -2101,23 +2610,21 @@ class Test extends TestCase
         }
     }
 
-    public function testScatterAxis0Normal()
+    public function testScatterAxisNullNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
         // float32
+        // 1D 2D
         $x = $la->array([0,2],NDArray::int64);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::float32);
         $a = $la->scatter($x,$y,$numClass=4);
-        //foreach($a->toArray() as $pr) {
-        //    echo "\n";
-        //    foreach($pr as $value) {
-        //        echo $value.",";
-        //    }
-        //}
-        //echo "\n";
-        //$this->assertTrue(false);
+
+        $this->assertEquals([2],$x->shape());
+        $this->assertEquals([2,3],$y->shape());
+        $this->assertEquals([4,3],$a->shape());
+
         $this->assertEquals(
            [[1,2,3],
             [0,0,0],
@@ -2125,6 +2632,43 @@ class Test extends TestCase
             [0,0,0]],
             $a->toArray()
         );
+
+        // 1D 1D (must be same shape)
+        $x = $la->array([0,2],NDArray::int64);
+        $y = $la->array([1,2],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=4);
+
+        $this->assertEquals([2],$x->shape());
+        $this->assertEquals([2],$y->shape());
+        $this->assertEquals([4],$a->shape());
+
+        $this->assertEquals(
+           [1,0,2,0],
+            $a->toArray()
+        );
+
+        // 2D 3D
+        $x = $la->array([[0,1,2],[5,4,3]],NDArray::int64);
+        $y = $la->array([[[1,2],[3,4],[5,6]],[[7,8],[9,10],[11,12]]],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=8);
+
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([2,3,2],$y->shape());
+        $this->assertEquals([8,2],$a->shape());
+        $this->assertEquals(
+           [[1,2],
+            [3,4],
+            [5,6],
+            [11,12],
+            [9,10],
+            [7,8],
+            [0,0],
+            [0,0]],
+            $a->toArray()
+        );
+
+        /// index bit variation
+
         // float64
         if($la->fp64()) {
             $x = $la->array([0,2],NDArray::int64);
@@ -2218,7 +2762,7 @@ class Test extends TestCase
         }
     }
 
-    public function testScatterAxis0Speed()
+    public function testScatterAxisNullSpeed()
     {
         if(!self::$speedtest) {
             $this->markTestSkipped('Speed measurement');
@@ -2383,6 +2927,8 @@ class Test extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+
+        // 1D 1D
         $x = $la->array([0,1,2,0],NDArray::int32);
         $y = $la->array([1,5,9,10],NDArray::float32);
         $a = $la->scatter($x,$y,$numClass=3,$axis=1);
@@ -2394,6 +2940,10 @@ class Test extends TestCase
         //}
         //echo "\n";
         //$this->assertTrue(false);
+        $this->assertEquals([4],$x->shape());
+        $this->assertEquals([4],$y->shape());
+        $this->assertEquals([4,3],$a->shape());
+
         $this->assertEquals(
            [[1,0,0],
             [0,5,0],
@@ -2401,7 +2951,31 @@ class Test extends TestCase
             [10,0,0]],
             $a->toArray());
 
+        // 1D 2D is unmatched shapes
+        // 2D 1D is unmatched shapes
+
+        // 2D 2D
+        $x = $la->array([[0,1,2],[2,1,0]],NDArray::int32);
+        $y = $la->array([[1,2,3],[4,5,6]],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=1);
+
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([2,3],$y->shape());
+        $this->assertEquals([2,4,3],$a->shape());
+        $this->assertEquals(
+          [[[1,0,0],
+            [0,2,0],
+            [0,0,3],
+            [0,0,0]],
+           [[0,0,6],
+            [0,5,0],
+            [4,0,0],
+            [0,0,0]]],
+            $a->toArray());
+
+        /// index bit variation
         $x = $la->array([0,1,2,0],NDArray::int64);
+        $y = $la->array([1,5,9,10],NDArray::float32);
         $a = $la->scatter($x,$y,$numClass=3,$axis=1);
         $this->assertEquals(
            [[1,0,0],
@@ -2430,6 +3004,77 @@ class Test extends TestCase
                 $a->toArray());
         }
 
+    }
+
+    public function testScatterAxis0()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // 1D 1D
+        $x = $la->array([0,1,2,0],NDArray::int32);
+        $y = $la->array([1,5,9,10],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=3,$axis=0);
+
+        $this->assertEquals([4],$x->shape());
+        $this->assertEquals([4],$y->shape());
+        $this->assertEquals([3,4],$a->shape());
+
+        $this->assertEquals(
+           [[1, 0, 0,10],
+            [0, 5, 0, 0],
+            [0, 0, 9, 0]],
+            $a->toArray());
+
+        // 1D 2D is unmatched shapes
+        // 2D 1D is unmatched shapes
+
+        // 2D 2D
+        $x = $la->array([[0,1,2],[2,1,0]],NDArray::int32);
+        $y = $la->array([[1,2,3],[4,5,6]],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=0);
+
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([2,3],$y->shape());
+        $this->assertEquals([4,2,3],$a->shape());
+        $this->assertEquals(
+          [[[1,0,0],
+            [0,0,6]],
+           [[0,2,0],
+            [0,5,0]],
+           [[0,0,3],
+            [4,0,0]],
+           [[0,0,0],
+            [0,0,0]]],
+            $a->toArray());
+    }
+
+    public function testScatterAxis2()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // 1D 1D is unmatched shapes
+        // 1D 2D is unmatched shapes
+        // 2D 1D is unmatched shapes
+
+        // 2D 2D
+        $x = $la->array([[0,1,2],[2,1,0]],NDArray::int32);
+        $y = $la->array([[1,2,3],[4,5,6]],NDArray::float32);
+        $a = $la->scatter($x,$y,$numClass=4,$axis=2);
+
+        $this->assertEquals([2,3],$x->shape());
+        $this->assertEquals([2,3],$y->shape());
+        $this->assertEquals([2,3,4],$a->shape());
+
+        $this->assertEquals(
+          [[[1,0,0,0],
+            [0,2,0,0],
+            [0,0,3,0]],
+           [[0,0,4,0],
+            [0,5,0,0],
+            [6,0,0,0]]],
+            $a->toArray());
     }
 
     public function testGatherNormal()
@@ -3300,6 +3945,8 @@ class Test extends TestCase
         $this->assertEquals([6,15],$y->toArray());
         $y = $la->reduceSum($x,$axis=-1);
         $this->assertEquals([6,15],$y->toArray());
+        $y = $la->reduceSum($x,$axis=null); // ** CAUTION null is 0
+        $this->assertEquals([5,7,9],$y->toArray());
 
         // 3d array
         $x = $la->array([[[1,2],[3,4]],[[5,6],[7,8]]]);
@@ -3545,6 +4192,24 @@ class Test extends TestCase
         $this->assertEquals([4,5,6],$la->reduceMax($x,$axis=0)->toArray());
         $this->assertEquals([3,6],$la->reduceMax($x,$axis=1)->toArray());
 
+        // *** CAUTION ***
+        // if NaN set NaN
+        // Compatible with reduce_max of tensorflow 2.6
+        $x = $la->array([
+            [1.0, 2.0],
+            [INF, 1.0],
+            [INF,INF],
+            [-INF,INF],
+            [0.0, NAN],
+            [INF, NAN]]);
+        $x = $la->reduceMax($x,$axis=1);
+        $x = $la->toNDArray($x);
+        $this->assertEquals(2,   $x[0]);
+        $this->assertTrue(INF==  $x[1]);
+        $this->assertTrue(INF==  $x[2]);
+        $this->assertTrue(INF==  $x[3]);
+        $this->assertTrue(is_nan($x[4]));
+        $this->assertTrue(is_nan($x[5]));
     }
 
     public function testReduceMaxLarge()
@@ -3565,6 +4230,33 @@ class Test extends TestCase
         $la->fill(1.0,$trues);
         $this->assertLessThan(1e-3,$la->amax($la->axpy(
             $trues,$r,-1)));
+
+        // *** CAUTION ***
+        // if NaN set NaN
+        // Compatible with reduce_max of tensorflow 2.6
+
+        //    mode:  0   1    2     3
+        $colslist = [10, 200, 2000, 200000];
+        foreach($colslist as $cols) {
+            $x = $la->alloc([6,$cols],NDArray::float32);
+            $la->fill(0.0,$x);
+            $la->copy($la->array([1.0, 2.0]),   $x[0][[0,1]]);
+            $la->copy($la->array([INF, 1.0]),   $x[1][[0,1]]);
+            $la->copy($la->array([INF, INF]),   $x[2][[0,1]]);
+            $la->copy($la->array([-INF,INF]),   $x[3][[0,1]]);
+            $la->copy($la->array([1.0, NAN]),   $x[4][[0,1]]);
+            $la->copy($la->array([INF, NAN]),   $x[5][[0,1]]);
+
+            $x = $la->reduceMax($x,$axis=1);
+            $x = $la->toNDArray($x);
+
+            $this->assertEquals(2,   $x[0]);
+            $this->assertTrue(INF==  $x[1]);
+            $this->assertTrue(INF==  $x[2]);
+            $this->assertTrue(INF==  $x[3]);
+            $this->assertTrue(is_nan($x[4]));
+            $this->assertTrue(is_nan($x[5]));
+        }
     }
 
     public function testReduceMaxSpeed()
@@ -7819,9 +8511,63 @@ class Test extends TestCase
             [[4,5,6],
              [4,5,6]],
         ],$b->toArray());
+
+        // flip rgb
+        $a = $la->array([
+            [[1,2,3],
+             [1,2,3]],
+            [[4,5,6],
+             [4,5,6]],
+            [[7,8,9],
+             [7,8,9]],
+        ]);
+        $this->assertEquals([3,2,3],$a->shape());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=0,
+            $widthShift=0,
+            $verticalFlip=false,
+            $horizontalFlip=false,
+            $rgbFlip=true
+        );
+        //echo $mo->toString($b,null,true);
+        $this->assertEquals([
+            [[3,2,1],
+             [3,2,1]],
+            [[6,5,4],
+             [6,5,4]],
+            [[9,8,7],
+             [9,8,7]],
+        ],$b->toArray());
+
+        // flip rgb with alpha
+        $a = $la->array([
+            [[1,2,3,4],
+             [1,2,3,4]],
+            [[4,5,6,7],
+             [4,5,6,7]],
+            [[7,8,9,10],
+             [7,8,9,10]],
+        ]);
+        $this->assertEquals([3,2,4],$a->shape());
+        $b = $la->imagecopy($a,null,null,
+            $heightShift=0,
+            $widthShift=0,
+            $verticalFlip=false,
+            $horizontalFlip=false,
+            $rgbFlip=true
+        );
+        //echo $mo->toString($b,null,true);
+        $this->assertEquals([
+            [[3,2,1,4],
+             [3,2,1,4]],
+            [[6,5,4,7],
+             [6,5,4,7]],
+            [[9,8,7,10],
+             [9,8,7,10]],
+        ],$b->toArray());
     }
 
-    public function testImagecopychannelsfirst()
+        public function testImagecopychannelsfirst()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -7919,6 +8665,188 @@ class Test extends TestCase
         ],$b->toArray());
     }
 
+    public function testSearchsorted()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $A = $mo->array([0.1,0.3,0.5,0.7,0.9]);
+        $A = $la->array($A);
+        $X = $mo->array([0.0,0.5,1.0]);
+        $X = $la->array($X);
+        $Y = $la->searchsorted($A,$X);
+        $this->assertEquals(
+            [0,2,5],
+            $Y->toArray()
+        );
+
+        // right=true
+        $A = $mo->array([0.1,0.3,0.5,0.7,0.9]);
+        $A = $la->array($A);
+        $X = $mo->array([0.0,0.5,1.0]);
+        $X = $la->array($X);
+        $Y = $la->searchsorted($A,$X,true);
+        $this->assertEquals(
+            [0,3,5],
+            $Y->toArray()
+        );
+
+        // after nan2num and cumsum
+        //  nan nan 5 nan 4
+        $A = $mo->array([NAN,NAN,0.5,NAN,0.5]);
+        $A = $la->array($A);
+        $A = $la->nan2num($A,0);
+        $total = $la->sum($A);
+        $this->assertEquals(1.0,$total);
+        $size = $A->size();
+        $this->assertEquals(5,$size);
+        $A = $la->cumsum($A[[0,$size-2]]);
+        $this->assertEquals([0.0,0.0,0.5,0.5],$A->toArray());
+        $X = $mo->array([0.0,0.4,0.6,$total]);
+        $X = $la->array($X);
+        $Y = $la->searchsorted($A,$X,true);
+        $this->assertEquals(
+            [2,2,4,4],
+            $Y->toArray()
+        );
+
+        // right=true
+        $A = $mo->array([0.5,1.0,1.0]);
+        $A = $la->array($A);
+        $X = $mo->array([0.9]);
+        $X = $la->array($X);
+        $Y = $la->searchsorted($A,$X,true);
+        $this->assertEquals(
+            [1],
+            $Y->toArray()
+        );
+
+
+        // nan data
+        $A = $mo->array([1,3,5,7,9]);
+        $A = $la->array($A);
+        $X = $mo->array([NAN,5,10]);
+        $X = $la->array($X);
+        $Y = $la->searchsorted($A,$X);
+        $this->assertEquals(
+            [0,2,5],
+            $Y->toArray()
+        );
+
+        // nan seq
+        $A = $mo->array([0.1,0.3,NAN,0.7,0.9]);
+        $A = $la->array($A);
+        $X = $mo->array([0.0,0.5,1.0]);
+        $X = $la->array($X);
+        $Y = $la->searchsorted($A,$X);
+        $this->assertEquals(
+            [0,2,2],
+            $Y->toArray()
+        );
+    }
+
+    public function testcumsum()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $X = $mo->array([1,2,1,2]);
+        $X = $la->array($X);
+        $Y = $la->cumsum($X);
+        $this->assertEquals(
+            [1,3,4,6],
+            $Y->toArray()
+        );
+
+        // exclusive=true
+        $X = $mo->array([1,2,1,2]);
+        $X = $la->array($X);
+        $Y = $la->cumsum($X,$exclusive=true);
+        $this->assertEquals(
+            [0,1,3,4],
+            $Y->toArray()
+        );
+
+        // reverse=true
+        $X = $mo->array([1,2,1,2]);
+        $X = $la->array($X);
+        $Y = $la->cumsum($X,null,$reverse=true);
+        $this->assertEquals(
+            [6,4,3,1],
+            $Y->toArray()
+        );
+
+        // nan data
+        $X = $mo->array([1,2,NAN,2]);
+        $X = $la->array($X);
+        $Y = $la->cumsum($X);
+        $Y = $la->toNDArray($Y);
+        $this->assertEquals(1.0,$Y[0]);
+        $this->assertEquals(3.0,$Y[1]);
+        $this->assertTrue(is_nan($Y[2]));
+        $this->assertTrue(is_nan($Y[3]));
+
+        $X = $mo->array([1,2,NAN,2]);
+        $X = $la->array($X);
+        $Y = $la->cumsum($X,null,$reverse=true);
+        $Y = $la->toNDArray($Y);
+        $this->assertTrue(is_nan($Y[0]));
+        $this->assertTrue(is_nan($Y[1]));
+        $this->assertEquals(3.0,$Y[2]);
+        $this->assertEquals(1.0,$Y[3]);
+    }
+
+    public function testNan2num()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := nan2num(X)
+        $X = $mo->array([[NAN,2,NAN],[4,NAN,6]]);
+        $X = $la->array($X);
+        $la->nan2num($X);
+        $this->assertEquals(
+            [[0,2,0],[4,0,6]],
+            $X->toArray()
+        );
+
+        $X = $mo->array([[NAN,2,NAN],[4,NAN,6]]);
+        $X = $la->array($X);
+        $la->nan2num($X,1.0);
+        $this->assertEquals(
+            [[1,2,1],[4,1,6]],
+            $X->toArray()
+        );
+    }
+
+    public function testIsnan()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := nan2num(X)
+        $X = $mo->array([[NAN,2,NAN],[4,NAN,6]]);
+        $X = $la->array($X);
+        $la->isnan($X);
+        $this->assertEquals(
+            [[1,0,1],[0,1,0]],
+            $X->toArray()
+        );
+    }
+
+    public function testLinspace()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $X = $la->linspace($start=10,$stop=100,$num=10);
+        $this->assertEquals(
+            [10,20,30,40,50,60,70,80,90,100],
+            $X->toArray()
+        );
+    }
+
+
     public function testSvdFull1()
     {
         $mo = $this->newMatrixOperator();
@@ -8014,6 +8942,9 @@ class Test extends TestCase
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
         $correctU = $la->transpose($correctU);
+
+        $correctU = $la->square($correctU);
+        $u = $la->square($u);
         $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
         # ---- s ----
         $correctS = $la->array(
@@ -8030,6 +8961,8 @@ class Test extends TestCase
             [-0.29, 0.58,-0.02, 0.38,-0.65, 0.11],
         ]);
         $correctVT = $la->transpose($correctVT);
+        $correctVT = $la->square($correctVT);
+        $vt = $la->square($vt);
         $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
         $this->assertTrue(true);
     }
@@ -8120,6 +9053,8 @@ class Test extends TestCase
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
         $correctU = $la->transpose($correctU);
+        $correctU = $la->square($correctU);
+        $u = $la->square($u);
         $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
         # ---- s ----
         $correctS = $la->array(
@@ -8136,6 +9071,8 @@ class Test extends TestCase
             [-0.29, 0.58,-0.02, 0.38,-0.65,],
         ]);
         $correctVT = $la->transpose($correctVT);
+        $correctVT = $la->square($correctVT);
+        $vt = $la->square($vt);
         $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
         $this->assertTrue(true);
     }
