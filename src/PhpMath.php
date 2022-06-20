@@ -36,6 +36,11 @@ class PhpMath
         return $this->forceMath || in_array($X->dtype(),$this->floatTypes);
     }
 
+    public function logging($message)
+    {
+        fwrite(STDERR,$message."\n");
+    }
+
     protected function math_copy(
         int $n,
         Buffer $X, int $offsetX, int $incX,
@@ -908,6 +913,8 @@ class PhpMath
             throw new RuntimeException('Matrix A specification too large for buffer.');
         if($offsetB+$n*$k>count($B))
             throw new RuntimeException('Matrix B specification too large for buffer.');
+        if($numClass<=0)
+            throw new RuntimeException('numClass must be grator than zero.');
 
         $idxX = $offsetX;
         $idxA = $offsetA;
@@ -916,8 +923,10 @@ class PhpMath
         for($j=0;$j<$n;$j++) {
             $index = $X[$idxX+$j];
             if($index>=$numClass) {
-                throw new RuntimeException("index is out of range.:".$index);
-            }
+                //throw new RuntimeException("index is out of range.:".$index);
+                $this->logging("gather: index is out of range.:".$index." numClass=".$numClass);
+                $index = $numClass-1;
+        }
             $iA = $idxA+$index*$ldIndex;
             $iB = $idxB+$j*$k;
             if($reverse) {
@@ -970,6 +979,8 @@ class PhpMath
             throw new RuntimeException('Matrix A specification too large for buffer.');
         if($offsetB+$m*$n>count($B))
             throw new RuntimeException('Matrix B specification too large for buffer.');
+        if($numClass<=0)
+            throw new RuntimeException('numClass must be grator than zero.');
 
         $idxX = $offsetX;
         $idxA = $offsetA;
@@ -982,7 +993,9 @@ class PhpMath
             for($j=0;$j<$n;$j++) {
                 $index = $X[$idxX+$j];
                 if($index>=$numClass) {
-                    throw new RuntimeException("index is out of range.:".$index);
+                    //throw new RuntimeException("index is out of range.:".$index);
+                    $this->logging("reduceGather: index is out of range.:".$index." numClass=".$numClass);
+                    $index = $numClass-1;
                 }
                 $iA = $idxA+$j+$index*$ldIndex;
                 $iB = $idxB+$j;
