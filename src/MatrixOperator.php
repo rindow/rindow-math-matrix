@@ -14,6 +14,8 @@ use Rindow\CLBlast\Blas as CLBlastBlas;
 use Rindow\CLBlast\Math as CLBlastMath;
 use Rindow\OpenCL\Context;
 use Rindow\OpenCL\CommandQueue;
+use Rindow\OpenCL\PlatformList;
+use Rindow\OpenCL\DeviceList;
 
 class MatrixOperator
 {
@@ -209,13 +211,23 @@ class MatrixOperator
 
     public function array($array,$dtype=null) : NDArray
     {
-        if($dtype==null)
-            $dtype=$this->defaultFloatType;
+        if($dtype==null) {
+            if(is_bool($array)) {
+                $dtype = NDArray::bool;
+            } else {
+                $dtype = $this->resolveDtype($array);
+                if($dtype!=NDArray::bool) {
+                    $dtype=$this->defaultFloatType;
+                }
+            }
+        }
         if(is_array($array)) {
             return $this->alloc($array,$dtype);
         } elseif($array instanceof ArrayObject) {
             return $this->alloc($array,$dtype);
         } elseif(is_numeric($array)) {
+            return $this->alloc($array,$dtype);
+        } elseif(is_bool($array)) {
             return $this->alloc($array,$dtype);
         } else {
             throw new InvalidArgumentException("Must be array or ArrayObject");
@@ -1231,6 +1243,15 @@ class MatrixOperator
         return $this->laRawMode;
     }
 
+    protected function createLinearAlgebraCL(
+        $context,$queue,$clblastblas,$openclmath,$clblastmath)
+    {
+        $la = new LinearAlgebraCL($context,$queue,
+            $clblastblas,$openclmath,$clblastmath,
+            $this->openblasmath,$this->openblaslapack);
+        return $la;
+    }
+
     public function laAccelerated($mode,array $options=null)
     {
         if($mode=='clblast') {
@@ -1241,26 +1262,69 @@ class MatrixOperator
                 throw new InvalidArgumentException('clblast extension is not loaded');
             }
             $this->assertCLblastExtensionVersion();
-            if(isset($options['deviceType'])) {
-                $deviceType = $options['deviceType'];
+            if(isset($options['device'])) {
+                $device = $this->getBlastDevice($options['device']);
+            } elseif(isset($options['deviceType'])) {
+                $device = $this->searchBlastDevice($options['deviceType']);
             } else {
-                $deviceType = OpenCL::CL_DEVICE_TYPE_DEFAULT;
+                $device = OpenCL::CL_DEVICE_TYPE_DEFAULT;
             }
             if(!extension_loaded('rindow_opencl')) {
                 throw new InvalidArgumentException('opencl extension is not loaded');
             }
             $this->assertOpenCLExtensionVersion();
-            $context = new Context($deviceType);
+            $context = new Context($device);
             $queue = new CommandQueue($context);
             $clblastblas = new CLBlastBlas();
             $openclmath = new OpenCLMath($context,$queue);
+            if($openclmath->hasDiv5Bug()) {
+                $openclmath = new OpenCLMathFixDiv5Bug($context,$queue);
+            }
             $clblastmath = new CLBlastMath();
-            $la = new LinearAlgebraCL($context,$queue,
-                $clblastblas,$openclmath,$clblastmath,
-                $this->openblasmath,$this->openblaslapack);
+            $la = $this->createLinearAlgebraCL(
+                $context,$queue,$clblastblas,$openclmath,$clblastmath);
             $this->clblastLA = $la;
             return $la;
         }
+    }
+    
+    protected function getBlastDevice($devOption)
+    {
+        $devOption = explode(',',$devOption);
+        if(count($devOption)!=2) {
+            throw new InvalidArgumentException('Device option must be two numeric with comma, etc."0,1"');
+        }
+        [$platformId,$deviceId] = $devOption;
+        if(!is_numeric($platformId)||!is_numeric($deviceId)) {
+            throw new InvalidArgumentException('platformId and deviceId must be integer, etc."0,1"');
+        }
+        $platformId = intval($platformId);
+        $deviceId = intval($deviceId);
+        $platform = new PlatformList();
+        $platform = $platform->getOne($platformId);
+        $device = new DeviceList($platform);
+        $device = $device->getOne($deviceId);
+        return $device;
+    }
+
+    protected function searchBlastDevice($deviceType)
+    {
+        if($deviceType==OpenCL::CL_DEVICE_TYPE_DEFAULT) {
+            return $deviceType;
+        }
+        $platformList = new PlatformList();
+        $platformCount = $platformList->count();
+        for($p=0;$p<$platformCount;$p++) {
+            $deviceList = new DeviceList($platformList->getOne($p));
+            $deviceCount = $deviceList->count();
+            for($d=0;$d<$deviceCount;$d++) {
+                $device = $deviceList->getOne($d);
+                if($device->getInfo($d,OpenCL::CL_DEVICE_TYPE)===$deviceType) {
+                    return $device;
+                }
+            }
+        }
+        throw new InvalidArgumentException('The specified device type cannot be found');
     }
 
     public function blas($raw=null)

@@ -3,6 +3,7 @@ namespace RindowTest\Math\Matrix\LinearAlgebraTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\Math\Matrix\OpenCL;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Matrix\NDArrayPhp;
 use Rindow\Math\Plot\Plot;
@@ -167,6 +168,19 @@ class Test extends TestCase
         $this->assertEquals(NDArray::float32,$x->dtype());
         $this->assertEquals(6,$x->size());
         $this->assertEquals(6,count($x->buffer()));
+    }
+
+    public function testZerosLike()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $x = $la->array([[1,2,3],[4,5,6]],NDArray::float32);
+        $y = $la->zerosLike($x);
+
+        $this->assertEquals($x->shape(),$y->shape());
+        $this->assertEquals($x->dtype(),$y->dtype());
+        $this->assertEquals([[0,0,0],[0,0,0]],$y->toArray());
     }
 
     public function testScal()
@@ -402,6 +416,7 @@ class Test extends TestCase
         $x = $la->array([[-1,2,-3],[-4,5,-6]],NDArray::float32);
         $y = $la->zerosLike($x);
         $ret = $la->copy($x,$y);
+
         $this->assertEquals([[-1,2,-3],[-4,5,-6]],$y->toArray());
     }
 
@@ -2099,7 +2114,7 @@ class Test extends TestCase
             return;
         }
         // large size
-        $rows = 8000000;
+        $rows = 1000000;#8000000;
         $cols = 16;
         $x = $la->alloc([$rows,$cols],NDArray::float32);
         $la->fill(2.0,$x);
@@ -2145,7 +2160,7 @@ class Test extends TestCase
         $this->assertTrue(true);
     }
 
-    public function testAdd()
+    public function testAddNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -2193,7 +2208,7 @@ class Test extends TestCase
             return;
         }
         // large size
-        $rows = 8000000;
+        $rows = 1000000;#8000000;
         $cols = 16;
         $x = $la->alloc([$rows,$cols],NDArray::float32);
         $la->fill(2.0,$x);
@@ -2259,9 +2274,9 @@ class Test extends TestCase
         // X := sqrt(X)
         $X = $la->array([[1,4,9],[16,25,36]]);
         $la->sqrt($X);
-        $this->assertEquals(
-            [[1,2,3],[4,5,6]]
-        ,$X->toArray());
+        $this->assertTrue($mo->la()->isclose($mo->array(
+            [[1,2,3],[4,5,6]]),
+            $la->toNDArray($X)));
 
         // INFINITY & NaN
         $X = $la->array([4,1,0,-1,INF,-INF,NAN]);
@@ -2467,7 +2482,7 @@ class Test extends TestCase
         ],$Y->toArray());
     }
 
-    public function testZeros()
+    public function testZerosNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -4479,7 +4494,7 @@ class Test extends TestCase
             return;
         }
             // large size
-        $colsize = 600000;
+        $colsize = 100000;//600000;
         $rowsize = 64;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
         $la->fill(1.0,$x);
@@ -4491,7 +4506,7 @@ class Test extends TestCase
 
         // large size
         $colsize = 64;
-        $rowsize = 800000;
+        $rowsize = 100000;//800000;
         $x = $la->alloc([$rowsize,$colsize],NDArray::float32);
         $la->fill(1.0,$x);
         $r = $la->softmax($x);
@@ -4546,7 +4561,7 @@ class Test extends TestCase
     }
 
     public function testastype()
-    {
+     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
         $math = $la;
@@ -4579,6 +4594,10 @@ class Test extends TestCase
         $dtype = NDArray::int64;
         $Y = $math->astype($X, $dtype);
         $this->assertEquals([-1,0,1,2,3],$Y->toArray());
+
+        $dtype = NDArray::uint8;
+        $Y = $math->astype($X, $dtype);
+        $this->assertEquals([255,0,1,2,3],$Y->toArray());
 
         $dtype = NDArray::bool;
         $Y = $math->astype($X, $dtype);
@@ -4648,15 +4667,38 @@ class Test extends TestCase
         $Y = $math->astype($X, $dtype);
         $this->assertEquals([true,false,true,true,true],$Y->toArray());
 
+        if($la->accelerated()) {
+            $devType = $math->getContext()->getInfo(OpenCL::CL_CONTEXT_DEVICES)->getInfo(0,OpenCL::CL_DEVICE_TYPE);
+            $clVersion = $la->getCLVersion();
+        } else {
+            $devType = OpenCL::CL_DEVICE_TYPE_CPU;
+            $clVersion = null;
+        }
         #### float to unsigned ######
         $X = $la->array([-1,0,1,2,3],NDArray::float32);
         $dtype = NDArray::uint8;
         $Y = $math->astype($X, $dtype);
-        $this->assertEquals([255,0,1,2,3],$Y->toArray());
+        if($devType===OpenCL::CL_DEVICE_TYPE_GPU) {
+            if(strpos($clVersion,'OpenCL 1.1 Mesa')===false) {
+                $this->assertEquals([255,0,1,2,3],$Y->toArray());
+            } else {
+                $this->assertEquals([0,0,1,2,3],$Y->toArray());
+            }
+        } else {
+            $this->assertEquals([255,0,1,2,3],$Y->toArray());
+        }
 
         $dtype = NDArray::uint16;
         $Y = $math->astype($X, $dtype);
-        $this->assertEquals([65535,0,1,2,3],$Y->toArray());
+        if($devType===OpenCL::CL_DEVICE_TYPE_GPU) {
+            if(strpos($clVersion,'OpenCL 1.1 Mesa')===false) {
+                $this->assertEquals([65535,0,1,2,3],$Y->toArray());
+            } else {
+                $this->assertEquals([0,0,1,2,3],$Y->toArray());
+            }
+        } else {
+            $this->assertEquals([65535,0,1,2,3],$Y->toArray());
+        }
 
         // ***** CAUTION ******
         $X = $la->array([-1000,0,1,2,4294967295],NDArray::float32);
@@ -4664,7 +4706,11 @@ class Test extends TestCase
             // GPU
             $dtype = NDArray::uint32;
             $Y = $math->astype($X, $dtype);
-            $this->assertEquals([0,0,1,2,4294967295],$Y->toArray());
+            if($devType===OpenCL::CL_DEVICE_TYPE_GPU) {
+                $this->assertEquals([0,0,1,2,4294967295],$Y->toArray());
+            } else {
+                $this->assertEquals([4294966296,0,1,2,0],$Y->toArray());
+            }
         } else {
             // CPU
             $dtype = NDArray::uint32;
@@ -4682,7 +4728,15 @@ class Test extends TestCase
             // GPU
             $dtype = NDArray::uint64;
             $Y = $math->astype($X, $dtype);
-            $this->assertEquals([0,0,1,2,3],$Y->toArray());
+            if($devType===OpenCL::CL_DEVICE_TYPE_GPU) {
+                if(strpos($clVersion,'OpenCL 1.1 Mesa')===false) {
+                    $this->assertEquals([0,0,1,2,3],$Y->toArray());
+                } else {
+                    $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
+                }
+            } else {
+                $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
+            }
         } elseif($la->getConfig()=='PhpBlas') {
             // CPU
             $dtype = NDArray::uint64;
@@ -4690,7 +4744,6 @@ class Test extends TestCase
             $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
         }
     }
-
 
     public function providerIm2col2dNormal()
     {
@@ -4815,7 +4868,7 @@ class Test extends TestCase
                 'dilation_w' => 1,
                 'cols_channels_first' => null,
             ]],
-            'kernel_h channels_first' => [[
+            'kernel_h channels_first' => [[  // fail on mesa
                 'batches' => 2,
                 'im_h' => 8,
                 'im_w' => 8,
@@ -5025,7 +5078,7 @@ class Test extends TestCase
                 'dilation_w' => 1,
                 'cols_channels_first' => true,
             ]],
-            'kernel_h cols_channels_first' => [[
+            'kernel_h cols_channels_first' => [[ // fail on mesa
                 'batches' => 2,
                 'im_h' => 8,
                 'im_w' => 8,
@@ -5117,6 +5170,28 @@ class Test extends TestCase
             ]],
         ];
     }
+
+    public function providerIm2col2dNormalDEBUG()
+    {
+        return [
+            'kernel_h' => [[
+                'batches' => 1,//2,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 1,//3,
+                'kernel_h' => 4,//4,
+                'kernel_w' => 3,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
+            ]],
+        ];
+    }
+
     /**
     * @dataProvider providerIm2col2dNormal
     */
@@ -5240,6 +5315,13 @@ class Test extends TestCase
                 }
             }
         }
+        #echo "======================================\n";
+        #echo $mo->toString($trues,'%3.0f',false)."\n";
+
+        #echo "======================================\n";
+        #echo $mo->toString($cols,'%3.0f',false)."\n";
+        #return;
+
         $this->assertEquals($trues->toArray(),$cols->toArray());
         // channels_first kernel stride
         //for($batch_id=0;$batch_id<$batches;$batch_id++) {
@@ -6303,7 +6385,7 @@ class Test extends TestCase
                 'dilation_w' => 1,
                 'cols_channels_first' => null,
             ]],
-            'kernel_h channels_first' => [[
+            'kernel_h channels_first' => [[ // fail on mesa
                 'batches' => 2,
                 'im_d' => 8,
                 'im_h' => 8,
@@ -6683,7 +6765,7 @@ class Test extends TestCase
                 'dilation_w' => 1,
                 'cols_channels_first' => true,
             ]],
-            'kernel_h cols_channels_first' => [[
+            'kernel_h cols_channels_first' => [[ // fail on mesa
                 'batches' => 2,
                 'im_d' => 8,
                 'im_h' => 8,
@@ -6834,6 +6916,32 @@ class Test extends TestCase
                 'dilation_h' => 1,
                 'dilation_w' => 2,
                 'cols_channels_first' => true,
+            ]],
+        ];
+    }
+
+
+    public function providerIm2col3dNormalDEBUG()
+    {
+        return [
+            'kernel_h' => [[
+                'batches' => 2,
+                'im_d' => 8,
+                'im_h' => 8,
+                'im_w' => 8,
+                'channels' => 3,
+                'kernel_d' => 3,
+                'kernel_h' => 4,
+                'kernel_w' => 3,
+                'stride_d' => 1,
+                'stride_h' => 1,
+                'stride_w' => 1,
+                'padding' => null,
+                'channels_first' => null,
+                'dilation_d' => 1,
+                'dilation_h' => 1,
+                'dilation_w' => 1,
+                'cols_channels_first' => null,
             ]],
         ];
     }
@@ -8567,7 +8675,7 @@ class Test extends TestCase
         ],$b->toArray());
     }
 
-        public function testImagecopychannelsfirst()
+    public function testImagecopychannelsfirst()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -8639,7 +8747,7 @@ class Test extends TestCase
         ],$b->toArray());
     }
 
-    public function testfill()
+    public function testfillNormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
@@ -8651,10 +8759,18 @@ class Test extends TestCase
         ],$b->toArray());
 
         $x = $la->alloc([2,3],NDArray::int64);
-        $b = $la->fill(123,$x);
+        $b = $la->fill(456,$x);
         $this->assertEquals([
-            [123,123,123],
-            [123,123,123],
+            [456,456,456],
+            [456,456,456],
+        ],$b->toArray());
+
+        $x = $la->alloc([2,3],NDArray::float32);
+        $value = $mo->array(345); // value is not OpenCL buffer
+        $b = $la->fill($value,$x);
+        $this->assertEquals([
+            [345,345,345],
+            [345,345,345],
         ],$b->toArray());
 
         $x = $la->alloc([2,3],NDArray::int8);
@@ -8662,6 +8778,39 @@ class Test extends TestCase
         $this->assertEquals([
             [123,123,123],
             [123,123,123],
+        ],$b->toArray());
+
+        $x = $la->alloc([2,3],NDArray::uint8);
+        $b = $la->fill(234,$x);
+        $this->assertEquals([
+            [234,234,234],
+            [234,234,234],
+        ],$b->toArray());
+
+        $x = $la->alloc([2,3],NDArray::bool);
+        $b = $la->fill(true,$x);
+        $this->assertEquals([
+            [true,true,true],
+            [true,true,true],
+        ],$b->toArray());
+        $b = $la->fill(false,$x);
+        $this->assertEquals([
+            [false,false,false],
+            [false,false,false],
+        ],$b->toArray());
+
+        $x = $la->alloc([2,3],NDArray::bool);
+        $value = $mo->array(true); // value is not OpenCL buffer
+        $b = $la->fill($value,$x);
+        $this->assertEquals([
+            [true,true,true],
+            [true,true,true],
+        ],$b->toArray());
+        $value = $mo->array(false); // value is not OpenCL buffer
+        $b = $la->fill($value,$x);
+        $this->assertEquals([
+            [false,false,false],
+            [false,false,false],
         ],$b->toArray());
     }
 

@@ -9,6 +9,7 @@ use Rindow\OpenCL\EventList;
 #use Rindow\Math\Matrix\OpenBlasBuffer;
 #use Rindow\Math\Matrix\NDArrayPhp;
 use InvalidArgumentException;
+use LogicException;
 
 class LinearAlgebraCL
 {
@@ -27,6 +28,8 @@ class LinearAlgebraCL
     protected $profilingStartTime = [];
     protected $profilingCount = [];
     protected $profilingTotalTime = [];
+    protected $clVersion;
+    protected $isOpenCL110;
 
     public function __construct(
         $context,$queue,$blas,$openclmath,$clblastmath,
@@ -41,6 +44,9 @@ class LinearAlgebraCL
         $this->lapack = $lapack;
         if($defaultFloatType!==null)
             $this->defaultFloatType = $defaultFloatType;
+        $this->clVersion = $context->getInfo(OpenCL::CL_CONTEXT_DEVICES)->getInfo(0,OpenCL::CL_DEVICE_VERSION);
+        //                                                    1234567890
+        $this->isOpenCL110 = substr($this->clVersion,0,10)==='OpenCL 1.1';
     }
 
     public function getBlas()
@@ -71,6 +77,16 @@ class LinearAlgebraCL
     public function getQueue()
     {
         return $this->queue;
+    }
+
+    public function getCLVersion()
+    {
+        return $this->clVersion;
+    }
+
+    public function isOpenCL110()
+    {
+        return $this->isOpenCL110;
     }
 
     public function setOpenCLTestMode($testMode)
@@ -333,24 +349,7 @@ class LinearAlgebraCL
         NDArray $X,
         object $events=null, object $waitEvents=null) : NDArray
     {
-        if($this->profiling) {
-            $this->profilingStart("zeros");
-        }
-        $pattern = $this->newHostBuffer(1,$X->dtype());
-        $pattern[0] = 0;
-        $valueSize = $pattern->value_size();
-        $N = $X->size();
-        $XX = $X->buffer();
-        $offX = $X->offset();
-
-        $XX->fill($this->queue,$pattern,$N*$valueSize,$offX*$valueSize,
-                    $pattern_size=1,$pattern_offset=0,$events,$waitEvents);
-        if($this->blocking) {
-            $this->finish();
-        }
-        if($this->profiling) {
-            $this->profilingEnd("zeros");
-        }
+        $this->fill(0.0,$X,$events,$waitEvents);
         return $X;
     }
 
@@ -379,27 +378,59 @@ class LinearAlgebraCL
         if($this->profiling) {
             $this->profilingStart("fill");
         }
-        if(is_scalar($value)) {
-            if(is_string($value)) {
-                $value = ord($value);
+        if($this->isOpenCL110) {
+            if(is_scalar($value)) {
+                if(is_string($value)) {
+                    $value = ord($value);
+                }
+            } elseif($value instanceof NDArray) {
+                $pbuf = $value->buffer();
+                if($value->size()!=1) {
+                    throw new InvalidArgumentException('Value must be scalar');
+                }
+                $value = $pbuf[$value->offset()];
+            } else {
+                throw new InvalidArgumentException('Invalid value type');
             }
-            $pattern = $this->allocHost([1],$X->dtype());
-            $pattern[0] = $value;
-        } elseif($value instanceof NDArray) {
-            ;
+            $buffer = $X->buffer();
+            $n = $X->size();
+            $offsetX = $X->offset();
+            $this->openclmath->fill(
+                $n,$buffer,$offsetX,1,$value,
+                $events,$waitEvents
+            );
         } else {
-            throw new InvalidArgumentException('Invalid data type');
+            if(is_scalar($value)) {
+                if(is_string($value)) {
+                    $value = ord($value);
+                }
+                $pattern = $this->allocHost([1],$X->dtype());
+                $pattern[0] = $value;
+            } elseif($value instanceof NDArray) {
+                if($value->size()!=1) {
+                    throw new InvalidArgumentException('Value must be scalar');
+                }
+                if(!($value->buffer() instanceof LinearBuffer)) {
+                    throw new InvalidArgumentException('Value must have a host memory buffer. OpenCL Buffer is not allowed.');
+                }
+                $pattern = $value;
+            } else {
+                throw new InvalidArgumentException('Invalid data type');
+            }
+            $buffer = $X->buffer();
+            $buffer->fill(
+                $this->getQueue(),
+                $pattern->buffer(),
+                $X->size()*$buffer->value_size(),
+                $X->offset()*$X->valueSize(), // buffer offset
+                $pattern->size(), // pattern size
+                $pattern->offset(), // pattern offset
+                $events,$waitEvents
+            );
         }
-        $buffer = $X->buffer();
-        $buffer->fill(
-            $this->getQueue(),
-            $pattern->buffer(),
-            $X->size()*$buffer->value_size(),
-            0, // buffer offset
-            1, // pattern size
-            0, // pattern offset
-            $events,$waitEvents
-        );
+        if($this->blocking) {
+            $this->finish();
+        }
         if($this->profiling) {
             $this->profilingEnd("fill");
         }
@@ -3440,6 +3471,10 @@ class LinearAlgebraCL
         $events=null
         ) : NDArray
     {
+        if($this->openclmath->hasDiv5Bug()) {
+            throw new LogicException('Not support function on this device.');
+        }
+
         if($this->profiling) {
             $this->profilingStart("im2col2dclblast");
         }

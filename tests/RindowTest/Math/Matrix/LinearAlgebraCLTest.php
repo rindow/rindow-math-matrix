@@ -28,31 +28,13 @@ use Rindow\OpenBLAS\Lapack as OpenBLASLapack;
 
 class TestMatrixOperator extends MatrixOperator
 {
-    public function laAccelerated($mode,array $options=null)
+    protected function createLinearAlgebraCL(
+        $context,$queue,$clblastblas,$openclmath,$clblastmath)
     {
-        if($mode=='clblast') {
-            if($this->clblastLA) {
-                return $this->clblastLA;
-            }
-            if(!extension_loaded('rindow_clblast')) {
-                throw new InvalidArgumentException('extension is not loaded');
-            }
-            if(isset($options['deviceType'])) {
-                $deviceType = $options['deviceType'];
-            } else {
-                $deviceType = OpenCL::CL_DEVICE_TYPE_DEFAULT;
-            }
-            $context = new Context($deviceType);
-            $queue = new CommandQueue($context);
-            $clblastblas = new CLBlastBlas();
-            $openclmath = new OpenCLMath($context,$queue);
-            $clblastmath = new CLBlastMath();
-            $la = new TestLinearAlgebraCL($context,$queue,
-                $clblastblas,$openclmath,$clblastmath,
-                $this->openblasmath,$this->openblaslapack);
-            $this->clblastLA = $la;
-            return $la;
-        }
+        $la = new TestLinearAlgebraCL($context,$queue,
+            $clblastblas,$openclmath,$clblastmath,
+            $this->openblasmath,$this->openblaslapack);
+        return $la;
     }
 }
 
@@ -757,6 +739,8 @@ class Test extends ORGTest
     public function newLA($mo)
     {
         $la = $mo->laAccelerated('clblast');
+        //$la = $mo->laAccelerated('clblast',['deviceType'=>OpenCL::CL_DEVICE_TYPE_GPU]);
+        //$la = $mo->laAccelerated('clblast',['deviceType'=>OpenCL::CL_DEVICE_TYPE_CPU]);
         $la->blocking(true);
         $la->scalarNumeric(true);
         return $la;
@@ -810,10 +794,23 @@ class Test extends ORGTest
         $this->markTestSkipped('Unsuppored function on clblast');
     }
 
+    //public function testHardware()
+    //{
+    //    $mo = $this->newMatrixOperator();
+    //    $la = $this->newLA($mo);
+    //    var_dump($la->getOpenCLMath()->hasDiv5Bug());
+    //    var_dump($la->isOpenCL110());
+    //    var_dump($la->getCLVersion());
+    //}
+
     public function testIm2col2dclblastnormal()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if($la->getOpenCLMath()->hasDiv5Bug()) {
+            $this->markTestSkipped('im2col2dclblast has Div5Bug');
+            return;
+        }
 
         //$kernel_mode = \Rindow\CLBlast\Math::CONVOLUTION;
         $kernel_mode = \Rindow\CLBlast\Math::CROSS_CORRELATION;
@@ -1043,6 +1040,10 @@ class Test extends ORGTest
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if($la->getOpenCLMath()->hasDiv5Bug()) {
+            $this->markTestSkipped('im2col2dclblast has Div5Bug');
+            return;
+        }
 
         //$kernel_mode = \Rindow\CLBlast\Math::CONVOLUTION;
         $kernel_mode = \Rindow\CLBlast\Math::CROSS_CORRELATION;
@@ -1294,6 +1295,60 @@ class Test extends ORGTest
         echo (explode(' ',$la->getConfig()))[0].'CL='.number_format($end-$start)."\n";
 
         $this->assertTrue(true);
+    }
+
+    /**
+    * @dataProvider modeProviderNoZero
+    */
+    public function testSumSimpleOpenCL($mode)
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $la->setOpenCLTestMode($mode);
+
+        $array = range(1,13);
+        $sum = array_sum($array);
+        $this->assertLessThan(127,$sum);
+
+        $x = $la->array($array,NDArray::float32);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::int32);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::uint32);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::int64);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::uint64);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::int16);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::uint16);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::int8);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array($array,NDArray::uint8);
+        $y = $la->sum($x);
+        $this->assertEquals($sum,$y);
+
+        $x = $la->array([123],NDArray::uint8);
+        $y = $la->sum($x);
+        $this->assertEquals(123,$y);
     }
 
     /**
@@ -1630,8 +1685,44 @@ class Test extends ORGTest
             [1,1,1]],
             $a->toArray()
         );
+        // int16
+        $x = $la->array([0,2],NDArray::int32);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::int16);
+        $a = $la->array($mo->ones([4,3],NDArray::int16));
+        $la->scatterAdd($x,$y,$a);
+        $this->assertEquals(
+           [[2,3,4],
+            [1,1,1],
+            [8,9,10],
+            [1,1,1]],
+            $a->toArray()
+        );
+        // uint16
+        $x = $la->array([0,2],NDArray::int32);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::uint16);
+        $a = $la->array($mo->ones([4,3],NDArray::uint16));
+        $la->scatterAdd($x,$y,$a);
+        $this->assertEquals(
+           [[2,3,4],
+            [1,1,1],
+            [8,9,10],
+            [1,1,1]],
+            $a->toArray()
+        );
+        // int8
+        $x = $la->array([0,2],NDArray::int32);
+        $y = $la->array([[1,2,3],[7,8,9]],NDArray::int8);
+        $a = $la->array($mo->ones([4,3],NDArray::int8));
+        $la->scatterAdd($x,$y,$a);
+        $this->assertEquals(
+           [[2,3,4],
+            [1,1,1],
+            [8,9,10],
+            [1,1,1]],
+            $a->toArray()
+        );
         // uint8
-        $x = $la->array([0,2],NDArray::int64);
+        $x = $la->array([0,2],NDArray::int32);
         $y = $la->array([[1,2,3],[7,8,9]],NDArray::uint8);
         $a = $la->array($mo->ones([4,3],NDArray::uint8));
         $la->scatterAdd($x,$y,$a);

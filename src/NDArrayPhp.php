@@ -26,7 +26,11 @@ class NDArrayPhp implements NDArray,Countable,Serializable,IteratorAggregate
     public function __construct($array = null, $dtype=null ,array $shape = null,$offset=null)
     {
         if($dtype===null) {
-            $dtype = NDArray::float32;
+            if(is_bool($array)) {
+                $dtype = NDArray::bool;
+            } else {
+                $dtype = NDArray::float32;
+            }
         } else {
             $dtype = $dtype;
         }
@@ -42,7 +46,10 @@ class NDArrayPhp implements NDArray,Countable,Serializable,IteratorAggregate
             if($shape===null) {
                 $shape = $this->genShape($array);
             }
-        } elseif(is_numeric($array)) {
+        } elseif(is_numeric($array)||is_bool($array)) {
+            if(is_bool($array)&&$dtype!=NDArray::bool) {
+                throw new InvalidArgumentException("unmatch dtype with bool value");
+            }
             $this->_buffer = $this->newBuffer(1,$dtype);
             $this->_buffer[0] = $array;
             $this->_offset = 0;

@@ -3328,7 +3328,10 @@ class LinearAlgebra
             $V = $this->alloc([1],$X->dtype());
             $V[0] = $value;
         } elseif($value instanceof NDArray) {
-            ;
+            if($value->size()!=1) {
+                throw new InvalidArgumentException('Value must be scalar');
+            }
+            $V = $value;
         } else {
             throw new InvalidArgumentException('Invalid data type');
         }

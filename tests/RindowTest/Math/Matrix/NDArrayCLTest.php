@@ -109,12 +109,9 @@ class Test extends TestCase
         $this->assertEquals([3,2],$array->shape());
         $this->assertEquals(NDArray::int32,$array->dtype());
 
-        $pattern=new NDArrayPhp([0],NDArray::int32);
+        $pattern=new NDArrayPhp([[0,0],[0,0],[0,0]],NDArray::int32);
         $array2 = clone $array;
-        $events = new \Rindow\OpenCL\EventList();
-        $array->buffer()->fill($queue,$pattern->buffer(),$array->buffer()->bytes(),0,
-                    $pattern_size=1,$pattern_offset=0,$events);
-        $events->wait();
+        $array->buffer()->write($queue,$pattern->buffer());
 
         $this->assertEquals([[0,0],[0,0],[0,0]],$array->toArray());
         $this->assertEquals(NDArray::int32,$array2->dtype());
