@@ -1318,9 +1318,8 @@ class MatrixOperator
             $deviceList = new DeviceList($platformList->getOne($p));
             $deviceCount = $deviceList->count();
             for($d=0;$d<$deviceCount;$d++) {
-                $device = $deviceList->getOne($d);
-                if($device->getInfo($d,OpenCL::CL_DEVICE_TYPE)===$deviceType) {
-                    return $device;
+                if($deviceList->getInfo($d,OpenCL::CL_DEVICE_TYPE)===$deviceType) {
+                    return $deviceList->getOne($d);
                 }
             }
         }
