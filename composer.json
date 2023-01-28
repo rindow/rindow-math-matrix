@@ -5,7 +5,7 @@
     "keywords": ["rindow","math","matrix","N-dimension","operation"],
     "license": "BSD-3-Clause",
     "require": {
-        "php": "^8.0|^8.1",
+        "php": "^8.0|^8.1|^8.2",
         "interop-phpobjects/polite-math": "~1.0.4"
     },
     "suggest": {

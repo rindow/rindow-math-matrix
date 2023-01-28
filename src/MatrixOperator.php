@@ -40,6 +40,7 @@ class MatrixOperator
     protected $clblastLA;
     protected $broadCastOperators;
     protected $updateOperators;
+    protected $operatorFunctions;
     protected $intTypes= [
         NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
         NDArray::uint8,NDArray::uint16,NDArray::uint32,NDArray::uint64,

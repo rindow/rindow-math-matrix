@@ -1410,7 +1410,7 @@ class LinearAlgebra
     }
 
     /**
-     *    A(m,n) := X(n) + A(m,n)
+     *    A(m,n) := alpha * X(n) + A(m,n)
      */
      public function add(
         NDArray $X,
