@@ -16,10 +16,14 @@ class LinearAlgebraCL
     const LAPACK_ROW_MAJOR = 101;
     const LAPACK_COL_MAJOR = 102;
 
+    protected $context;
+    protected $queue;
     protected $iaminwarning;
     protected $blas;
     protected $lapack;
     protected $math;
+    protected $openclmath;
+    protected $openblasmath;
     protected $defaultFloatType = NDArray::float32;
     protected $blocking = false;
     protected $scalarNumeric = false;

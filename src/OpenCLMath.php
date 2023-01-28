@@ -148,11 +148,15 @@ class OpenCLMath
 
     protected $context;
     protected $queue;
+    protected $sources = [];
+    protected $program = [];
     protected $fp64;
     protected $maxWorkItem;
     protected $kernelMultiple;
     protected $hasDiv5Bug;
     protected $testMode=null;
+    protected $timesPredictionScatterAdd = [];
+    protected $timesPredictionReduceSum = [];
 
     public function __construct(object $context,object $queue)
     {
@@ -236,7 +240,7 @@ class OpenCLMath
         $kernel_name = "checkDiv5Bug";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        int alpha,\n".
                 "    const        int beta,\n".
                 "        __global int * results\n".
@@ -286,8 +290,8 @@ class OpenCLMath
     )
     {
         return
-            "    const uint ${low} = ${pointer}%${base};\n".
-            "    const uint ${high} = ${pointer}/${base};\n";
+            "    const uint {$low} = {$pointer}%{$base};\n".
+            "    const uint {$high} = {$pointer}/{$base};\n";
     }
 
     public function kernelTemplateQSum($inputs,$outputs)
@@ -422,17 +426,17 @@ class OpenCLMath
         "        for(int seg=0;seg<seg_count;seg++) {\n".
         "            if(lid<local_items) {\n".
         "                if(is_first) {\n".
-        "                    ${inputs}\n".
+        "                    {$inputs}\n".
         "                } else {\n".
         "                    local_work[lid] = seg_work[seg*lws+lid];\n".
         "                }\n".
         "            } else {\n".
-        "                local_work[lid] = ${initial};\n".
+        "                local_work[lid] = {$initial};\n".
         "            }\n".
         "            barrier(CLK_LOCAL_MEM_FENCE);\n".
         "            int i = lws;\n".
         "            while( i>1 ) {\n".
-        "                ${operation}\n".
+        "                {$operation}\n".
         "            }\n".
         "            if(lid == 0) {\n".
         "                seg_work[seg] = local_work[0];\n".
@@ -456,7 +460,7 @@ class OpenCLMath
         "        seg_count = (seg_count+lws-1)/lws;\n". // Not covered by div5bug. because lws is always a power of 2
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -475,19 +479,19 @@ class OpenCLMath
         "        for(int seg=0;seg<seg_count;seg++) {\n".
         "            if(lid<local_items) {\n".
         "                if(is_first) {\n".
-        "                    ${inputs}\n".
+        "                    {$inputs}\n".
         "                } else {\n".
         "                    local_work[lid] = seg_work[seg*lws+lid];\n".
         "                    local_iwork[lid] = seg_iwork[seg*lws+lid];\n".
         "                }\n".
         "            } else {\n".
-        "                local_work[lid] = ${initial};\n".
+        "                local_work[lid] = {$initial};\n".
         "                local_iwork[lid] = 0;\n".
         "            }\n".
         "            barrier(CLK_LOCAL_MEM_FENCE);\n".
         "            int i = lws;\n".
         "            while( i>1 ) {\n".
-        "                ${operation}\n".
+        "                {$operation}\n".
         "            }\n".
         "            if(lid == 0) {\n".
         "                seg_work[seg] = local_work[0];\n".
@@ -512,7 +516,7 @@ class OpenCLMath
         "        seg_count = (seg_count+lws-1)/lws;\n". // Not covered by div5bug. because lws is always a power of 2
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -524,20 +528,20 @@ class OpenCLMath
         "    const uint lid = get_local_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         #"    local_work[lid] = 0;\n".
-        #"    ${type} input = 0;\n".
+        #"    {$type} input = 0;\n".
         "    if(lid<total_local_items) {\n".
-        "        ${inputs}\n".
+        "        {$inputs}\n".
         "    } else {\n".
-        "        local_work[lid]  = ${initial};\n".
+        "        local_work[lid]  = {$initial};\n".
         "    }\n".
         #"    local_work[lid] = input;\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    int i = lws;\n".
         "    while( i>1 ) {\n".
-        "        ${operation}\n".
+        "        {$operation}\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -549,21 +553,21 @@ class OpenCLMath
         "    const uint lid = get_local_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         #"    local_work[lid] = 0;\n".
-        #"    ${type} input = 0;\n".
+        #"    {$type} input = 0;\n".
         "    if(lid<total_local_items) {\n".
-        "        ${inputs}\n".
+        "        {$inputs}\n".
         "    } else {\n".
-        "        local_work[lid] = ${initial};\n".
+        "        local_work[lid] = {$initial};\n".
         "        local_iwork[lid] = 0;\n".
         "    }\n".
         #"    local_work[lid] = input;\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    int i = lws;\n".
         "    while( i>1 ) {\n".
-        "        ${operation}\n".
+        "        {$operation}\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -577,23 +581,23 @@ class OpenCLMath
         "    const uint grid = get_group_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         "    const uint grs = get_num_groups(0);\n".
-        "    ${type} value = ${initial};\n".
+        "    {$type} value = {$initial};\n".
         "    uint local_item_id = grid*lws + lid;\n".
         "    while(local_item_id < total_local_items) {\n".
-        "        ${inputs}\n".
-        "        ${operation1}\n".
+        "        {$inputs}\n".
+        "        {$operation1}\n".
         "        local_item_id += lws*grs;\n".
         "    }\n".
         "    local_work[lid] = value;\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    for(int i=lws/2; i>0; i>>=1) {\n".
         "        if(lid < i) {\n".
-        "            ${operation2}\n".
+        "            {$operation2}\n".
         "        }\n".
         "        barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${operation3}\n".
+        "        {$operation3}\n".
         "    }\n".
         "}\n";
     }
@@ -605,16 +609,16 @@ class OpenCLMath
         "{\n".
         "    const uint lid = get_local_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
-        "    ${operation4}\n".
+        "    {$operation4}\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    for(uint i=lws/2; i>0; i>>=1) {\n".
         "        if (lid < i) {\n".
-        "            ${operation2}\n".
+        "            {$operation2}\n".
         "        }\n".
         "        barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    }\n".
         "    if (lid == 0) {\n".
-        "        ${output}\n".
+        "        {$output}\n".
         "    }\n".
         "}\n";
     }
@@ -628,12 +632,12 @@ class OpenCLMath
         "    const uint grid = get_group_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         "    const uint grs = get_num_groups(0);\n".
-        "    ${type} value = ${initial};\n".
+        "    {$type} value = {$initial};\n".
         "    uint    ivalue = 0;\n".
         "    uint local_item_id = grid*lws + lid;\n".
         "    while(local_item_id < total_local_items) {\n".
-        "        ${inputs}\n".
-        "        ${operation1}\n".
+        "        {$inputs}\n".
+        "        {$operation1}\n".
         "        local_item_id += lws*grs;\n".
         "    }\n".
         "    local_work[lid] = value;\n".
@@ -641,12 +645,12 @@ class OpenCLMath
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    for(int i=lws/2; i>0; i>>=1) {\n".
         "        if(lid < i) {\n".
-        "            ${operation2}\n".
+        "            {$operation2}\n".
         "        }\n".
         "        barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${operation3}\n".
+        "        {$operation3}\n".
         "    }\n".
         "}\n";
     }
@@ -770,20 +774,20 @@ class OpenCLMath
         }
         $value_size = $X->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "sum_S_${type}";
+        $kernel_name = "sum_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * r,\n".
+                "        __global {$type} * r,\n".
                 "    const        uint offset_r,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                     $this->kernelTemplateSSum(
-                        "local_work[lid] = x[${index_x}];",
+                        "local_work[lid] = x[{$index_x}];",
                         "r[offset_r] = local_work[0];"
                     ).
                 "}\n";
@@ -830,23 +834,23 @@ class OpenCLMath
         }
         $value_size = $X->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "sum_M_${type}";
+        $kernel_name = "sum_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
-                "        __global ${type} * r,\n".
+                "        __global {$type} * r,\n".
                 "    const        uint offset_r,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                     $this->kernelTemplateQSum(
-                        "local_work[lid] = x[${index_x}];",
+                        "local_work[lid] = x[{$index_x}];",
                         "r[offset_r] = seg_work[0];"
                     ).
                 "}\n";
@@ -904,20 +908,20 @@ class OpenCLMath
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "sum_L1_${type}";
-        $kernel_name2 = "sum_L2_${type}";
+        $kernel_name1 = "sum_L1_{$type}";
+        $kernel_name2 = "sum_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
-                "    const __global ${type} * x,\n".
+                "    const __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                     $this->kernelTemplateLSingleSum1(
-                        "${type} input = x[local_item_id*incx + offset_x];",
+                        "{$type} input = x[local_item_id*incx + offset_x];",
                         $dtype
                     ).
                 "}\n";
@@ -926,11 +930,11 @@ class OpenCLMath
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "        __global ${type} * r,\n".
+                "__kernel void {$kernel_name2}(\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "        __global {$type} * r,\n".
                 "    const        uint offset_r,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                     $this->kernelTemplateLSingleSum2(
                         "r[offset_r] = local_work[0];"
@@ -977,15 +981,15 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "increment_${type}";
+        $kernel_name = "increment_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "    const        ${type} beta)\n".
+                "    const        {$type} beta)\n".
                 "{\n".
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    x[idx] = alpha*x[idx]+beta;\n".
@@ -1018,15 +1022,15 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "reciprocal_${type}";
+        $kernel_name = "reciprocal_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "    const        ${type} beta)\n".
+                "    const        {$type} beta)\n".
                 "{\n".
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    x[idx] = 1.0/(alpha*x[idx]+beta);\n".
@@ -1069,14 +1073,14 @@ class OpenCLMath
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "maximum_${type}";
+        $kernel_name = "maximum_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1084,8 +1088,8 @@ class OpenCLMath
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} tmp_a = a[ida];\n".
-                "    ${type} tmp_x = x[idx];\n".
+                "    {$type} tmp_a = a[ida];\n".
+                "    {$type} tmp_x = x[idx];\n".
                 "    if(isnan(tmp_x)) {\n".
                 "        a[ida] = tmp_x;\n".
                 "    } else {\n".
@@ -1133,14 +1137,14 @@ class OpenCLMath
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "minimum_${type}";
+        $kernel_name = "minimum_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1148,8 +1152,8 @@ class OpenCLMath
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} tmp_a = a[ida];\n".
-                "    ${type} tmp_x = x[idx];\n".
+                "    {$type} tmp_a = a[ida];\n".
+                "    {$type} tmp_x = x[idx];\n".
                 "    if(isnan(tmp_x)) {\n".
                 "        a[ida] = tmp_x;\n".
                 "    } else {\n".
@@ -1200,14 +1204,14 @@ class OpenCLMath
         //$segments = (int)ceil($n/$segment_size);
         //$fraction = (int)($n%$segment_size);
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "greater_${type}";
+        $kernel_name = "greater_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1215,7 +1219,7 @@ class OpenCLMath
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 0.0
                 "    if(a[ida] > x[idx]) {\n".
@@ -1271,14 +1275,14 @@ class OpenCLMath
         //$segments = (int)ceil($n/$segment_size);
         //$fraction = (int)($n%$segment_size);
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "greater_equal_${type}";
+        $kernel_name = "greater_equal_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1286,7 +1290,7 @@ class OpenCLMath
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 1.0
                 "    if(a[ida] >= x[idx]) {\n".
@@ -1338,14 +1342,14 @@ class OpenCLMath
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "less_${type}";
+        $kernel_name = "less_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1353,7 +1357,7 @@ class OpenCLMath
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 0.0
                 "    if(a[ida] < x[idx]) {\n".
@@ -1402,14 +1406,14 @@ class OpenCLMath
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "less_${type}";
+        $kernel_name = "less_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1417,7 +1421,7 @@ class OpenCLMath
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 1.0
                 "    if(a[ida] <= x[idx]) {\n".
@@ -1466,7 +1470,7 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "multiply_${type}_${trans}";
+        $kernel_name = "multiply_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'col_id*lda+row_id+offset_a';
@@ -1474,19 +1478,19 @@ class OpenCLMath
                 $index_a = 'row_id*lda+col_id+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
                 "    const uint row_id = get_global_id(0);\n".
                 "    const uint col_id = get_global_id(1);\n".
-                "    const uint index_a = ${index_a};\n".
+                "    const uint index_a = {$index_a};\n".
                 "    const uint index_x = col_id*incx+offset_x;\n".
-                "    const ${type} work_x = x[index_x];\n".
+                "    const {$type} work_x = x[index_x];\n".
                 "    a[index_a] = a[index_a] * work_x;\n".
                 "}\n";
         }
@@ -1529,7 +1533,7 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "add_${type}_${trans}";
+        $kernel_name = "add_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'col_id*lda+row_id+offset_a';
@@ -1537,20 +1541,20 @@ class OpenCLMath
                 $index_a = 'row_id*lda+col_id+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "    const global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "    const global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
                 "    const uint row_id = get_global_id(0);\n".
                 "    const uint col_id = get_global_id(1);\n".
-                "    const uint index_a = ${index_a};\n".
+                "    const uint index_a = {$index_a};\n".
                 "    const uint index_x = col_id*incx+offset_x;\n".
-                "    const ${type} work_x = x[index_x];\n".
+                "    const {$type} work_x = x[index_x];\n".
                 "    a[index_a] = a[index_a] + alpha * work_x;\n".
                 "}\n";
         }
@@ -1582,12 +1586,12 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "square_${type}";
+        $kernel_name = "square_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1623,11 +1627,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "sqrt_${type}";
+        $kernel_name = "sqrt_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1660,15 +1664,15 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "rsqrt_${type}";
+        $kernel_name = "rsqrt_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "    const        ${type} beta)\n".
+                "    const        {$type} beta)\n".
                 "{\n".
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    x[idx] = 1.0/(alpha * sqrt(x[idx]) + beta);\n".
@@ -1700,12 +1704,12 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "pow_${type}";
+        $kernel_name = "pow_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1737,11 +1741,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "exp_${type}";
+        $kernel_name = "exp_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1772,11 +1776,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "log_${type}";
+        $kernel_name = "log_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1807,11 +1811,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "tanh_${type}";
+        $kernel_name = "tanh_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1842,11 +1846,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "sin_${type}";
+        $kernel_name = "sin_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1877,11 +1881,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "cos_${type}";
+        $kernel_name = "cos_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1912,11 +1916,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "tan_${type}";
+        $kernel_name = "tan_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1953,14 +1957,14 @@ class OpenCLMath
             $this->assertFP64();
         }
         $dtype = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "equal_${dtype}";
+        $kernel_name = "equal_{$dtype}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${dtype} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$dtype} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${dtype} * y,\n".
+                "        __global {$dtype} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint incy)\n".
                 "{\n".
@@ -2009,7 +2013,7 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "duplicate_${type}_${trans}";
+        $kernel_name = "duplicate_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $idxI = '1';
@@ -2021,17 +2025,17 @@ class OpenCLMath
                 $index_a = 'i*lda+j+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
-                "    uint i = get_global_id(${idxI});\n".
-                "    uint j = get_global_id(${idxJ});\n".
-                "    uint index_a = ${index_a};\n".
+                "    uint i = get_global_id({$idxI});\n".
+                "    uint j = get_global_id({$idxJ});\n".
+                "    uint index_a = {$index_a};\n".
                 "    uint index_x = j*incx+offset_x;\n".
                 "    a[index_a] = x[index_x];\n".
                 "}\n";
@@ -2068,14 +2072,14 @@ class OpenCLMath
         if($dtypeY==NDArray::bool) {
             $toOrg = 'bool';
         }
-        $kernel_name = "astype_${from}_${toOrg}";
+        $kernel_name = "astype_{$from}_{$toOrg}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${from} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$from} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${to} * y,\n".
+                "        __global {$to} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint incy)\n".
                 "{\n".
@@ -2159,7 +2163,7 @@ class OpenCLMath
             $direction = 'f';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "gather_${op}_${type}_${direction}";
+        $kernel_name = "gather_{$op}_{$type}_{$direction}";
         if(!isset($this->sources[$kernel_name])) {
             $a_variable = "a[offset_a+label*k+p]";
             $b_variable = "b[offset_b+j*k+p]";
@@ -2180,22 +2184,22 @@ class OpenCLMath
                 $operator = '=';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
                 "    const        uint numClass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    ${a_arg_type} ${type} * a,\n".
+                "    {$a_arg_type} {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    ${b_arg_type} ${type} * b,\n".
+                "    {$b_arg_type} {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    uint p = get_global_id(0);\n".
                 "    uint j = get_global_id(1);\n".
                 "    uint label = x[j+offset_x];\n".
                 "    if(label<numClass) {\n".
-                "        ${to} ${operator} ${from};\n".
+                "        {$to} {$operator} {$from};\n".
                 "    }\n".
                 "}\n";
         }
@@ -2253,7 +2257,7 @@ class OpenCLMath
             $direction = 'f';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceGather_${op}_${type}_${direction}";
+        $kernel_name = "reduceGather_{$op}_{$type}_{$direction}";
         if(!isset($this->sources[$kernel_name])) {
             $a_variable = "a[offset_a+i*n*numClass+j+label*n]";
             $b_variable = "b[offset_b+i*n+j]";
@@ -2274,22 +2278,22 @@ class OpenCLMath
                 $operator = '=';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint m,\n".
                 "    const        uint n,\n".
                 "    const        uint numClass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    ${a_arg_type} ${type} * a,\n".
+                "    {$a_arg_type} {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    ${b_arg_type} ${type} * b,\n".
+                "    {$b_arg_type} {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    uint j = get_global_id(0);\n".
                 "    uint i = get_global_id(1);\n".
                 "    uint label = x[j+offset_x+n*i];\n".
                 "    if(label<numClass) {\n".
-                "        ${to} ${operator} ${from};\n".
+                "        {$to} {$operator} {$from};\n".
                 "    }\n".
                 "}\n";
         }
@@ -2481,25 +2485,25 @@ class OpenCLMath
         $dtype = $A->dtype();
         $total_local_items = $n;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAdd_0_${type}";
+        $kernel_name = "scatterAdd_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    const uint p = get_global_id(0);\n".  // A col id(p)
                 "    const uint i = get_global_id(1);\n".  // A row id(i)
                 "    uint pos_x = offset_x;\n".  // A col id
                 "    uint pos_b = offset_b+p;\n".  // A col id
-                "    ${type} sum = 0;\n".
+                "    {$type} sum = 0;\n".
                 //"    if(p<k && i<numclass) {\n".
                 "        for(int j=0;j<total_local_items;j++,pos_x++,pos_b+=k) {\n".
                 "            uint label = x[pos_x];\n".
@@ -2556,20 +2560,20 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAdd_S_${type}";
+        $kernel_name = "scatterAdd_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b,\n".
-                "         __local ${type} * local_work,\n".
+                "         __local {$type} * local_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".  // A col id (p)
@@ -2634,22 +2638,22 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAdd_M_${type}";
+        $kernel_name = "scatterAdd_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n". // k => n
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint segments,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".  // A col id(p)(n => k)
@@ -2722,25 +2726,25 @@ class OpenCLMath
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "scatterAdd_L1_${type}";
-        $kernel_name2 = "scatterAdd_L2_${type}";
+        $kernel_name1 = "scatterAdd_L1_{$type}";
+        $kernel_name2 = "scatterAdd_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                 $this->splitPointer('inner_id','outer_id','parallel_item_id','k').
                 $this->kernelTemplateLSum1(
-                        "${type} input;\n".
+                        "{$type} input;\n".
                         // inner_id = (p)(cols k)
                         // outer_id = (i)(rows class)
                         "const uint label = x[local_item_id+offset_x];\n".
@@ -2757,12 +2761,12 @@ class OpenCLMath
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "          __global ${type} * a,\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "          __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                     $this->kernelTemplateLSum2(
@@ -2815,18 +2819,18 @@ class OpenCLMath
     {
 //echo "mode=4\n";
         $type = $this->dtypeToOpenCLType[$B->dtype()];
-        $kernel_name = "scatterAdd_4_${type}";
+        $kernel_name = "scatterAdd_4_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    const uint gid = get_global_id(0);\n".
@@ -2877,16 +2881,16 @@ class OpenCLMath
     {
 //echo "mode=4\n";
         $type = $this->dtypeToOpenCLType[$B->dtype()];
-        $kernel_name = "repeat_${type}";
+        $kernel_name = "repeat_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint m,\n".
                 "    const        uint k,\n".
                 "    const        uint repeats,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    const uint gid = get_global_id(0);\n".
@@ -2945,26 +2949,26 @@ class OpenCLMath
         $type = $this->dtypeToOpenCLType[$Y->dtype()];
         $mode = $addMode ? 'add' : 'set';
         $operator = $addMode ? '+=' : '=';
-        if(!isset($this->sources["onehot_${type}_${mode}"])) {
-            $this->sources["onehot_${type}_${mode}"] =
-                "__kernel void onehot_${type}_${mode}(\n".
+        if(!isset($this->sources["onehot_{$type}_{$mode}"])) {
+            $this->sources["onehot_{$type}_{$mode}"] =
+                "__kernel void onehot_{$type}_{$mode}(\n".
                 "    const        uint n,\n".
-                "    const        ${type} alpha,\n".
+                "    const        {$type} alpha,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * y,\n".
+                "        __global {$type} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint ldy)\n".
                 "{\n".
                 "    uint gid = get_global_id(0);\n".
                 "    uint label = x[gid*incx+offset_x];\n".
                 "    if(label<n) {\n".
-                "        y[gid*ldy+label+offset_y] ${operator} alpha;\n".
+                "        y[gid*ldy+label+offset_y] {$operator} alpha;\n".
                 "    }\n".
                 "}\n";
         }
-        $kernel = $this->createKernel("onehot_${type}_${mode}");
+        $kernel = $this->createKernel("onehot_{$type}_{$mode}");
 
         $kernel->setArg(0,$n,NDArray::uint32);
         $kernel->setArg(1,$alpha,$Y->dtype());
@@ -3105,31 +3109,31 @@ class OpenCLMath
         $ldA = $n*$k;
         $ldB = $k;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceSum_0_${type}";
+        $kernel_name = "reduceSum_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $index_a = 'gid0*lda+gid1+offset_a';
             $index_b = 'gid0*ldb+gid1+offset_b';
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "          global ${type} * b,\n".
+                "          global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb)\n".
                 "{\n".
                 "    const uint gid = get_global_id(0);\n".
                      $this->splitPointer('gid1','gid0','gid','k').
-                "    ${type} sum = 0;\n".
+                "    {$type} sum = 0;\n".
                 //"    if(gid0<rows) {\n".
-                "        uint pos = ${index_a};\n".
+                "        uint pos = {$index_a};\n".
                 "        for(uint i=total_local_items; i>0; i--,pos+=k) {\n".
                 "            sum += a[pos];\n".
                 "        }\n".
-                "        b[${index_b}] = sum;\n".
+                "        b[{$index_b}] = sum;\n".
                 //"    }\n".
                 "}\n";
         }
@@ -3180,19 +3184,19 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceSum_S_${type}";
+        $kernel_name = "reduceSum_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
                      $this->splitPointer('gid_r','gid_l','grid','k').
@@ -3251,21 +3255,21 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceSum_M_${type}";
+        $kernel_name = "reduceSum_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
@@ -3335,24 +3339,24 @@ class OpenCLMath
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "reduceSum_L1_${type}";
-        $kernel_name2 = "reduceSum_L2_${type}";
+        $kernel_name1 = "reduceSum_L1_{$type}";
+        $kernel_name2 = "reduceSum_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * a,\n".
+                "    const __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                      $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                     $this->kernelTemplateLSum1(
-                        "${type} input = a[pos_a+local_item_id*k];",
+                        "{$type} input = a[pos_a+local_item_id*k];",
                         $dtype
                     ).
                 "}\n";
@@ -3361,13 +3365,13 @@ class OpenCLMath
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "        __global ${type} * b,\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                      $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
@@ -3512,19 +3516,19 @@ class OpenCLMath
         $ldA = $n*$k;
         $ldB = $k;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceMax_0_${type}";
+        $kernel_name = "reduceMax_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $index_a = 'gid0*lda+gid1+offset_a';
             $index_b = 'gid0*ldb+gid1+offset_b';
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "          global ${type} * b,\n".
+                "          global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb)\n".
                 "{\n".
@@ -3532,18 +3536,18 @@ class OpenCLMath
                      $this->splitPointer('gid1','gid0','gid','k').
                 //"    if(gid0<rows) {\n".
                 "        uint i=0;\n".
-                "        uint pos = ${index_a};\n".
-                "        ${type} max = a[pos];\n".
+                "        uint pos = {$index_a};\n".
+                "        {$type} max = a[pos];\n".
                 "        pos += k;\n".
                 "        for(uint i=1; i<total_local_items; i++,pos+=k) {\n".
-                "            ${type} value = a[pos];\n".
+                "            {$type} value = a[pos];\n".
                 //           if NaN set NaN
                 //           Compatible with reduce_max of tensorflow 2.6
                 "            if(max<value||isnan(value)) {\n".
                 "                max = value;\n".
                 "            }\n".
                 "        }\n".
-                "        b[${index_b}] = max;\n".
+                "        b[{$index_b}] = max;\n".
                 //"    }\n".
                 "}\n";
         }
@@ -3594,19 +3598,19 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceMax_S_${type}";
+        $kernel_name = "reduceMax_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
                      $this->splitPointer('gid_r','gid_l','grid','k').
@@ -3666,21 +3670,21 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceMax_M_${type}";
+        $kernel_name = "reduceMax_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
@@ -3751,24 +3755,24 @@ class OpenCLMath
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "reduceMax_L1_${type}";
-        $kernel_name2 = "reduceMax_L2_${type}";
+        $kernel_name1 = "reduceMax_L1_{$type}";
+        $kernel_name2 = "reduceMax_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * a,\n".
+                "    const __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                      $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                     $this->kernelTemplateLMax1(
-                        "${type} input = a[pos_a+local_item_id*k];",
+                        "{$type} input = a[pos_a+local_item_id*k];",
                         $dtype
                     ).
                 "}\n";
@@ -3777,13 +3781,13 @@ class OpenCLMath
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "        __global ${type} * b,\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
                 "    const uint gid_l = parallel_item_id/k;\n".
@@ -3929,16 +3933,16 @@ class OpenCLMath
         $ldA = $n*$k;
         $ldB = $k;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceArgMax_0_${type}";
+        $kernel_name = "reduceArgMax_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $index_a = 'gid0*lda+gid1+offset_a';
             $index_b = 'gid0*ldb+gid1+offset_b';
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
                 "          global uint * b,\n".
@@ -3949,18 +3953,18 @@ class OpenCLMath
                      $this->splitPointer('gid1','gid0','gid','k').
                 //"    if(gid0<rows) {\n".
                 "        uint i=0;\n".
-                "        uint pos = ${index_a};\n".
-                "        ${type} max = a[pos];\n".
+                "        uint pos = {$index_a};\n".
+                "        {$type} max = a[pos];\n".
                 "        uint imax = i;\n".
                 "        pos += k;\n".
                 "        for(uint i=1; i<total_local_items; i++,pos+=k) {\n".
-                "            ${type} value = a[pos];\n".
+                "            {$type} value = a[pos];\n".
                 "            if(value>max) {\n".
                 "                max = value;\n".
                 "                imax = i;\n".
                 "            }\n".
                 "        }\n".
-                "        b[${index_b}] = imax;\n".
+                "        b[{$index_b}] = imax;\n".
                 //"    }\n".
                 "}\n";
         }
@@ -4012,19 +4016,19 @@ class OpenCLMath
         $value_size = $A->value_size();
         $index_value_size = $B->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceArgMax_S_${type}";
+        $kernel_name = "reduceArgMax_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
                 "        __global uint * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
+                "         __local {$type} * local_work,\n".
                 "         __local uint * local_iwork)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
@@ -4088,21 +4092,21 @@ class OpenCLMath
         $value_size = $A->value_size();
         $index_value_size = $B->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceArgMax_M_${type}";
+        $kernel_name = "reduceArgMax_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
                 "        __global uint * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "         __local uint * local_iwork,\n".
                 "         __local uint * seg_iwork,\n".
                 "    const        uint work_items)\n".
@@ -4181,18 +4185,18 @@ class OpenCLMath
             $index_value_size*$temp_size*$rows*$k,
             OpenCL::CL_MEM_READ_WRITE,null,null,$B->dtype());
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "reduceArgMax_L1_${type}";
-        $kernel_name2 = "reduceArgMax_L2_${type}";
+        $kernel_name1 = "reduceArgMax_L1_{$type}";
+        $kernel_name2 = "reduceArgMax_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * a,\n".
+                "    const __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work,\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work,\n".
                 "        __global uint * temp_ibuffer,\n".
                 "         __local uint * local_iwork)\n".
                 "{\n".
@@ -4200,7 +4204,7 @@ class OpenCLMath
                      $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                     $this->kernelTemplateLiMax1(
-                        "${type} input = a[pos_a+local_item_id*k];".
+                        "{$type} input = a[pos_a+local_item_id*k];".
                         "uint input_index = local_item_id;\n",
                         $dtype
                     ).
@@ -4210,14 +4214,14 @@ class OpenCLMath
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
+                "    const __global {$type} * temp_buffer,\n".
                 "    const __global uint * temp_ibuffer,\n".
                 "        __global uint * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
+                "         __local {$type} * local_work,\n".
                 "         __local uint * local_iwork)\n".
                 "{\n".
                 "    const uint parallel_item_id = get_global_id(1);\n".
@@ -4316,7 +4320,7 @@ class OpenCLMath
         }
         $total_local_items = $cols;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "softmax_4_${type}_${trans}";
+        $kernel_name = "softmax_4_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'i*lda+gid+offset_a';
@@ -4324,29 +4328,29 @@ class OpenCLMath
                 $index_a = 'gid*lda+i+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
                 "    const uint gid = get_global_id(0);\n".
                 //"    if(gid<rows) {\n".
                 "        uint i=0;\n".
-                "        ${type} max = a[${index_a}];\n".
+                "        {$type} max = a[{$index_a}];\n".
                 "        for(i=1;i<total_local_items;i++) {\n".
-                "            ${type} value = a[${index_a}];\n".
+                "            {$type} value = a[{$index_a}];\n".
                 "            if(value > max) {\n".
                 "                max = value;\n".
                 "            }\n".
                 "        }\n".
-                "        ${type} sum=0;\n".
+                "        {$type} sum=0;\n".
                 "        for(i=0;i<total_local_items;i++) {\n".
-                "            sum += exp(a[${index_a}]-max);".
+                "            sum += exp(a[{$index_a}]-max);".
                 "        }\n".
                 "        for(i=0;i<total_local_items;i++) {\n".
-                "            a[${index_a}] = exp(a[${index_a}]-max)/sum;\n".
+                "            a[{$index_a}] = exp(a[{$index_a}]-max)/sum;\n".
                 "        }\n".
                 //"    }\n".
                 "}\n";
@@ -4397,7 +4401,7 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "softmax_S_${type}_${trans}";
+        $kernel_name = "softmax_S_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'lid*lda+grid+offset_a';
@@ -4405,24 +4409,24 @@ class OpenCLMath
                 $index_a = 'grid*lda+lid+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
-                "    __local ${type} max;\n".
-                "    __local ${type} sum;\n".
+                "    __local {$type} max;\n".
+                "    __local {$type} sum;\n".
                      $this->kernelTemplateSMax(
-                         "local_work[lid] = a[${index_a}];\n",
+                         "local_work[lid] = a[{$index_a}];\n",
                          "max = local_work[0];\n",
                          $dtype
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
                      $this->kernelTemplateSSum(
-                         "local_work[lid] = exp(a[${index_a}]-max);",
+                         "local_work[lid] = exp(a[{$index_a}]-max);",
                          "sum = local_work[0];\n"
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
@@ -4430,7 +4434,7 @@ class OpenCLMath
                 "        const uint lid = get_local_id(0);\n".
                 "        const uint lws = get_local_size(0);\n".
                 "        if(lid<total_local_items) {\n".
-                "            a[${index_a}] = exp(a[${index_a}]-max)/sum;\n".
+                "            a[{$index_a}] = exp(a[{$index_a}]-max)/sum;\n".
                 "        }\n".
                 "    }\n".
                 "}\n";
@@ -4480,7 +4484,7 @@ class OpenCLMath
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "softmax_M_${type}_${trans}";
+        $kernel_name = "softmax_M_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = '(seg*lws+lid)*lda+grid+offset_a';
@@ -4488,27 +4492,27 @@ class OpenCLMath
                 $index_a = 'grid*lda+(seg*lws+lid)+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
-                "    __local ${type} max;\n".
-                "    __local ${type} sum;\n".
+                "    __local {$type} max;\n".
+                "    __local {$type} sum;\n".
                      $this->kernelTemplateQMax(
-                         "local_work[lid] = a[${index_a}];\n",
+                         "local_work[lid] = a[{$index_a}];\n",
                          "max = seg_work[0];\n",
                          $dtype
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
                      $this->kernelTemplateQSum(
-                         "local_work[lid] = exp(a[${index_a}]-max);",
+                         "local_work[lid] = exp(a[{$index_a}]-max);",
                          "sum = seg_work[0];\n"
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
@@ -4520,7 +4524,7 @@ class OpenCLMath
                 "        uint left_local_items = total_local_items;\n".
                 "        for(int seg=0;seg<seg_count;seg++) {\n".
                 "            if(lid<local_items) {\n".
-                "                a[${index_a}] = exp(a[${index_a}]-max)/sum;\n".
+                "                a[{$index_a}] = exp(a[{$index_a}]-max)/sum;\n".
                 "            }\n".
                 "            barrier(CLK_LOCAL_MEM_FENCE);\n".
                 "            left_local_items -= local_items;\n".
@@ -4587,7 +4591,7 @@ class OpenCLMath
             $direction = 'f';
         }
         $type = $this->dtypeToOpenCLType[$A->dtype()];
-        $kernel_name = "slice_${type}_${direction}_${op}";
+        $kernel_name = "slice_{$type}_{$direction}_{$op}";
         if(!isset($this->sources[$kernel_name])) {
             $y_variable = 'y[i0*i1size*i2size*size+'.
                             'i1*i2size*size+'.
@@ -4612,13 +4616,13 @@ class OpenCLMath
                 $operator = '=';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
-                "    $a_arg_type ${type} * a,\n".
+                "    $a_arg_type {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint inca,\n".
-                "    $y_arg_type ${type} * y,\n".
+                "    $y_arg_type {$type} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint incy,\n".
                 "    const        uint startAxis0,\n".
@@ -4633,7 +4637,7 @@ class OpenCLMath
                 "    uint gid1 = get_global_id(1);\n".
                     $this->splitPointer('lid','i2','gid0','size').
                     $this->splitPointer('i1','i0','gid1','i1size').
-                "    ${to} ${operator} ${from};\n".
+                "    {$to} {$operator} {$from};\n".
                 "}\n";
         }
 
@@ -4691,15 +4695,15 @@ class OpenCLMath
             $cmp = ">";
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "searchsorted_${type}_${subname}";
+        $kernel_name = "searchsorted_{$type}_{$subname}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint m,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint inca,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
                 "        __global uint * y,\n".
@@ -4709,9 +4713,9 @@ class OpenCLMath
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    uint idy = get_global_id(0)*incy+offset_y;\n".
                 "    uint i;\n".
-                "    ${type} v = x[idx];\n".
+                "    {$type} v = x[idx];\n".
                 "    for(i=0;i<m;i++) {\n".
-                "        if(!(v ${cmp} a[offset_a+i*inca])) {\n".
+                "        if(!(v {$cmp} a[offset_a+i*inca])) {\n".
                 "            break;\n".
                 "        }\n".
                 "    }\n".
@@ -4771,21 +4775,21 @@ class OpenCLMath
             $subname = 'n';
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "cumsum_${type}_${subname}";
+        $kernel_name = "cumsum_{$type}_{$subname}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        int n,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        int offset_x,\n".
                 "    const        int incx,\n".
-                "        __global ${type} * y,\n".
+                "        __global {$type} * y,\n".
                 "    const        int offset_y,\n".
                 "    const        int incy)\n".
                 "{\n".
                 "    int idx = offset_x;\n".
                 "    int idy = offset_y;\n".
-                "    ${type} value = 0;\n".
+                "    {$type} value = 0;\n".
                 "    for(int i=0;i<n;i++,idx+=incx,idy+=incy) {\n".
                         $execute.
                 "    }\n".
@@ -4820,12 +4824,12 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "nan2num_${type}";
+        $kernel_name = "nan2num_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -4859,11 +4863,11 @@ class OpenCLMath
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "isnan_${type}";
+        $kernel_name = "isnan_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -4938,10 +4942,10 @@ class OpenCLMath
         $biasX -= $widthShift*$directionX;
 
         $type = $this->dtypeToOpenCLType[$A->dtype()];
-        $kernel_name = "imagecopy_${type}";
+        $kernel_name = "imagecopy_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        int height,\n".
                 "    const        int width,\n".
                 "    const        int directionY,\n".
@@ -4952,9 +4956,9 @@ class OpenCLMath
                 "    const        int ldX,\n".
                 "    const        int ldC,\n".
                 "    const        int rgbFlip,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    uint gid0 = get_global_id(0);\n".
@@ -5062,7 +5066,7 @@ class OpenCLMath
             $tmode = 'F';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "im2col1d_${tmode}_${type}_${channel_mode}_${cols_mode}";
+        $kernel_name = "im2col1d_{$tmode}_{$type}_{$channel_mode}_{$cols_mode}";
         if(!isset($this->sources[$kernel_name])) {
             if($reverse) {
                 $col_arg_type = 'const global';
@@ -5086,10 +5090,10 @@ class OpenCLMath
             $input_x = '(im_x*stride_w+kernel_x*dilation_w-pad_w)';
             if($reverse) {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_w,\n".
@@ -5105,24 +5109,24 @@ class OpenCLMath
                         $this->splitPointer('channel_id','input_x','gid0','channels').
                     "    const uint batch_id   = gid1;\n".
                     "    if(input_x<im_w && batch_id<batches){\n".
-                    "        ${type} value=0;\n".
+                    "        {$type} value=0;\n".
                     "        for(int kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
                     "            const int tmp_x = input_x-kernel_x*dilation_w+pad_w;\n".
                     "            const int im_x = tmp_x/stride_w;\n". // div5bug
                     "            if(tmp_x%stride_w==0 &&\n". // div5bug
                     "               im_x>=0 && im_x<output_w) {\n".
-                    "                value += cols[${cols_id}];\n".
+                    "                value += cols[{$cols_id}];\n".
                     "            }\n".
                     "        }\n".
-                    "        images[${input_id}] += value;\n".
+                    "        images[{$input_id}] += value;\n".
                     "    }\n".
                     "}\n";
             } else {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_w,\n".
@@ -5139,15 +5143,15 @@ class OpenCLMath
                     //"    uint kernel_x = get_global_id(2);\n".
                     "    if(im_x<output_w && batch_id<batches){\n".
                     "        for(uint kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
-                    "            int input_x = ${input_x};\n".
-                    "            ${type} value;\n".
+                    "            int input_x = {$input_x};\n".
+                    "            {$type} value;\n".
                     "            if(input_x>=0 && input_x<im_w) {\n".
-                    "                uint input_id = ${input_id};\n".
+                    "                uint input_id = {$input_id};\n".
                     "                value = images[input_id];\n".
                     "            } else {\n".
                     "                value = 0;\n".
                     "            }\n".
-                    "            uint cols_id = ${cols_id};\n".
+                    "            uint cols_id = {$cols_id};\n".
                     "            cols[cols_id] = value;\n".
                     "        }\n".
                     "    }\n".
@@ -5248,7 +5252,7 @@ class OpenCLMath
             $tmode = 'F';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "im2col2d_${tmode}_${type}_${channel_mode}_${cols_mode}";
+        $kernel_name = "im2col2d_{$tmode}_{$type}_{$channel_mode}_{$cols_mode}";
         if(!isset($this->sources[$kernel_name])) {
             if($channels_first) {
                 $input_id = '(((batch_id*channels+channel_id)*im_h+input_y)*im_w+input_x)';
@@ -5268,10 +5272,10 @@ class OpenCLMath
                 $col_arg_type = 'const global';
                 $im_arg_type = '__global';
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_h,\n".
@@ -5293,11 +5297,11 @@ class OpenCLMath
                     "    const uint gid1 = get_global_id(1);\n".
                          $this->splitPointer('channel_id','input_x','gid0','channels').
                          $this->splitPointer('input_y','batch_id','gid1','im_h').
-                    //"    const uint kernel_idx = ${kernel_idx};\n".
+                    //"    const uint kernel_idx = {$kernel_idx};\n".
                     //"    const uint kernel_y = kernel_idx/kernel_w;\n".
                     //"    const uint kernel_x = kernel_idx%kernel_w;\n".
                     "    if(input_x<im_w && batch_id<batches){\n".
-                    "        ${type} value=0;\n".
+                    "        {$type} value=0;\n".
                     "        for(int kernel_y=0;kernel_y<kernel_h;kernel_y++) {".
                     "            for(int kernel_x=0;kernel_x<kernel_w;kernel_x++) {".
                     "                const int tmp_y = input_y-kernel_y*dilation_h+pad_h;\n".
@@ -5306,21 +5310,21 @@ class OpenCLMath
                     "                const int im_x = tmp_x/stride_w;\n". // div5bug
                     "                if(tmp_y%stride_h==0 && tmp_x%stride_w==0 &&\n". // div5bug
                     "                   im_y>=0 && im_y<output_h && im_x>=0 && im_x<output_w) {\n".
-                    "                    value += cols[${cols_id}];\n".
+                    "                    value += cols[{$cols_id}];\n".
                     "                }\n".
                     "            }\n".
                     "        }\n".
-                    "        images[${input_id}] += value;\n".
+                    "        images[{$input_id}] += value;\n".
                     "    }\n".
                     "}\n";
             } else {
                 $im_arg_type = 'const global';
                 $col_arg_type = '__global';
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_h,\n".
@@ -5345,16 +5349,16 @@ class OpenCLMath
                     "    if(im_x<output_w && batch_id<batches){\n".
                     "        for(uint kernel_y=0;kernel_y<kernel_h;kernel_y++) {\n".
                     "            for(uint kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
-                    "                int input_y = ${input_y};\n".
-                    "                int input_x = ${input_x};\n".
-                    "                ${type} value;\n".
+                    "                int input_y = {$input_y};\n".
+                    "                int input_x = {$input_x};\n".
+                    "                {$type} value;\n".
                     "                if(input_y>=0 && input_y<im_h && input_x>=0 && input_x<im_w) {\n".
-                    "                    uint input_id = ${input_id};\n".
+                    "                    uint input_id = {$input_id};\n".
                     "                    value = images[input_id];\n".
                     "                } else {\n".
                     "                    value = 0;\n".
                     "                }\n".
-                    "                uint cols_id = ${cols_id};\n".
+                    "                uint cols_id = {$cols_id};\n".
                     "                cols[cols_id] = value;\n".
                     "            }\n".
                     "        }\n".
@@ -5472,7 +5476,7 @@ class OpenCLMath
             $tmode = 'F';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "im2col3d_${tmode}_${type}_${channel_mode}_${cols_mode}";
+        $kernel_name = "im2col3d_{$tmode}_{$type}_{$channel_mode}_{$cols_mode}";
         if(!isset($this->sources[$kernel_name])) {
             if($reverse) {
                 $col_arg_type = 'const global';
@@ -5498,10 +5502,10 @@ class OpenCLMath
             $input_x = '(im_x*stride_w+kernel_x*dilation_w-pad_w)';
             if($reverse) {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_d,\n".
@@ -5531,7 +5535,7 @@ class OpenCLMath
                          $this->splitPointer('input_y','input_z','gid1','im_h').
                     "    const int batch_id   = gid2;\n".
                     "    if(input_x<im_w && input_z<im_d && batch_id<batches){\n".
-                    "        ${type} value=0;\n".
+                    "        {$type} value=0;\n".
                     "        for(int kernel_z=0;kernel_z<kernel_d;kernel_z++) {".
                     "            for(int kernel_y=0;kernel_y<kernel_h;kernel_y++) {".
                     "                for(int kernel_x=0;kernel_x<kernel_w;kernel_x++) {".
@@ -5545,20 +5549,20 @@ class OpenCLMath
                     "                        im_z>=0 && im_z<output_d &&\n".
                     "                        im_y>=0 && im_y<output_h &&\n".
                     "                        im_x>=0 && im_x<output_w) {\n".
-                    "                        value += cols[${cols_id}];\n".
+                    "                        value += cols[{$cols_id}];\n".
                     "                    }\n".
                     "                }\n".
                     "            }\n".
                     "        }\n".
-                    "        images[${input_id}] += value;\n".
+                    "        images[{$input_id}] += value;\n".
                     "    }\n".
                     "}\n";
             } else {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_d,\n".
@@ -5591,17 +5595,17 @@ class OpenCLMath
                     "        for(uint kernel_z=0;kernel_z<kernel_d;kernel_z++) {\n".
                     "            for(uint kernel_y=0;kernel_y<kernel_h;kernel_y++) {\n".
                     "                for(uint kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
-                    "                    int input_z = ${input_z};\n".
-                    "                    int input_y = ${input_y};\n".
-                    "                    int input_x = ${input_x};\n".
-                    "                    ${type} value;\n".
+                    "                    int input_z = {$input_z};\n".
+                    "                    int input_y = {$input_y};\n".
+                    "                    int input_x = {$input_x};\n".
+                    "                    {$type} value;\n".
                     "                    if(input_z>=0 && input_z<im_d && input_y>=0 && input_y<im_h && input_x>=0 && input_x<im_w) {\n".
-                    "                        uint input_id = ${input_id};\n".
+                    "                        uint input_id = {$input_id};\n".
                     "                        value = images[input_id];\n".
                     "                    } else {\n".
                     "                        value = 0;\n".
                     "                    }\n".
-                    "                    uint cols_id = ${cols_id};\n".
+                    "                    uint cols_id = {$cols_id};\n".
                     "                    cols[cols_id] = value;\n".
                     "                }\n".
                     "            }\n".
@@ -5666,7 +5670,7 @@ class OpenCLMath
         $isInt = array_key_exists($dtype,$this->intTypes);
         $itype = ($isInt) ? 'i' : 'f';
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "randomUniform_${type}_${itype}";
+        $kernel_name = "randomUniform_{$type}_{$itype}";
         if(!isset($this->sources[$kernel_name])) {
             if($isInt) {
                 $this->sources[$kernel_name] =
@@ -5679,17 +5683,17 @@ class OpenCLMath
                 "    seed = seed ^ (seed >> 15);\n".
                 "    return seed;\n".
                 "}\n".
-                "__kernel void ${kernel_name}(const uint seed,\n".
-                "                      const ${type} low,\n".
-                "                      const ${type} high,\n".
-                "                    __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(const uint seed,\n".
+                "                      const {$type} low,\n".
+                "                      const {$type} high,\n".
+                "                    __global {$type} * x,\n".
                 "                      const uint offsetX,\n".
                 "                      const uint incX)\n".
                 "{\n".
                 "   uint gid = get_global_id(0);\n".
                 "   uint randmax = 0;\n".
                 "   randmax--;\n".
-                "   ${type} randx = (${type})floor((float)wang_hash(gid+seed)*\n".
+                "   {$type} randx = ({$type})floor((float)wang_hash(gid+seed)*\n".
                 "                         ((float)(high+1-low)/(float)randmax)+(float)low);\n".
                 "   if(randx>=high) {\n".
                 "       randx = high;\n".
@@ -5707,18 +5711,18 @@ class OpenCLMath
                 "    seed = seed ^ (seed >> 15);\n".
                 "    return seed;\n".
                 "}\n".
-                "__kernel void ${kernel_name}(const uint seed,\n".
-                "                      const ${type} low,\n".
-                "                      const ${type} high,\n".
-                "                    __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(const uint seed,\n".
+                "                      const {$type} low,\n".
+                "                      const {$type} high,\n".
+                "                    __global {$type} * x,\n".
                 "                      const uint offsetX,\n".
                 "                      const uint incX)\n".
                 "{\n".
                 "   uint gid = get_global_id(0);\n".
                 "   uint randmax = 0;\n".
                 "   randmax--;\n".
-                "   ${type} randx = (${type})((${type})wang_hash(gid+seed)*\n".
-                "                         ((high-low)/(${type})randmax)+low);\n".
+                "   {$type} randx = ({$type})(({$type})wang_hash(gid+seed)*\n".
+                "                         ((high-low)/({$type})randmax)+low);\n".
                 "   x[offsetX+gid*incX] = randx;\n".
                 "}\n";
             }
@@ -5759,7 +5763,7 @@ class OpenCLMath
         }
         $isInt = array_key_exists($dtype,$this->intTypes);
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "randomNormal_${type}";
+        $kernel_name = "randomNormal_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $PI = ($dtype==NDArray::float32) ? 'M_PI_F' : 'M_PI';
             $this->sources[$kernel_name] =
@@ -5772,10 +5776,10 @@ class OpenCLMath
             "    seed = seed ^ (seed >> 15);\n".
             "    return seed;\n".
             "}\n".
-            "__kernel void ${kernel_name}(const uint seed,\n".
-            "                      const ${type} mean,\n".
-            "                      const ${type} scale,\n".
-            "                    __global ${type} * x,\n".
+            "__kernel void {$kernel_name}(const uint seed,\n".
+            "                      const {$type} mean,\n".
+            "                      const {$type} scale,\n".
+            "                    __global {$type} * x,\n".
             "                      const uint offsetX,\n".
             "                      const uint incX)\n".
             "{\n".
@@ -5784,9 +5788,9 @@ class OpenCLMath
             "   randmax--;\n".
             "   uint seed1 = wang_hash(gid+seed);\n".
             "   uint seed2 = wang_hash(gid+seed1);\n".
-            "   ${type} randx = (${type})seed1/(${type})randmax;\n".
-            "   ${type} randy = (${type})seed2/(${type})randmax;\n".
-            "   x[offsetX+gid*incX] = sqrt(-2*log(randx))*cos(2*${PI}*randy)*scale+mean;\n".
+            "   {$type} randx = ({$type})seed1/({$type})randmax;\n".
+            "   {$type} randy = ({$type})seed2/({$type})randmax;\n".
+            "   x[offsetX+gid*incX] = sqrt(-2*log(randx))*cos(2*{$PI}*randy)*scale+mean;\n".
             "}\n";
         }
 
@@ -5830,14 +5834,14 @@ class OpenCLMath
         } else {
             $pattern = (float)$pattern;
         }
-        $kernel_name = "fill_${type}";
+        $kernel_name = "fill_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-            "__kernel void ${kernel_name}(\n".
-            "                    __global ${type} * x,\n".
+            "__kernel void {$kernel_name}(\n".
+            "                    __global {$type} * x,\n".
             "                      const uint offsetX,\n".
             "                      const uint incX,\n".
-            "                      const ${type} pattern)\n".
+            "                      const {$type} pattern)\n".
             "{\n".
             "   uint gid = get_global_id(0);\n".
             "   x[offsetX+gid*incX] = pattern;\n".
