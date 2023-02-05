@@ -1204,7 +1204,7 @@ class LinearAlgebraCL
                 throw new InvalidArgumentException('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
             }
         } else {
-            $C = $this->alloc([$M,$N]);
+            $C = $this->alloc([$M,$N],$A->dtype());
             $beta = 0.0;
         }
         $CC = $C->buffer();
@@ -3160,7 +3160,7 @@ class LinearAlgebraCL
         $addMode = true;
         if($Y===null) {
             $addMode = false;
-            $Y = $this->alloc([$sizeX,$numClass]);
+            $Y = $this->alloc([$sizeX,$numClass],$this->defaultFloatType);
             $waitPrev = $waitEvents;
             $waitEvents = $this->newEventList();
             $this->zeros($Y,$waitEvents,$waitPrev);

@@ -609,7 +609,7 @@ class LinearAlgebra
                 throw new InvalidArgumentException('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
             }
         } else {
-            $C = $this->zeros($this->alloc([$M,$N]));
+            $C = $this->zeros($this->alloc([$M,$N],$A->dtype()));
         }
         $CC = $C->buffer();
         $offC = $C->offset();
@@ -1982,7 +1982,7 @@ class LinearAlgebra
         }
         $sizeX = $X->size();
         if($Y===null) {
-            $Y = $this->zeros($this->alloc([$sizeX,$numClass]));
+            $Y = $this->zeros($this->alloc([$sizeX,$numClass],$this->defaultFloatType));
         }
         if($Y->ndim()!=2) {
             throw new InvalidArgumentException('"Y" must be 2D-NDArray.');
