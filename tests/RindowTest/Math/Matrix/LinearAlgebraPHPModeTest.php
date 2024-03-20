@@ -4,47 +4,26 @@ namespace RindowTest\Math\Matrix\LinearAlgebraPHPModeTest;
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
-use Rindow\Math\Matrix\PhpBlas;
-use Rindow\Math\Matrix\PhpLapack;
-use Rindow\Math\Matrix\PhpMath;
+use Rindow\Math\Matrix\Drivers\MatlibPHP\MatlibPhp;
+use Rindow\Math\Matrix\Drivers\Service;
 use ArrayObject;
-use SplFixedArray;
 use InvalidArgumentException;
 
-if(!class_exists('RindowTest\Math\Matrix\LinearAlgebraTest\Test')) {
+if(!class_exists('RindowTest\Math\Matrix\LinearAlgebraTest\LinearAlgebraTest')) {
     require_once __DIR__.'/LinearAlgebraTest.php';
 }
-use RindowTest\Math\Matrix\LinearAlgebraTest\Test as ORGTest;
+use RindowTest\Math\Matrix\LinearAlgebraTest\LinearAlgebraTest as ORGTest;
 
-class Test extends ORGTest
+class LinearAlgebraPHPModeTest extends ORGTest
 {
-    public function newMatrixOperator()
-    {
-        $blas = new PhpBlas();
-        $lapack = new PhpLapack();
-        $math = new PhpMath();
-        $mo = new MatrixOperator($blas,$lapack,$math);
-        return $mo;
-    }
+    static protected $speedtest = false;
 
-    public function testTrmmNormal()
+    public function setUp() : void
     {
-        $this->markTestSkipped('Unsuppored function on clblast');
-    }
-
-    public function testTrmmTranspose()
-    {
-        $this->markTestSkipped('Unsuppored function on clblast');
-    }
-
-    public function testTrmmUnit()
-    {
-        $this->markTestSkipped('Unsuppored function on clblast');
-    }
-
-    public function testTrmmRight()
-    {
-        $this->markTestSkipped('Unsuppored function on clblast');
+        $this->service = new MatlibPhp();
+        if($this->service->serviceLevel()!=Service::LV_BASIC) {
+            throw new \Exception("the service is invalid.");
+        }
     }
 
     public function testTrsmNormal()

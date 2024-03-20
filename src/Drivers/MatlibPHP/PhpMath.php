@@ -1,13 +1,16 @@
 <?php
-namespace Rindow\Math\Matrix;
+namespace Rindow\Math\Matrix\Drivers\MatlibPHP;
 
 use ArrayAccess as Buffer;
 use RuntimeException;
 use InvalidArgumentException;
 use Interop\Polite\Math\Matrix\NDArray;
+use Rindow\Math\Matrix\ComplexUtils;
 
 class PhpMath
 {
+    use ComplexUtils;
+
     protected $math;
     protected $forceMath;
     protected $intTypes= [
@@ -20,21 +23,24 @@ class PhpMath
 
     public function __construct($math=null,$forceMath=null)
     {
-        $this->math = $math;
-        $this->forceMath = $forceMath;
+        //$this->math = $math;
+        //$this->forceMath = $forceMath;
+        $this->math = null;
+        $this->forceMath = null;
     }
 
-    public function forceMath($forceMath)
-    {
-        $this->forceMath = $forceMath;
-    }
+    //public function forceMath($forceMath)
+    //{
+    //    $this->forceMath = $forceMath;
+    //}
 
-    protected function useMath(Buffer $X)
-    {
-        if($this->math===null)
-            return false;
-        return $this->forceMath || in_array($X->dtype(),$this->floatTypes);
-    }
+    //protected function useMath(Buffer $X)
+    //{
+    //    //if($this->math===null)
+    //    //    return false;
+    //    //return $this->forceMath || in_array($X->dtype(),$this->floatTypes);
+    //    return false;
+    //}
 
     public function logging($message)
     {
@@ -46,10 +52,16 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX,
         Buffer $Y, int $offsetY, int $incY ) : void
     {
-        $idxX = $offsetX;
-        $idxY = $offsetY;
-        for ($i=0; $i<$n; $i++,$idxX+=$incX,$idxY+=$incY) {
-            $Y[$idxY] = $X[$idxX];
+        if($incX==1 && $incY==1) {
+            for($i=0;$i<$n;$i++) {                 // memcpy(y,x,$n*sizeof(dtype))
+                $Y[$offsetY+$i] = $X[$offsetX+$i];
+            }
+        } else {
+            $idxX = $offsetX;
+            $idxY = $offsetY;
+            for ($i=0; $i<$n; $i++,$idxX+=$incX,$idxY+=$incY) {
+                $Y[$idxY] = $X[$idxX];
+            }
         }
     }
 
@@ -126,7 +138,7 @@ class PhpMath
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         $idxX = $offsetX;
         $acc = 0.0;
         for ($i=0; $i<$n; $i++,$idxX+=$incX) {
@@ -142,12 +154,12 @@ class PhpMath
         int $n,
         Buffer $X, int $offsetX, int $incX) : int
     {
-        if($this->useMath($X)) {
-            return $this->math->imax($n,$X,$offsetX,$incX);
-        }
+        //if($this->useMath($X)) {
+        //    return $this->math->imax($n,$X,$offsetX,$incX);
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         $idxX = $offsetX+$incX;
         $acc = $X[$offsetX];
         $idx = 0;
@@ -167,12 +179,12 @@ class PhpMath
         int $n,
         Buffer $X, int $offsetX, int $incX) : int
     {
-        if($this->useMath($X)) {
-            return $this->math->imin($n,$X,$offsetX,$incX);
-        }
+        //if($this->useMath($X)) {
+        //    return $this->math->imin($n,$X,$offsetX,$incX);
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         $idxX = $offsetX+$incX;
         $acc = $X[$offsetX];
         $idx = 0;
@@ -194,13 +206,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX,
         float $beta) : void
     {
-        if($this->useMath($X)) {
-            $this->math->increment($n,$alpha,$X,$offsetX,$incX,$beta);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->increment($n,$alpha,$X,$offsetX,$incX,$beta);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -217,13 +229,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX,
         float $beta) : void
     {
-        if($this->useMath($X)) {
-            $this->math->reciprocal($n,$alpha,$X,$offsetX,$incX,$beta);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->reciprocal($n,$alpha,$X,$offsetX,$incX,$beta);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -248,10 +260,10 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->maximum($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->maximum($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($m<=0 || $n<=0) {
             throw new InvalidArgumentException("m and n must be greater than 0");
         }
@@ -292,10 +304,10 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->minimum($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->minimum($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($m<=0 || $n<=0) {
             throw new InvalidArgumentException("m and n must be greater than 0");
         }
@@ -336,10 +348,10 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->greater($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->greater($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($m<=0 || $n<=0) {
             throw new InvalidArgumentException("m and n must be greater than 0");
         }
@@ -378,10 +390,10 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->greaterEqual($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->greaterEqual($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($m<=0 || $n<=0) {
             throw new InvalidArgumentException("m and n must be greater than 0");
         }
@@ -420,10 +432,10 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->less($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->less($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($m<=0 || $n<=0) {
             throw new InvalidArgumentException("m and n must be greater than 0");
         }
@@ -462,10 +474,10 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->lessEqual($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->lessEqual($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($m<=0 || $n<=0) {
             throw new InvalidArgumentException("m and n must be greater than 0");
         }
@@ -505,10 +517,10 @@ class PhpMath
         Buffer $A, int $offsetA, int $ldA
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->multiply($trans,$m,$n,$X,$offsetX,$incX,$A,$offsetA,$ldA);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->multiply($trans,$m,$n,$X,$offsetX,$incX,$A,$offsetA,$ldA);
+        //    return;
+        //}
 
         if(!$trans) {
             $rows = $m; $cols = $n;
@@ -517,9 +529,9 @@ class PhpMath
         }
 
         if($offsetX+($cols-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
         if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         if(!$trans) { $incAj = $ldA; $incAi = 1;}
         else        { $incAj = 1;    $incAi = $ldA;}
@@ -546,10 +558,10 @@ class PhpMath
         Buffer $A, int $offsetA, int $ldA
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->add($trans,$m,$n,$alpha,$X,$offsetX,$incX,$A,$offsetA,$ldA);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->add($trans,$m,$n,$alpha,$X,$offsetX,$incX,$A,$offsetA,$ldA);
+        //    return;
+        //}
 
         if(!$trans) {
             $rows = $m; $cols = $n;
@@ -558,9 +570,9 @@ class PhpMath
         }
 
         if($offsetX+($cols-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
         if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         if(!$trans) { $incAj = $ldA; $incAi = 1;}
         else        { $incAj = 1;    $incAi = $ldA;}
@@ -583,13 +595,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->square($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->square($n,$X,$offsetX,$incX);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -606,13 +618,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->sqrt($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->sqrt($n,$X,$offsetX,$incX);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -630,13 +642,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX,
         float $beta) : void
     {
-        if($this->useMath($X)) {
-            $this->math->rsqrt($n,$alpha,$X,$offsetX,$incX,$beta);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->rsqrt($n,$alpha,$X,$offsetX,$incX,$beta);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -652,25 +664,42 @@ class PhpMath
     }
 
     /**
-     *     X := X ^ a
+     *     A(m,n) := A(m,n) ** X(n)
      */
     public function pow(
+        bool $trans,
+        int $m,
         int $n,
+        Buffer $A, int $offsetA, int $ldA,
         Buffer $X, int $offsetX, int $incX,
-        float $alpha
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->pow($n,$X,$offsetX,$incX,$alpha);
-            return;
+        //if($this->useMath($X)) {
+        //    $this->math->pow($trans,$m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
+        //    return;
+        //}
+
+        if(!$trans) {
+            $rows = $m; $cols = $n;
+        } else {
+            $rows = $n; $cols = $m;
         }
 
-        if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+        if($offsetX+($cols-1)*$incX>=count($X))
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
+        if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
-        $idx = $offsetX;
-        for ($i=0; $i<$n; $i++,$idx+=$incX) {
-            $X[$idx] = $X[$idx] ** $alpha;
+        if(!$trans) { $incAj = $ldA; $incAi = 1;}
+        else        { $incAj = 1;    $incAi = $ldA;}
+
+        $idAj = $offsetA;
+        for($j=0; $j<$rows; $j++,$idAj+=$incAj) {
+            $idA = $idAj;
+            $idX = $offsetX;
+            for($i=0; $i<$cols; $i++,$idA+=$incAi,$idX+=$incX) {
+                $A[$idA] = pow($A[$idA],$X[$idX]);
+            }
         }
     }
 
@@ -682,13 +711,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->exp($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->exp($n,$X,$offsetX,$incX);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -704,13 +733,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->log($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->log($n,$X,$offsetX,$incX);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -727,12 +756,12 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->tanh($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->tanh($n,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -749,12 +778,12 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->sin($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->sin($n,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -771,12 +800,12 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->cos($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->cos($n,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -793,12 +822,12 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->tan($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->tan($n,$X,$offsetX,$incX);
+        //    return;
+        //}
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -818,10 +847,10 @@ class PhpMath
         Buffer $A, int $offsetA, int $ldA
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->duplicate($trans,$m,$n,$X,$offsetX,$incX,$A,$offsetA,$ldA);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->duplicate($trans,$m,$n,$X,$offsetX,$incX,$A,$offsetA,$ldA);
+        //    return;
+        //}
 
         if(!$trans) {
             $rows = $m; $cols = $n;
@@ -830,9 +859,9 @@ class PhpMath
         }
 
         if($offsetX+($cols-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
         if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         if(!$trans) { $incAj = $ldA; $incAi = 1;}
         else        { $incAj = 1;    $incAi = $ldA;}
@@ -860,17 +889,23 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->zeros($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->zeros($n,$X,$offsetX,$incX);
+        //    return;
+        //}
 
-        if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+        if($offsetX+($n-1)*$incX>=count($X)) {
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
+        }
+        if($this->cistype($X->dtype())) {
+            $value = $this->cbuild(0);
+        } else {
+            $value = 0;
+        }
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
-            $X[$idx] = 0;
+            $X[$idx] = $value;
         }
     }
 
@@ -888,33 +923,34 @@ class PhpMath
         Buffer $B, int $offsetB
         ) : void
     {
-        //if($reverse==true && $addMode==true) {
-        //    $this->scatterAdd($n,$k,$numClass,$X,$offsetX,$A,$offsetA,$B,$offsetB);
-        //    return;
-        //}
-        if($this->useMath($A)) {
-            $this->math->gather(
-                $reverse,
-                $addMode,
-                $n,
-                $k,
-                $numClass,
-                $X, $offsetX,
-                $A, $offsetA,
-                $B, $offsetB
-            );
+        //echo "n=$n,k=$k,numClass=$numClass\n";
+        if($reverse==true && $addMode==true) {
+            $this->scatterAdd2($n,$k,$numClass,$X,$offsetX,$A,$offsetA,$B,$offsetB);
             return;
         }
+        //if($this->useMath($A)) {
+        //    $this->math->gather(
+        //        $reverse,
+        //        $addMode,
+        //        $n,
+        //        $k,
+        //        $numClass,
+        //        $X, $offsetX,
+        //        $A, $offsetA,
+        //        $B, $offsetB
+        //    );
+        //    return;
+        //}
 //echo "[n=$n,k=$k,class=$numClass]\n";
 
         if($offsetX+$n>count($X))
-            throw new RuntimeException('Matrix X specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix X specification too large for buffer.');
         if($offsetA+$numClass*$k>count($A))
-            throw new RuntimeException('Matrix A specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
         if($offsetB+$n*$k>count($B))
-            throw new RuntimeException('Matrix B specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
         if($numClass<=0)
-            throw new RuntimeException('numClass must be grator than zero.');
+            throw new InvalidArgumentException('numClass must be grator than zero.');
 
         $idxX = $offsetX;
         $idxA = $offsetA;
@@ -926,7 +962,7 @@ class PhpMath
                 //throw new RuntimeException("index is out of range.:".$index);
                 $this->logging("gather: index is out of range.:".$index." numClass=".$numClass);
                 $index = $numClass-1;
-        }
+            }
             $iA = $idxA+$index*$ldIndex;
             $iB = $idxB+$j*$k;
             if($reverse) {
@@ -959,28 +995,28 @@ class PhpMath
         Buffer $B, int $offsetB
         ) : void
     {
-        if($this->useMath($A)) {
-            $this->math->reduceGather(
-                $reverse,
-                $addMode,
-                $m,
-                $n,
-                $numClass,
-                $X, $offsetX,
-                $A, $offsetA,
-                $B, $offsetB
-            );
-            return;
-        }
+        //if($this->useMath($A)) {
+        //    $this->math->reduceGather(
+        //        $reverse,
+        //        $addMode,
+        //        $m,
+        //        $n,
+        //        $numClass,
+        //        $X, $offsetX,
+        //        $A, $offsetA,
+        //        $B, $offsetB
+        //    );
+        //    return;
+        //}
 //echo "[m=$m,n=$n,class=$numClass]\n";
         if($offsetX+$n>count($X))
-            throw new RuntimeException('Matrix X specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix X specification too large for buffer.');
         if($offsetA+$m*$numClass>count($A))
-            throw new RuntimeException('Matrix A specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
         if($offsetB+$m*$n>count($B))
-            throw new RuntimeException('Matrix B specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
         if($numClass<=0)
-            throw new RuntimeException('numClass must be grator than zero.');
+            throw new InvalidArgumentException('numClass must be grator than zero.');
 
         $idxX = $offsetX;
         $idxA = $offsetA;
@@ -1028,27 +1064,14 @@ class PhpMath
         Buffer $B, int $offsetB
         ) : void
     {
-        //if($this->useMath($A)) {
-        //    $this->math->gather(
-        //        $reverse=true,
-        //        $addMode=true,
-        //        $n,
-        //        $k,
-        //        $numClass,
-        //        $X, $offsetX,
-        //        $A, $offsetA,
-        //        $B, $offsetB
-        //    );
-        //    return;
-        //}
-
         if($offsetX+$n>count($X))
-            throw new RuntimeException('Matrix X specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix X specification too large for buffer.');
         if($offsetA+$numClass*$k>count($A))
-            throw new RuntimeException('Matrix A specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
         if($offsetB+$n*$k>count($B))
-            throw new RuntimeException('Matrix B specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
 
+        #pragma omp parallel for
         for($i=0;$i<$numClass;$i++) {
             for($p=0;$p<$k;$p++) {
                 $sum = 0;
@@ -1065,6 +1088,41 @@ class PhpMath
         }
     }
 
+    protected function scatterAdd2(
+        int $n,
+        int $k,
+        int $numClass,
+        Buffer $X, int $offsetX,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB
+        ) : void
+    {
+        if($offsetX+$n>count($X))
+            throw new InvalidArgumentException('Matrix X specification too large for buffer.');
+        if($offsetA+$numClass*$k>count($A))
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
+        if($offsetB+$n*$k>count($B))
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
+
+//echo "[n=$n,k=$k,class=$numClass]\n";
+        $ldIndex = $k;
+        $ldB = $k;
+        #pragma omp parallel for
+        for($i=0;$i<$k;$i++) {
+            for($j=0;$j<$n;$j++) {
+                $index = $X[$offsetX+$j];
+                if($index>=$numClass) {
+                    //throw new RuntimeException("index is out of range.:".$index);
+                    $this->logging("gather: index is out of range.:".$index." numClass=".$numClass);
+                    $index = $numClass-1;
+                }
+                $iB = $offsetB+$j*$ldB+$i;
+                $iA = $offsetA+$index*$ldIndex+$i;
+                $A[$iA] = $A[$iA] + $B[$iB];
+            }
+        }
+    }
+
     /**
     *  B(n,repeats,k) := A(n,k)
     */
@@ -1076,21 +1134,21 @@ class PhpMath
         Buffer $B, int $offsetB
         ) : void
     {
-        if($this->useMath($A)) {
-            $this->math->repeat(
-                $m,
-                $k,
-                $repeats,
-                $A, $offsetA,
-                $B, $offsetB
-            );
-            return;
-        }
+        //if($this->useMath($A)) {
+        //    $this->math->repeat(
+        //        $m,
+        //        $k,
+        //        $repeats,
+        //        $A, $offsetA,
+        //        $B, $offsetB
+        //    );
+        //    return;
+        //}
 //echo "[m=$m,n=$n,class=$numClass]\n";
         if($offsetA+$m*$k>count($A))
-            throw new RuntimeException('Matrix A specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
         if($offsetB+$m*$repeats*$k>count($B))
-            throw new RuntimeException('Matrix B specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
 
         $idxA = $offsetA;
         $idxB = $offsetB;
@@ -1114,15 +1172,15 @@ class PhpMath
         Buffer $Y, int $offsetY, int $ldY
         ) : void
     {
-        if($this->useMath($Y)) {
-            $this->math->updateAddOnehot($m,$n,$a,$X,$offsetX,$incX,$Y,$offsetY,$ldY);
-            return;
-        }
+        //if($this->useMath($Y)) {
+        //    $this->math->updateAddOnehot($m,$n,$a,$X,$offsetX,$incX,$Y,$offsetY,$ldY);
+        //    return;
+        //}
 
         if($offsetX+($m-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for bufferX.');
+            throw new InvalidArgumentException('Vector specification too large for bufferX.');
         if($offsetY+($m-1)*$ldY+($n-1)>=count($Y))
-            throw new RuntimeException('Vector specification too large for bufferY.');
+            throw new InvalidArgumentException('Vector specification too large for bufferY.');
 
         $idx = $offsetX;
         $idy = $offsetY;
@@ -1144,15 +1202,15 @@ class PhpMath
         Buffer $Y, int $offsetY, int $incY
         ) : void
     {
-        if($this->math) { // Support all dtype by math
-            $this->math->equal($n,$X,$offsetX,$incX,$Y,$offsetY,$incY);
-            return;
-        }
+        //if($this->math) { // Support all dtype by math
+        //    $this->math->equal($n,$X,$offsetX,$incX,$Y,$offsetY,$incY);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
         if($offsetY+($n-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idX = $offsetX;
         $idY = $offsetY;
@@ -1160,6 +1218,60 @@ class PhpMath
         else                   {$true = 1; $false = 0;}
         for($i=0; $i<$n; $i++,$idX+=$incX,$idY+=$incY) {
             $Y[$idY] = ($Y[$idY] == $X[$idX]) ? $true : $false;
+        }
+    }
+
+    /**
+     * Y(i) := 1  ( X(i) != Y(i) )
+     * Y(i) := 0  ( X(i) == Y(i) )
+     */
+    public function notEqual(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY
+        ) : void
+    {
+        //if($this->math) { // Support all dtype by math
+        //    $this->math->notEqual($n,$X,$offsetX,$incX,$Y,$offsetY,$incY);
+        //    return;
+        //}
+
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
+        if($offsetY+($n-1)*$incY>=count($Y))
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
+
+        $idX = $offsetX;
+        $idY = $offsetY;
+        if(is_bool($Y[$idY])) {$true = true; $false = false;}
+        else                   {$true = 1; $false = 0;}
+        for($i=0; $i<$n; $i++,$idX+=$incX,$idY+=$incY) {
+            $Y[$idY] = ($Y[$idY] != $X[$idX]) ? $true : $false;
+        }
+    }
+
+    /**
+     * X(i) := 1  ( X(i) == 0 )
+     * X(i) := 0  ( X(i) != 0 )
+     */
+    public function not(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        ) : void
+    {
+        //if($this->math) { // Support all dtype by math
+        //    $this->math->not($n,$X,$offsetX,$incX);
+        //    return;
+        //}
+
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
+
+        $idX = $offsetX;
+        if(is_bool($X[$idX])) {$true = true; $false = false;}
+        else                   {$true = 1; $false = 0;}
+        for($i=0; $i<$n; $i++,$idX+=$incX) {
+            $X[$idX] = ($X[$idX]==$false) ? $true : $false;
         }
     }
 
@@ -1174,15 +1286,15 @@ class PhpMath
         Buffer $B, int $offsetB
         ) : void
     {
-        if($this->useMath($A)) {
-            $this->math->reduceSum($m,$n,$k,$A,$offsetA,$B,$offsetB);
-            return;
-        }
+        //if($this->useMath($A)) {
+        //    $this->math->reduceSum($m,$n,$k,$A,$offsetA,$B,$offsetB);
+        //    return;
+        //}
 
         if($offsetA+$m*$n*$k>count($A))
-            throw new RuntimeException('Matrix A specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
         if($offsetB+$m*$k>count($B))
-            throw new RuntimeException('Matrix B specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
 
         $idxA = $offsetA;
         $idxB = $offsetB;
@@ -1206,15 +1318,15 @@ class PhpMath
         Buffer $B, int $offsetB
         ) : void
     {
-        if($this->useMath($A)) {
-            $this->math->reduceMax($m,$n,$k,$A,$offsetA,$B,$offsetB);
-            return;
-        }
+        //if($this->useMath($A)) {
+        //    $this->math->reduceMax($m,$n,$k,$A,$offsetA,$B,$offsetB);
+        //    return;
+        //}
 
         if($offsetA+$m*$n*$k>count($A))
-            throw new RuntimeException('Matrix A specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
         if($offsetB+$m*$k>count($B))
-            throw new RuntimeException('Matrix B specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
 
         $idxA = $offsetA;
         $idxB = $offsetB;
@@ -1238,15 +1350,15 @@ class PhpMath
         Buffer $B, int $offsetB
         ) : void
     {
-        if($this->useMath($A)) {
-            $this->math->reduceArgMax($m,$n,$k,$A,$offsetA,$B,$offsetB);
-            return;
-        }
+        //if($this->useMath($A)) {
+        //    $this->math->reduceArgMax($m,$n,$k,$A,$offsetA,$B,$offsetB);
+        //    return;
+        //}
 
         if($offsetA+$m*$n*$k>count($A))
-            throw new RuntimeException('Matrix A specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix A specification too large for buffer.');
         if($offsetB+$m*$k>count($B))
-            throw new RuntimeException('Matrix B specification too large for buffer.');
+            throw new InvalidArgumentException('Matrix B specification too large for buffer.');
 
         $idxA = $offsetA;
         $idxB = $offsetB;
@@ -1265,7 +1377,7 @@ class PhpMath
         Buffer $A, int $offsetA, int $ldA) : void
     {
         if($offsetA+($m-1)*$ldA+($n-1)>=count($A))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idA = $offsetA;
         for($i=0;$i<$m;$i++,$idA+=$ldA) {
@@ -1293,10 +1405,10 @@ class PhpMath
         Buffer $Y, int $offsetY, int $incY
         ) : void
     {
-        if($this->math) {
-            $this->math->astype($n,$dtype,$X,$offsetX,$incX,$Y,$offsetY,$incY);
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->astype($n,$dtype,$X,$offsetX,$incX,$Y,$offsetY,$incY);
+        //    return;
+        //}
 
         if(in_array($dtype,$this->floatTypes)) {
             $isFloat = true;
@@ -1359,41 +1471,43 @@ class PhpMath
 
     public function searchsorted(
         int $m,
-        Buffer $A, int $offsetA, int $incA, // float
         int $n,
+        Buffer $A, int $offsetA, int $ldA,  // float
         Buffer $X, int $offsetX, int $incX, // float
         bool $right,
         Buffer $Y, int $offsetY, int $incY // int
         ) : void
     {
-        if($this->math) {
-            $this->math->searchsorted($m,$A,$offsetA,$incA,$n,$X,$offsetX,$incX,$right,$Y,$offsetY,$incY);
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->searchsorted($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX,$right,$Y,$offsetY,$incY);
+        //    return;
+        //}
 
         $idx = $offsetX;
         $idy = $offsetY;
-        for($i=0;$i<$n;$i++) {
+        $startA = $offsetA;
+        for($i=0;$i<$m;$i++) {
             $v = $X[$idx];
-            $ida = $offsetA;
+            $ida = $startA;
             if($right) {
-                for($j=0;$j<$m;$j++) {
+                for($j=0;$j<$n;$j++) {
                     if(!($v>=$A[$ida])) {
                         break;
                     }
-                    $ida += $incA;
+                    $ida++;
                 }
             } else {
-                for($j=0;$j<$m;$j++) {
+                for($j=0;$j<$n;$j++) {
                     if(!($v>$A[$ida])) {
                         break;
                     }
-                    $ida += $incA;
+                    $ida++;
                 }
             }
             $Y[$idy] = $j;
             $idx+=$incX;
             $idy+=$incY;
+            $startA += $ldA;
         }
     }
 
@@ -1405,10 +1519,10 @@ class PhpMath
         Buffer $Y, int $offsetY, int $incY // int
         ) : void
     {
-        if($this->math) {
-            $this->math->cumsum($n,$X,$offsetX,$incX,$exclusive,$reverse,$Y,$offsetY,$incY);
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->cumsum($n,$X,$offsetX,$incX,$exclusive,$reverse,$Y,$offsetY,$incY);
+        //    return;
+        //}
 
         if($reverse) {
             $idx = $offsetX;
@@ -1513,34 +1627,34 @@ class PhpMath
         int $cols_size
         )
     {
-        if($this->math) {
-            $this->math->im2col1d(
-                $reverse,
-                $images,
-                $images_offset,
-                $images_size,
-                $batches,
-                $im_w,
-                $channels,
-                $filter_w,
-                $stride_w,
-                $padding,
-                $channels_first,
-                $dilation_w,
-                $cols_channels_first,
-                $cols,
-                $cols_offset,
-                $cols_size
-            );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->im2col1d(
+        //        $reverse,
+        //        $images,
+        //        $images_offset,
+        //        $images_size,
+        //        $batches,
+        //        $im_w,
+        //        $channels,
+        //        $filter_w,
+        //        $stride_w,
+        //        $padding,
+        //        $channels_first,
+        //        $dilation_w,
+        //        $cols_channels_first,
+        //        $cols,
+        //        $cols_offset,
+        //        $cols_size
+        //    );
+        //    return;
+        //}
         $images_buf_size = $batches*$im_w*$channels;
         if($images_size!=$images_buf_size ||
             count($images)-$images_offset<$images_buf_size) {
             throw new InvalidArgumentException('images buffer size is invalid');
         }
-        //$out_w = (int)floor(($im_w-$filter_w)/$stride_w)+1;
-        $out_w = intval(floor(($im_w-($filter_w-1)*$dilation_w-1)/$stride_w)+1);
+        //$out_w = intdiv(($im_w-$filter_w),$stride_w)+1;
+        $out_w = intdiv(($im_w-($filter_w-1)*$dilation_w-1),$stride_w)+1;
         if($out_w<=0) {
             throw new InvalidArgumentException('Invalid shape or parameters.');
         }
@@ -1550,7 +1664,7 @@ class PhpMath
                 $im_w*$filter_w*
                 $channels;
             #print('outsz=',out.shape)
-            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1)/2);
+            $padding_w = intdiv((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1),2);
             $out_w = $im_w;
         } else {
             $out_buf_size = $batches*
@@ -1711,41 +1825,41 @@ class PhpMath
         int $cols_size
         )
     {
-        if($this->math) {
-            $this->math->im2col2d(
-                $reverse,
-                $images,
-                $images_offset,
-                $images_size,
-                $batches,
-
-                $im_h,
-                $im_w,
-                $channels,
-                $filter_h,
-                $filter_w,
-
-                $stride_h,
-                $stride_w,
-                $padding,
-                $channels_first,
-                $dilation_h,
-
-                $dilation_w,
-                $cols_channels_first,
-                $cols,
-                $cols_offset,
-                $cols_size
-            );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->im2col2d(
+        //        $reverse,
+        //        $images,
+        //        $images_offset,
+        //        $images_size,
+        //        $batches,
+//
+        //        $im_h,
+        //        $im_w,
+        //        $channels,
+        //        $filter_h,
+        //        $filter_w,
+//
+        //        $stride_h,
+        //        $stride_w,
+        //        $padding,
+        //        $channels_first,
+        //        $dilation_h,
+//
+        //        $dilation_w,
+        //        $cols_channels_first,
+        //        $cols,
+        //        $cols_offset,
+        //        $cols_size
+        //    );
+        //    return;
+        //}
         $images_buf_size = $batches*$im_h*$im_w*$channels;
         if($images_size!=$images_buf_size ||
             count($images)-$images_offset<$images_buf_size) {
             throw new InvalidArgumentException('images buffer size is invalid');
         }
-        $out_h = intval(floor(($im_h-($filter_h-1)*$dilation_h-1)/$stride_h)+1);
-        $out_w = intval(floor(($im_w-($filter_w-1)*$dilation_w-1)/$stride_w)+1);
+        $out_h = intdiv(($im_h-($filter_h-1)*$dilation_h-1),$stride_h)+1;
+        $out_w = intdiv(($im_w-($filter_w-1)*$dilation_w-1),$stride_w)+1;
         if($out_h<=0 || $out_w<=0) {
             throw new InvalidArgumentException('Invalid shape or parameters.');
         }
@@ -1757,8 +1871,8 @@ class PhpMath
                 $channels;
             #print('outsz=',out.shape)
             #print('start-end=(%d,%d)-(%d,%d)'%(start_h,start_w,end_h,end_w))
-            $padding_h = (int)floor((($im_h-1)*$stride_h-$im_h+($filter_h-1)*$dilation_h+1)/2);
-            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1)/2);
+            $padding_h = intdiv((($im_h-1)*$stride_h-$im_h+($filter_h-1)*$dilation_h+1),2);
+            $padding_w = intdiv((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1),2);
             $out_h = $im_h;
             $out_w = $im_w;
         } else {
@@ -1950,43 +2064,43 @@ class PhpMath
         int $cols_size
         )
     {
-        if($this->math) {
-            $this->math->im2col3d(
-                $reverse,
-                $images,
-                $images_offset,
-                $images_size,
-                $batches,
-                $im_d,
-                $im_h,
-                $im_w,
-                $channels,
-                $filter_d,
-                $filter_h,
-                $filter_w,
-                $stride_d,
-                $stride_h,
-                $stride_w,
-                $padding,
-                $channels_first,
-                $dilation_d,
-                $dilation_h,
-                $dilation_w,
-                $cols_channels_first,
-                $cols,
-                $cols_offset,
-                $cols_size
-            );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->im2col3d(
+        //        $reverse,
+        //        $images,
+        //        $images_offset,
+        //        $images_size,
+        //        $batches,
+        //        $im_d,
+        //        $im_h,
+        //        $im_w,
+        //        $channels,
+        //        $filter_d,
+        //        $filter_h,
+        //        $filter_w,
+        //        $stride_d,
+        //        $stride_h,
+        //        $stride_w,
+        //        $padding,
+        //        $channels_first,
+        //        $dilation_d,
+        //        $dilation_h,
+        //        $dilation_w,
+        //        $cols_channels_first,
+        //        $cols,
+        //        $cols_offset,
+        //        $cols_size
+        //    );
+        //    return;
+        //}
         $images_buf_size = $batches*$im_d*$im_h*$im_w*$channels;
         if($images_size!=$images_buf_size ||
             count($images)-$images_offset<$images_buf_size) {
             throw new InvalidArgumentException('images buffer size is invalid');
         }
-        $out_d = intval(floor(($im_d-($filter_d-1)*$dilation_d-1)/$stride_d)+1);
-        $out_h = intval(floor(($im_h-($filter_h-1)*$dilation_h-1)/$stride_h)+1);
-        $out_w = intval(floor(($im_w-($filter_w-1)*$dilation_w-1)/$stride_w)+1);
+        $out_d = intdiv(($im_d-($filter_d-1)*$dilation_d-1),$stride_d)+1;
+        $out_h = intdiv(($im_h-($filter_h-1)*$dilation_h-1),$stride_h)+1;
+        $out_w = intdiv(($im_w-($filter_w-1)*$dilation_w-1),$stride_w)+1;
         if($out_h<=0 || $out_w<=0) {
             throw new InvalidArgumentException('Invalid shape or parameters.');
         }
@@ -1998,9 +2112,9 @@ class PhpMath
                 $im_w*$filter_w*
                 $channels;
             #print('outsz=',out.shape)
-            $padding_d = (int)floor((($im_d-1)*$stride_d-$im_h+($filter_d-1)*$dilation_d+1)/2);
-            $padding_h = (int)floor((($im_h-1)*$stride_h-$im_h+($filter_h-1)*$dilation_h+1)/2);
-            $padding_w = (int)floor((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1)/2);
+            $padding_d = intdiv((($im_d-1)*$stride_d-$im_h+($filter_d-1)*$dilation_d+1),2);
+            $padding_h = intdiv((($im_h-1)*$stride_h-$im_h+($filter_h-1)*$dilation_h+1),2);
+            $padding_w = intdiv((($im_w-1)*$stride_w-$im_w+($filter_w-1)*$dilation_w+1),2);
             $out_d = $im_d;
             $out_h = $im_h;
             $out_w = $im_w;
@@ -2112,18 +2226,18 @@ class PhpMath
         int $seed
         )
     {
-        if($this->math) {
-            $this->math->randomUniform(
-                $n,
-                $X,
-                $offsetX,
-                $incX,
-                $low,
-                $high,
-                $seed
-            );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->randomUniform(
+        //        $n,
+        //        $X,
+        //        $offsetX,
+        //        $incX,
+        //        $low,
+        //        $high,
+        //        $seed
+        //    );
+        //    return;
+        //}
         mt_srand($seed);
         $px = $offsetX;
         if(method_exists($X,'dtype')) {
@@ -2132,13 +2246,10 @@ class PhpMath
             $isInt = false;
         }
         if($isInt) {
-            $origHigh = $high;
             $high += 1;
+            $width = $high-$low;
             for($i=0; $i<$n; $i++,$px+=$incX) {
-                $value = ((int)floor(($high-$low)*mt_rand()/mt_getrandmax()))+$low;
-                if($value>$origHigh) {
-                    $value = $origHigh;
-                }
+                $value = mt_rand()%$width+$low;
                 $X[$px] = $value;
             }
         } else {
@@ -2166,18 +2277,18 @@ class PhpMath
         int $seed
         )
     {
-        if($this->math) {
-            $this->math->randomNormal(
-                $n,
-                $X,
-                $offsetX,
-                $incX,
-                $mean,
-                $scale,
-                $seed
-            );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->randomNormal(
+        //        $n,
+        //        $X,
+        //        $offsetX,
+        //        $incX,
+        //        $mean,
+        //        $scale,
+        //        $seed
+        //    );
+        //    return;
+        //}
         mt_srand($seed);
         $px = $offsetX;
         for($i=0; $i<$n; $i++,$px+=$incX) {
@@ -2194,17 +2305,17 @@ class PhpMath
         int $seed
         )
     {
-        if($this->math) {
-            $this->math->randomSequence(
-                $n,
-                $size,
-                $X,
-                $offsetX,
-                $incX,
-                $seed
-            );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->randomSequence(
+        //        $n,
+        //        $size,
+        //        $X,
+        //        $offsetX,
+        //        $incX,
+        //        $seed
+        //    );
+        //    return;
+        //}
         mt_srand($seed);
         $px = $offsetX;
         for($i=0; $i<$n; $i++,$px+=$incX){
@@ -2238,29 +2349,29 @@ class PhpMath
         int $sizeAxis2
         )
     {
-        if($this->math) {
-            $this->math->slice(
-                $reverse,
-                $addMode,
-                $m,
-                $n,
-                $k,
-                $size,
-                $A,
-                $offsetA,
-                $incA,
-                $Y,
-                $offsetY,
-                $incY,
-                $startAxis0,
-                $sizeAxis0,
-                $startAxis1,
-                $sizeAxis1,
-                $startAxis2,
-                $sizeAxis2
-            );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->slice(
+        //        $reverse,
+        //        $addMode,
+        //        $m,
+        //        $n,
+        //        $k,
+        //        $size,
+        //        $A,
+        //        $offsetA,
+        //        $incA,
+        //        $Y,
+        //        $offsetY,
+        //        $incY,
+        //        $startAxis0,
+        //        $sizeAxis0,
+        //        $startAxis1,
+        //        $sizeAxis1,
+        //        $startAxis2,
+        //        $sizeAxis2
+        //    );
+        //    return;
+        //}
         if($m*$n*$k*$size*$incA+$offsetA>count ($A)) {
             throw new InvalidArgumentException('unmatch BufferA size and m,n,k');
         }
@@ -2316,16 +2427,16 @@ class PhpMath
         Buffer $A, int $offsetA, int $ldA,
         Buffer $B, int $offsetB, int $ldB)
     {
-        if($this->math) {
-            $this->math->matrixcopy(
-                $trans,
-                $m,
-                $n,
-                $alpha,
-                $A, $offsetA, $ldA,
-                $B, $offsetB, $ldB);
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->matrixcopy(
+        //        $trans,
+        //        $m,
+        //        $n,
+        //        $alpha,
+        //        $A, $offsetA, $ldA,
+        //        $B, $offsetB, $ldB);
+        //    return;
+        //}
         if(!$trans) {
             for($i=0;$i<$m;$i++) {
                 for($j=0;$j<$n;$j++) {
@@ -2346,13 +2457,13 @@ class PhpMath
         Buffer $V, int $offsetV,
         Buffer $X, int $offsetX, int $incX)
     {
-        if($this->math) {
-            $this->math->fill(
-                $n,
-                $V, $offsetV,
-                $X, $offsetX, $incX);
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->fill(
+        //        $n,
+        //        $V, $offsetV,
+        //        $X, $offsetX, $incX);
+        //    return;
+        //}
         $idX = $offsetX;
         $value = $V[$offsetV];
         for($i=0;$i<$n;$i++,$idX+=$incX) {
@@ -2366,13 +2477,13 @@ class PhpMath
         float $alpha
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->nan2num($n,$X,$offsetX,$incX,$alpha);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->nan2num($n,$X,$offsetX,$incX,$alpha);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
          for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -2388,13 +2499,13 @@ class PhpMath
         Buffer $X, int $offsetX, int $incX
         ) : void
     {
-        if($this->useMath($X)) {
-            $this->math->isnan($n,$X,$offsetX,$incX);
-            return;
-        }
+        //if($this->useMath($X)) {
+        //    $this->math->isnan($n,$X,$offsetX,$incX);
+        //    return;
+        //}
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
          for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -2421,22 +2532,22 @@ class PhpMath
         bool $rgbFlip
         )
     {
-        if($this->math) {
-            $this->math->imagecopy(
-                    $height,
-                    $width,
-                    $channels,
-                    $A, $offsetA,
-                    $B, $offsetB,
-                    $channelsFirst,
-                    $heightShift,
-                    $widthShift,
-                    $verticalFlip,
-                    $horizontalFlip,
-                    $rgbFlip
-                  );
-            return;
-        }
+        //if($this->math) {
+        //    $this->math->imagecopy(
+        //            $height,
+        //            $width,
+        //            $channels,
+        //            $A, $offsetA,
+        //            $B, $offsetB,
+        //            $channelsFirst,
+        //            $heightShift,
+        //            $widthShift,
+        //            $verticalFlip,
+        //            $horizontalFlip,
+        //            $rgbFlip
+        //          );
+        //    return;
+        //}
 
         if($width*$height*$channels+$offsetA>count ($A)) {
             throw new InvalidArgumentException('Matrix specification too large for bufferA');
@@ -2484,6 +2595,246 @@ class PhpMath
                     $srcC = ($rgbFlip&&$c<3)?(2-$c):$c;
                     $B[$y*$ldY+$x*$ldX+$c*$ldC+$offsetB] =
                         $A[$sy*$ldY+$sx*$ldX+$srcC*$ldC+$offsetA];
+                }
+            }
+        }
+    }
+
+    public function transpose(
+        Buffer $sourceShape,
+        Buffer $perm,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB, 
+        ) : void
+    {
+        //if($this->math) {
+        //    $this->math->transpose(
+        //        $sourceShape,
+        //        $perm,
+        //        $A, $offsetA,
+        //        $B, $offsetB, 
+        //    );
+        //    return;
+        //}
+        if(count($sourceShape)!=count($perm)) {
+            throw new InvalidArgumentException('unmatch sourceshape and perm');
+        }
+        if($A->dtype()!=$B->dtype()) {
+            throw new InvalidArgumentException('unmatch sourceshape and perm');
+        }
+        $strides = new PhpBuffer(count($sourceShape),NDArray::int32);
+        $targetStrides = new PhpBuffer(count($sourceShape),NDArray::int32);
+        $stride = 1;
+        $targetStride = 1;
+        $ndim = count($sourceShape);
+        if($ndim<=0) {
+            throw new InvalidArgumentException('Matrix must not be a scalar');
+        }
+        for($dimDepth=$ndim-1;$dimDepth>=0;$dimDepth--) {
+            $strides[$dimDepth] = $stride;
+            $stride *= $sourceShape[$dimDepth];
+            $targDepth = $perm[$dimDepth];
+            if($targDepth>=$ndim) {
+                throw new InvalidArgumentException('dim value in the perm is out of range.');
+            }
+            $targetStrides[$targDepth] = $targetStride;
+            $targetStride *= $sourceShape[$targDepth];
+        }
+        if($stride!=$targetStride) {
+            throw new InvalidArgumentException('duplicate axis in perm option');
+        }
+        if($offsetA+$stride>count($A)) {
+            throw new InvalidArgumentException('Matrix specification too large for bufferA');
+        }
+        if($offsetB+$targetStride>count($B)) {
+            throw new InvalidArgumentException('Matrix specification too large for bufferB');
+        }
+        //echo "strides=".implode(',',$strides->toArray())."\n";
+        //echo "targetStrides=".implode(',',$targetStrides->toArray())."\n";
+        $sourceShape = $this->transBuff2array($sourceShape);
+        $strides = $this->transBuff2array($strides);
+        $targetStrides = $this->transBuff2array($targetStrides);
+        //$this->transCopy(
+        //    $A,$offsetA,$B,$offsetB,
+        //    $ndim-1,$sourceShape,$strides,$targetStrides
+        //);
+        $this->transCopy2(
+            $A,$offsetA,$B,$offsetB,
+            $ndim,$sourceShape,$strides,$targetStrides
+        );
+    }
+    protected function transBuff2array($buffer)
+    {
+        $size = count($buffer);
+        $array = [];
+        for($i=0;$i<$size;$i++) {
+            $array[] = $buffer[$i];
+        }
+        return $array;
+    }
+
+    ///////
+    // matrixlib simulation version
+    ///////
+    protected function transCopy(
+        $A,$offsetA,$B,$offsetB,
+        $ndim,$sourceShape,$strides,$targetStrides)
+    {
+        $repeat = array_shift($sourceShape);
+        $stride = array_shift($strides);
+        $targetStride = array_shift($targetStrides);
+        if($ndim<=0) {
+            $this->math_copy($repeat,$A,$offsetA,$stride,$B,$offsetB,$targetStride);
+            return;
+        }
+
+        for($pos=0; $pos<$repeat; $pos++) {
+            $this->transCopy(
+                $A,$offsetA+$stride*$pos,$B,$offsetB+$targetStride*$pos,
+                $ndim-1,$sourceShape,$strides,$targetStrides);
+        }
+    }
+
+    ///////
+    // opencl simulation version
+    ///////
+    protected function transCopy2(
+        $A,$offsetA,$B,$offsetB,
+        $ndim,$sourceShape,$strides,$targetStrides)
+    {
+        $n = $sourceShape[0];
+        $stackPos = new PhpBuffer(count($sourceShape),NDArray::int32);
+        $stackOfsA = new PhpBuffer(count($sourceShape),NDArray::int32);
+        $stackOfsB = new PhpBuffer(count($sourceShape),NDArray::int32);
+        for($gid=0;$gid<$n;$gid++) {
+            $this->transCopy2_kernel(
+                $surface=1,
+                $gid,
+                $A,$offsetA,$B,$offsetB,
+                $stackPos,$stackOfsA,$stackOfsB,
+                $ndim,$sourceShape,$strides,$targetStrides);
+        }
+        //$this->transCopy2_kernel(
+        //    $surface=0,
+        //    $gid=0,
+        //    $A,$offsetA,$B,$offsetB,
+        //    $stackPos,$stackOfsA,$stackOfsB,
+        //    $ndim,$sourceShape,$strides,$targetStrides);
+    }
+
+    protected function debug($debug,$message)
+    {
+        if($debug) {
+            echo $message;
+        }
+    }
+
+    protected function transCopy2_kernel(
+        $surface,
+        $gid,
+        $A,$offsetA,$B,$offsetB,
+        $stackPos,$stackOfsA,$stackOfsB,
+        $ndim,$sourceShape,$strides,$targetStrides)
+    {
+        $debug = false;
+        $bed = 2; // 1: copy each value, 2: use math_copy
+        $depth = $surface;
+        $pos = 0;
+        $offsetA += $strides[0]*$gid;
+        $offsetB += $targetStrides[0]*$gid;
+        $this->debug($debug,"start kernel php($gid)\n");
+        if($depth>=$ndim) {
+            $B[$offsetB] = $A[$offsetA];
+            return;
+        }
+
+        while($depth>=$surface) {
+            $this->debug($debug,"top($gid):  dep=$depth,pos=$pos,rep=".$sourceShape[$depth].",ofsA=$offsetA,ofsB=$offsetB,st=".$strides[$depth].",ta=".$targetStrides[$depth]."\n");
+        
+            while($depth<$ndim-$bed) {
+                $this->debug($debug,"push($gid): dep=$depth,pos=$pos,rep=".$sourceShape[$depth].",ofsA=$offsetA,ofsB=$offsetB,st=".$strides[$depth].",ta=".$targetStrides[$depth]."\n");
+                $stackPos[$depth] = $pos;
+                $stackOfsA[$depth] = $offsetA;
+                $stackOfsB[$depth] = $offsetB;
+                $pos=0;
+                $depth++;
+                $this->debug($debug,"psh2($gid): dep=$depth,pos=$pos,rep=".$sourceShape[$depth].",ofsA=$offsetA,ofsB=$offsetB,st=".$strides[$depth].",ta=".$targetStrides[$depth]."\n");
+            }
+        
+            if($depth>=$ndim-$bed) {
+                $dp = false;
+                if($ndim>2) {
+                    $depth++;
+                    $dp = true;
+                }
+                if($bed>1) {
+                    $this->debug($debug,"copy($gid): dep=$depth,      n=  ".$sourceShape[$depth].",ofsA=$offsetA,ofsB=$offsetB,st=".$strides[$depth].",ta=".$targetStrides[$depth]."\n");
+                    $this->math_copy(
+                        $sourceShape[$depth], // n
+                        $A, $offsetA, $strides[$depth],
+                        $B, $offsetB, $targetStrides[$depth],
+                    );
+                } else {
+                    $this->debug($debug,"($offsetA,$offsetB),\n");
+                    $B[$offsetB] = $A[$offsetA];
+                }
+                if($dp) {
+                    $depth--;
+                }
+            }
+        
+            while(true) {
+                if($depth<=$ndim-$bed) {
+                    $offsetA += $strides[$depth];
+                    $offsetB += $targetStrides[$depth];
+                    $pos++;
+                    $this->debug($debug,"incr($gid): dep=$depth,pos=$pos,rep=".$sourceShape[$depth].",ofsA=$offsetA,ofsB=$offsetB,st=".$strides[$depth].",ta=".$targetStrides[$depth]."\n");
+                    if($pos<$sourceShape[$depth]) {
+                        break;
+                    }
+                }
+                $depth--;
+                if($depth<$surface) {
+                    $this->debug($debug,"dep($gid)=$depth\n");
+                    break;
+                }
+                $pos = $stackPos[$depth];
+                $offsetA = $stackOfsA[$depth];
+                $offsetB = $stackOfsB[$depth];
+                $this->debug($debug,"pop($gid):  dep=$depth,pos=$pos,rep=".$sourceShape[$depth].",ofsA=$offsetA,ofsB=$offsetB,st=".$strides[$depth].",ta=".$targetStrides[$depth]."\n");
+            }
+        
+            //if($debug) {
+            //    echo "pause>";
+            //    fgets(STDIN);
+            //}
+        }
+    }
+
+    public function bandpart(
+        int $m,
+        int $n,
+        int $k,
+        Buffer $A, int $offset,
+        int $lower,
+        int $upper,
+        ) : void
+    {
+        //if($this->math) {
+        //    $this->math->bandpart(
+        //        $m,$n,$k,
+        //        $A,$offset,
+        //        $lower,
+        //        $upper,
+        //        );
+        //    return;
+        //}
+        for($batch=0;$batch<$m;$batch++) {
+            for($i=0;$i<$n;$i++) {
+                for($j=0;$j<$k;$j++) {
+                    if(($lower >= 0 && ($i-$j) > $lower) || ($upper >= 0 && ($j-$i) > $upper)) {
+                        $A[$offset+$batch*$n*$k+$i*$k+$j] = 0;
+                    }
                 }
             }
         }

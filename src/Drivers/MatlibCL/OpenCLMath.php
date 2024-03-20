@@ -1,18 +1,20 @@
 <?php
-namespace Rindow\Math\Matrix;
+namespace Rindow\Math\Matrix\Drivers\MatlibCL;
 
-use Rindow\OpenCL\Buffer as Buffer;
+//use Rindow\OpenCL\Buffer as Buffer;
 use RuntimeException;
 use InvalidArgumentException;
 use LogicException;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\OpenCL;
-use Interop\Polite\Math\Matrix\LinearBuffer;
-use Rindow\OpenCL\Program;
-use Rindow\OpenCL\Kernel;
-use Rindow\OpenCL\EventList;
+use Interop\Polite\Math\Matrix\LinearBuffer as HostBufferInterface;
+use Interop\Polite\Math\Matrix\DeviceBuffer as BufferInterface;
+use Interop\Polite\Math\Matrix\Buffer as AnyBuffer;
+use Rindow\Math\Matrix\NDArrayPhp;
+use Rindow\Math\Matrix\NDArrayCL;
+use Rindow\Math\Matrix\Drivers\Service;
 
-class OpenCLMathFixDiv5Bug
+class OpenCLMath
 {
     protected $dtypeToString = [
         NDArray::bool=>'bool',
@@ -51,6 +53,15 @@ class OpenCLMathFixDiv5Bug
         NDArray::float16 => -1.0e+14,
         NDArray::float32 => -1.0e+37, NDArray::float64 => -1.0e+37,
     ];
+    protected $largests = [
+        NDArray::bool  => 1,
+        NDArray::int8  => 127,          NDArray::uint8  => 255,
+        NDArray::int16 => 32767,        NDArray::uint16 => 65535,
+        NDArray::int32 => 2147483647,  NDArray::uint32 => 4294967295,
+        NDArray::int64 => 9223372036854775807, NDArray::uint64 => 9223372036854775807, //
+        NDArray::float16 => 1.0e+14,
+        NDArray::float32 => 1.0e+37, NDArray::float64 => 1.0e+37,
+    ];
 
     protected $intTypes= [
         NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
@@ -82,6 +93,18 @@ class OpenCLMathFixDiv5Bug
             //   if NaN set NaN
             //   Compatible with reduce_max of tensorflow 2.6
             "    if(!(local_work[lid] >= local_work[lid + i])) {\n".
+            "        local_work[lid]  = local_work[lid + i];\n".
+            "        local_iwork[lid] = local_iwork[lid + i];\n".
+            "    }\n".
+            "}\n".
+            "barrier(CLK_LOCAL_MEM_FENCE);\n",
+        'qimin' =>
+            "i >>= 1;\n".
+            "if(lid < i) {\n".
+            //   *** CAUTION ***
+            //   if NaN set NaN
+            //   Compatible with reduce_max of tensorflow 2.6
+            "    if(!(local_work[lid] <= local_work[lid + i])) {\n".
             "        local_work[lid]  = local_work[lid + i];\n".
             "        local_iwork[lid] = local_iwork[lid + i];\n".
             "    }\n".
@@ -144,21 +167,29 @@ class OpenCLMathFixDiv5Bug
             "    local_work[lid] = temp_buffer[parallel_item_id*lws*2 + lid];\n".
             "    local_iwork[lid] = temp_ibuffer[parallel_item_id*lws*2 + lid];\n".
             "}\n",
+
     ];
 
     protected $context;
     protected $queue;
-    protected $fp64;
+    protected Service $service;
+    protected $deviceTypes = [];
+    protected $sources = [];
+    protected $program = [];
+    protected $fp64=null;
     protected $maxWorkItem;
     protected $kernelMultiple;
     protected $hasDiv5Bug;
     protected $testMode=null;
+    protected $timesPredictionScatterAdd = [];
+    protected $timesPredictionReduceSum = [];
 
-    public function __construct(object $context,object $queue)
+    public function __construct(object $queue, Service $service)
     {
-        $this->context = $context;
         $this->queue = $queue;
-        $devices = $context->getInfo(OpenCL::CL_CONTEXT_DEVICES);
+        $this->context = $queue->getContext();
+        $this->service = $service;
+        $devices = $this->context->getInfo(OpenCL::CL_CONTEXT_DEVICES);
         $extensions = $devices->getInfo(0,OpenCL::CL_DEVICE_EXTENSIONS);
         if(strpos($extensions,'cl_khr_fp64')===false) {
             $this->fp64 = false;
@@ -166,6 +197,16 @@ class OpenCLMathFixDiv5Bug
             $this->fp64 = true;
         }
         $this->maxWorkItem = $devices->getInfo(0,OpenCL::CL_DEVICE_MAX_WORK_ITEM_SIZES);
+        $deviceType = $devices->getInfo(0,OpenCL::CL_DEVICE_TYPE);
+        $nDev = count($devices);
+        $types = [];
+        for($i=0;$i<$nDev;$i++) {
+            if($deviceType&OpenCL::CL_DEVICE_TYPE_CPU) { $types[] = "CPU"; }
+            if($deviceType&OpenCL::CL_DEVICE_TYPE_GPU) { $types[] = "GPU"; }
+            if($deviceType&OpenCL::CL_DEVICE_TYPE_ACCELERATOR) { $types[] = "ACCEL"; }
+            if($deviceType&OpenCL::CL_DEVICE_TYPE_CUSTOM) { $types[] = "CUSTOM"; }
+        }
+        $this->deviceTypes = $types;
         $this->checkDiv5Bug();
     }
 
@@ -196,7 +237,12 @@ class OpenCLMathFixDiv5Bug
         return $this->maxWorkItem;
     }
 
-    public function kernelMultiple($kernel)
+    public function deviceTypes()
+    {
+        return $this->deviceTypes;
+    }
+
+    protected function kernelMultiple($kernel)
     {
         if($this->kernelMultiple) {
             return $this->kernelMultiple;
@@ -209,7 +255,7 @@ class OpenCLMathFixDiv5Bug
     {
         if(!isset($this->program[$name])) {
             $source = $this->sources[$name];
-            $program = new Program($this->context,$source);
+            $program = $this->service->opencl()->Program($this->context,$source);
             try {
                 $program->build();
             } catch (\RuntimeException $e) {
@@ -227,7 +273,7 @@ class OpenCLMathFixDiv5Bug
         } else {
             $program = $this->program[$name];
         }
-        $kernel = new Kernel($program,$name);
+        $kernel = $this->service->opencl()->Kernel($program,$name);
         return $kernel;
     }
 
@@ -236,7 +282,7 @@ class OpenCLMathFixDiv5Bug
         $kernel_name = "checkDiv5Bug";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        int alpha,\n".
                 "    const        int beta,\n".
                 "        __global int * results\n".
@@ -249,12 +295,13 @@ class OpenCLMathFixDiv5Bug
 
         $alpha = 3;
         $beta = 5;
-        $results = new NDArrayPhp([0,0],NDArray::int32);
+        $results = new NDArrayPhp([0,0],NDArray::int32,service:$this->service);
         $flags = OpenCL::CL_MEM_READ_WRITE | OpenCL::CL_MEM_COPY_HOST_PTR;
         $resultsCL = new NDArrayCL(
-            $this->context, $this->queue,
+            $this->queue,
             $results->buffer(), $results->dtype(), $results->shape(),
-            $results->offset(), $flags
+            $results->offset(), $flags,
+            service:$this->service
         );
         
         $kernel = $this->createKernel($kernel_name);
@@ -273,7 +320,7 @@ class OpenCLMathFixDiv5Bug
         }
     }
 
-    public function hasDiv5Bug()
+    public function hasDiv5Bug() : bool
     {
         return $this->hasDiv5Bug;
     }
@@ -285,22 +332,9 @@ class OpenCLMathFixDiv5Bug
         $base
     )
     {
-        if($this->hasDiv5Bug) {
-            return
-            "    int ${low};".
-            "    int ${high};".
-            "    if(${base}==5) {\n".
-            "        ${low} = ${pointer}%5;\n".
-            "        ${high} = ${pointer}/5;\n".
-            "    } else {\n".
-            "        ${low} = ${pointer}%${base};\n".
-            "        ${high} = ${pointer}/${base};\n".
-            "    }\n";
-        } else {
-            return
-            "    const int ${low} = ${pointer}%${base};\n".
-            "    const int ${high} = ${pointer}/${base};\n";
-        }
+        return
+            "    const uint {$low} = {$pointer}%{$base};\n".
+            "    const uint {$high} = {$pointer}/{$base};\n";
     }
 
     public function kernelTemplateQSum($inputs,$outputs)
@@ -421,6 +455,20 @@ class OpenCLMathFixDiv5Bug
             $operation2,$operation4,$output);
     }
 
+    public function kernelTemplateQiMin($inputs,$outputs,$dtype)
+    {
+        $operation = $this->kernelCoreOperation['qimin'];
+        $initial = $this->largests[$dtype];
+        return $this->kernelQiTemplate($operation,$inputs,$outputs,$initial);
+    }
+
+    public function kernelTemplateSiMin($inputs,$outputs,$dtype)
+    {
+        $operation = $this->kernelCoreOperation['qimin'];
+        $initial = $this->largests[$dtype];
+        return $this->kernelSiTemplate($operation,$inputs,$outputs,$initial);
+    }
+
     public function kernelQTemplate($operation,$inputs,$outputs,$initial)
     {
         return
@@ -435,17 +483,17 @@ class OpenCLMathFixDiv5Bug
         "        for(int seg=0;seg<seg_count;seg++) {\n".
         "            if(lid<local_items) {\n".
         "                if(is_first) {\n".
-        "                    ${inputs}\n".
+        "                    {$inputs}\n".
         "                } else {\n".
         "                    local_work[lid] = seg_work[seg*lws+lid];\n".
         "                }\n".
         "            } else {\n".
-        "                local_work[lid] = ${initial};\n".
+        "                local_work[lid] = {$initial};\n".
         "            }\n".
         "            barrier(CLK_LOCAL_MEM_FENCE);\n".
         "            int i = lws;\n".
         "            while( i>1 ) {\n".
-        "                ${operation}\n".
+        "                {$operation}\n".
         "            }\n".
         "            if(lid == 0) {\n".
         "                seg_work[seg] = local_work[0];\n".
@@ -469,7 +517,7 @@ class OpenCLMathFixDiv5Bug
         "        seg_count = (seg_count+lws-1)/lws;\n". // Not covered by div5bug. because lws is always a power of 2
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -488,19 +536,19 @@ class OpenCLMathFixDiv5Bug
         "        for(int seg=0;seg<seg_count;seg++) {\n".
         "            if(lid<local_items) {\n".
         "                if(is_first) {\n".
-        "                    ${inputs}\n".
+        "                    {$inputs}\n".
         "                } else {\n".
         "                    local_work[lid] = seg_work[seg*lws+lid];\n".
         "                    local_iwork[lid] = seg_iwork[seg*lws+lid];\n".
         "                }\n".
         "            } else {\n".
-        "                local_work[lid] = ${initial};\n".
+        "                local_work[lid] = {$initial};\n".
         "                local_iwork[lid] = 0;\n".
         "            }\n".
         "            barrier(CLK_LOCAL_MEM_FENCE);\n".
         "            int i = lws;\n".
         "            while( i>1 ) {\n".
-        "                ${operation}\n".
+        "                {$operation}\n".
         "            }\n".
         "            if(lid == 0) {\n".
         "                seg_work[seg] = local_work[0];\n".
@@ -525,7 +573,7 @@ class OpenCLMathFixDiv5Bug
         "        seg_count = (seg_count+lws-1)/lws;\n". // Not covered by div5bug. because lws is always a power of 2
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -537,20 +585,20 @@ class OpenCLMathFixDiv5Bug
         "    const uint lid = get_local_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         #"    local_work[lid] = 0;\n".
-        #"    ${type} input = 0;\n".
+        #"    {$type} input = 0;\n".
         "    if(lid<total_local_items) {\n".
-        "        ${inputs}\n".
+        "        {$inputs}\n".
         "    } else {\n".
-        "        local_work[lid]  = ${initial};\n".
+        "        local_work[lid]  = {$initial};\n".
         "    }\n".
         #"    local_work[lid] = input;\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    int i = lws;\n".
         "    while( i>1 ) {\n".
-        "        ${operation}\n".
+        "        {$operation}\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -562,21 +610,21 @@ class OpenCLMathFixDiv5Bug
         "    const uint lid = get_local_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         #"    local_work[lid] = 0;\n".
-        #"    ${type} input = 0;\n".
+        #"    {$type} input = 0;\n".
         "    if(lid<total_local_items) {\n".
-        "        ${inputs}\n".
+        "        {$inputs}\n".
         "    } else {\n".
-        "        local_work[lid] = ${initial};\n".
+        "        local_work[lid] = {$initial};\n".
         "        local_iwork[lid] = 0;\n".
         "    }\n".
         #"    local_work[lid] = input;\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    int i = lws;\n".
         "    while( i>1 ) {\n".
-        "        ${operation}\n".
+        "        {$operation}\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${outputs}\n".
+        "        {$outputs}\n".
         "    }\n".
         "}\n";
     }
@@ -590,23 +638,23 @@ class OpenCLMathFixDiv5Bug
         "    const uint grid = get_group_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         "    const uint grs = get_num_groups(0);\n".
-        "    ${type} value = ${initial};\n".
+        "    {$type} value = {$initial};\n".
         "    uint local_item_id = grid*lws + lid;\n".
         "    while(local_item_id < total_local_items) {\n".
-        "        ${inputs}\n".
-        "        ${operation1}\n".
+        "        {$inputs}\n".
+        "        {$operation1}\n".
         "        local_item_id += lws*grs;\n".
         "    }\n".
         "    local_work[lid] = value;\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    for(int i=lws/2; i>0; i>>=1) {\n".
         "        if(lid < i) {\n".
-        "            ${operation2}\n".
+        "            {$operation2}\n".
         "        }\n".
         "        barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${operation3}\n".
+        "        {$operation3}\n".
         "    }\n".
         "}\n";
     }
@@ -618,16 +666,16 @@ class OpenCLMathFixDiv5Bug
         "{\n".
         "    const uint lid = get_local_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
-        "    ${operation4}\n".
+        "    {$operation4}\n".
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    for(uint i=lws/2; i>0; i>>=1) {\n".
         "        if (lid < i) {\n".
-        "            ${operation2}\n".
+        "            {$operation2}\n".
         "        }\n".
         "        barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    }\n".
         "    if (lid == 0) {\n".
-        "        ${output}\n".
+        "        {$output}\n".
         "    }\n".
         "}\n";
     }
@@ -641,12 +689,12 @@ class OpenCLMathFixDiv5Bug
         "    const uint grid = get_group_id(0);\n".
         "    const uint lws = get_local_size(0);\n".
         "    const uint grs = get_num_groups(0);\n".
-        "    ${type} value = ${initial};\n".
+        "    {$type} value = {$initial};\n".
         "    uint    ivalue = 0;\n".
         "    uint local_item_id = grid*lws + lid;\n".
         "    while(local_item_id < total_local_items) {\n".
-        "        ${inputs}\n".
-        "        ${operation1}\n".
+        "        {$inputs}\n".
+        "        {$operation1}\n".
         "        local_item_id += lws*grs;\n".
         "    }\n".
         "    local_work[lid] = value;\n".
@@ -654,34 +702,34 @@ class OpenCLMathFixDiv5Bug
         "    barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    for(int i=lws/2; i>0; i>>=1) {\n".
         "        if(lid < i) {\n".
-        "            ${operation2}\n".
+        "            {$operation2}\n".
         "        }\n".
         "        barrier(CLK_LOCAL_MEM_FENCE);\n".
         "    }\n".
         "    if(lid == 0) {\n".
-        "        ${operation3}\n".
+        "        {$operation3}\n".
         "    }\n".
         "}\n";
     }
 
     protected function newEventList()
     {
-        return new EventList();
+        return $this->service->opencl()->EventList();
     }
 
     protected function newBuffer(
         int $size,int $flags=null,
-        LinearBuffer $hostBuffer=null, int $hostOffset=null,
+        HostBufferInterface $hostBuffer=null, int $hostOffset=null,
         int $dtype=null)
     {
         $hostOffset = $hostOffset ?? 0;
-        return new OpenCLBuffer($this->context,
+        return $this->service->buffer(Service::LV_ACCELERATED)->Buffer($this->context,
             $size,$flags,$hostBuffer,$hostOffset,$dtype);
     }
 
     protected function newHostBuffer($size,$dtype)
     {
-        return new OpenBlasBuffer($size,$dtype);
+        return $this->service->buffer(Service::LV_ADVANCED)->Buffer($size,$dtype);
     }
 
     protected function ceil($value,$base)
@@ -700,9 +748,9 @@ class OpenCLMathFixDiv5Bug
      */
     public function sum(
         int $n,
-        Buffer $R, int $offsetR,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $R, int $offsetR,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $X->dtype();
@@ -764,9 +812,9 @@ class OpenCLMathFixDiv5Bug
      */
     public function sum1(
         int $n,
-        Buffer $R, int $offsetR,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $R, int $offsetR,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $X->dtype();
@@ -783,20 +831,20 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $X->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "sum_S_${type}";
+        $kernel_name = "sum_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * r,\n".
+                "        __global {$type} * r,\n".
                 "    const        uint offset_r,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                     $this->kernelTemplateSSum(
-                        "local_work[lid] = x[${index_x}];",
+                        "local_work[lid] = x[{$index_x}];",
                         "r[offset_r] = local_work[0];"
                     ).
                 "}\n";
@@ -821,9 +869,9 @@ class OpenCLMathFixDiv5Bug
      */
     public function sum2(
         int $n,
-        Buffer $R, int $offsetR,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $R, int $offsetR,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $X->dtype();
@@ -843,23 +891,23 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $X->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "sum_M_${type}";
+        $kernel_name = "sum_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
-                "        __global ${type} * r,\n".
+                "        __global {$type} * r,\n".
                 "    const        uint offset_r,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                     $this->kernelTemplateQSum(
-                        "local_work[lid] = x[${index_x}];",
+                        "local_work[lid] = x[{$index_x}];",
                         "r[offset_r] = seg_work[0];"
                     ).
                 "}\n";
@@ -889,9 +937,9 @@ class OpenCLMathFixDiv5Bug
      */
     public function sum3(
         int $n,
-        Buffer $R, int $offsetR,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $R, int $offsetR,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $X->dtype();
@@ -917,20 +965,20 @@ class OpenCLMathFixDiv5Bug
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "sum_L1_${type}";
-        $kernel_name2 = "sum_L2_${type}";
+        $kernel_name1 = "sum_L1_{$type}";
+        $kernel_name2 = "sum_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
-                "    const __global ${type} * x,\n".
+                "    const __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                     $this->kernelTemplateLSingleSum1(
-                        "${type} input = x[local_item_id*incx + offset_x];",
+                        "{$type} input = x[local_item_id*incx + offset_x];",
                         $dtype
                     ).
                 "}\n";
@@ -939,11 +987,11 @@ class OpenCLMathFixDiv5Bug
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "        __global ${type} * r,\n".
+                "__kernel void {$kernel_name2}(\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "        __global {$type} * r,\n".
                 "    const        uint offset_r,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                     $this->kernelTemplateLSingleSum2(
                         "r[offset_r] = local_work[0];"
@@ -975,14 +1023,210 @@ class OpenCLMathFixDiv5Bug
     }
 
     /**
+     * Y := imin( X )
+     */
+    public function imin(
+        int $n,
+        BufferInterface $R, int $offsetR,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtype = $X->dtype();
+        if($R->dtype()!=NDArray::int32 && $R->dtype()!=NDArray::uint32) {
+            throw new InvalidArgumentException("R must be 32bit integer:".
+                                            $this->dtypeToString($R->dtype()));
+        }
+        //if($dtype!=NDArray::float64 && $dtype!=NDArray::float32)
+        if($dtype==NDArray::bool) {
+            throw new InvalidArgumentException("Unsuppored data type:".
+                                            $this->dtypeToString($dtype));
+        }
+
+        if($dtype==NDArray::float64) {
+            $this->assertFP64();
+        }
+        $max_work_items = $this->maxWorkItem[0];
+        if($n <= $max_work_items) {
+            $mode = 1;
+        } else {
+            $mode = 2;
+        }
+        if($this->testMode!==null) {
+            $mode = $this->testMode;
+        }
+        //echo "mode=$mode($m,$n,$k)\n";
+        switch($mode) {
+            case 1:{
+                $this->imin1(
+                    $n,
+                    $R, $offsetR,
+                    $X, $offsetX, $incX,
+                    $events, $waitEvents
+                );
+                break;
+            }
+            case 2:{
+                $this->imin2(
+                    $n,
+                    $R, $offsetR,
+                    $X, $offsetX, $incX,
+                    $events, $waitEvents
+                );
+                break;
+            }
+            default: {
+                throw new LogicException('Invalid Mode in imin(): mode='.$mode);
+            }
+        }
+    }
+
+    /**
+     * Y := imin( X )
+     */
+    public function imin1(
+        int $n,
+        BufferInterface $R, int $offsetR,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtype = $X->dtype();
+
+        $index_x = 'lid+offset_x';
+        $total_local_items = $n;
+        $max_work_items = $this->maxWorkItem[0];
+        if($total_local_items>$max_work_items) {
+            throw new InvalidArgumentException('too large array');
+        } else {
+            for($max_work_items=1; $max_work_items<$total_local_items;$max_work_items<<=1) {
+                ;
+            }
+        }
+        $value_size = $X->value_size();
+        $index_value_size = (int)(32/8); // uint32 size
+        $type = $this->dtypeToOpenCLType[$dtype];
+        $kernel_name = "imin_S_{$type}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void {$kernel_name}(\n".
+                "    const        uint total_local_items,\n".
+                "        __global {$type} * r,\n".
+                "    const        uint offset_r,\n".
+                "        __global {$type} * x,\n".
+                "    const        uint offset_x,\n".
+                "    const        uint incx,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local uint * local_iwork)\n".
+                "{\n".
+                    $this->kernelTemplateSiMin(
+                        "local_work[lid] = x[{$index_x}];\n".
+                        "local_iwork[lid] = lid;",
+                        "r[offset_r] = local_iwork[0];\n",
+                        $dtype
+                    ).
+               "}\n";
+        }
+        $kernel = $this->createKernel($kernel_name);
+
+        $kernel->setArg(0,$total_local_items,NDArray::uint32);
+        $kernel->setArg(1,$R);
+        $kernel->setArg(2,$offsetR,NDArray::uint32);
+        $kernel->setArg(3,$X);
+        $kernel->setArg(4,$offsetX,NDArray::uint32);
+        $kernel->setArg(5,$incX,NDArray::uint32);
+        $kernel->setArg(6,null,$this->adjBoundary($max_work_items*$value_size));
+        $kernel->setArg(7,null,$this->adjBoundary($max_work_items*$index_value_size));
+        $global_work_size = [$max_work_items];
+        $local_work_size = [$max_work_items];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
+                $events,$waitEvents);
+    }
+
+    /**
+     * Y := imin( X )
+     */
+    public function imin2(
+        int $n,
+        BufferInterface $R, int $offsetR,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtype = $X->dtype();
+
+        $index_x = '(seg*lws+lid)+offset_x';
+        $total_local_items = $n;
+        $max_work_items = $this->maxWorkItem[0];
+        if($total_local_items>$max_work_items) {
+            $segments = (int)ceil($total_local_items/$max_work_items); // round up float
+            $work_items = $max_work_items;
+        } else {
+            for($max_work_items=1; $max_work_items<$total_local_items;$max_work_items<<=1) {
+                ;
+            }
+            $segments = 1; // round up float
+            $work_items = $total_local_items;
+        }
+        $value_size = $X->value_size();
+        $index_value_size = (int)(32/8); // uint32 size
+        $type = $this->dtypeToOpenCLType[$dtype];
+        $kernel_name = "imin_M_{$type}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void {$kernel_name}(\n".
+                "    const        uint total_local_items,\n".
+                "    const        uint segments,\n".
+                "        __global {$type} * r,\n".
+                "    const        uint offset_r,\n".
+                "        __global {$type} * x,\n".
+                "    const        uint offset_x,\n".
+                "    const        uint incx,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
+                "         __local uint * local_iwork,\n".
+                "         __local uint * seg_iwork,\n".
+                "    const        uint work_items)\n".
+                "{\n".
+                    $this->kernelTemplateQiMin(
+                        "local_work[lid] = x[{$index_x}];\n".
+                        "local_iwork[lid] = {$index_x};\n",
+                        "r[offset_r] = seg_iwork[0];\n",
+                        $dtype
+                    ).
+                    "}\n";
+        }
+        $kernel = $this->createKernel($kernel_name);
+
+        //$seg_work_bytes = $segments*$value_size;
+        //$seg_work_bytes += ($seg_work_bytes%4) ? 4-($seg_work_bytes%4) : 0; // Adjust Addressing Boundary
+        $kernel->setArg(0,$total_local_items,NDArray::uint32);
+        $kernel->setArg(1,$segments,NDArray::uint32);
+        $kernel->setArg(2,$R);
+        $kernel->setArg(3,$offsetR,NDArray::uint32);
+        $kernel->setArg(4,$X);
+        $kernel->setArg(5,$offsetX,NDArray::uint32);
+        $kernel->setArg(6,$incX,NDArray::uint32);
+        $kernel->setArg(7,null,$this->adjBoundary($max_work_items*$value_size));
+        $kernel->setArg(8,null,$this->adjBoundary($segments*$value_size));
+        $kernel->setArg(9,null,$this->adjBoundary($max_work_items*$index_value_size));
+        $kernel->setArg(10,null,$this->adjBoundary($segments*$index_value_size));
+        $kernel->setArg(11,$work_items,NDArray::uint32);
+        $global_work_size = [$max_work_items];
+        $local_work_size = [$max_work_items];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
+                $events,$waitEvents);
+    }
+
+    /**
      *     X := a*X + b
      */
     public function increment(
         int $n,
         float $alpha,
-        Buffer $X, int $offsetX, int $incX,
+        BufferInterface $X, int $offsetX, int $incX,
         float $beta,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -990,15 +1234,15 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "increment_${type}";
+        $kernel_name = "increment_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "    const        ${type} beta)\n".
+                "    const        {$type} beta)\n".
                 "{\n".
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    x[idx] = alpha*x[idx]+beta;\n".
@@ -1021,9 +1265,9 @@ class OpenCLMathFixDiv5Bug
     public function reciprocal(
         int $n,
         float $alpha,
-        Buffer $X, int $offsetX, int $incX,
+        BufferInterface $X, int $offsetX, int $incX,
         float $beta,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1031,15 +1275,15 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "reciprocal_${type}";
+        $kernel_name = "reciprocal_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "    const        ${type} beta)\n".
+                "    const        {$type} beta)\n".
                 "{\n".
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    x[idx] = 1.0/(alpha*x[idx]+beta);\n".
@@ -1063,9 +1307,9 @@ class OpenCLMathFixDiv5Bug
     public function maximum(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1082,14 +1326,14 @@ class OpenCLMathFixDiv5Bug
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "maximum_${type}";
+        $kernel_name = "maximum_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1097,8 +1341,8 @@ class OpenCLMathFixDiv5Bug
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} tmp_a = a[ida];\n".
-                "    ${type} tmp_x = x[idx];\n".
+                "    {$type} tmp_a = a[ida];\n".
+                "    {$type} tmp_x = x[idx];\n".
                 "    if(isnan(tmp_x)) {\n".
                 "        a[ida] = tmp_x;\n".
                 "    } else {\n".
@@ -1127,9 +1371,9 @@ class OpenCLMathFixDiv5Bug
     public function minimum(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1146,14 +1390,14 @@ class OpenCLMathFixDiv5Bug
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "minimum_${type}";
+        $kernel_name = "minimum_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1161,8 +1405,8 @@ class OpenCLMathFixDiv5Bug
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} tmp_a = a[ida];\n".
-                "    ${type} tmp_x = x[idx];\n".
+                "    {$type} tmp_a = a[ida];\n".
+                "    {$type} tmp_x = x[idx];\n".
                 "    if(isnan(tmp_x)) {\n".
                 "        a[ida] = tmp_x;\n".
                 "    } else {\n".
@@ -1191,9 +1435,9 @@ class OpenCLMathFixDiv5Bug
     public function greater(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1213,14 +1457,14 @@ class OpenCLMathFixDiv5Bug
         //$segments = (int)ceil($n/$segment_size);
         //$fraction = (int)($n%$segment_size);
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "greater_${type}";
+        $kernel_name = "greater_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1228,7 +1472,7 @@ class OpenCLMathFixDiv5Bug
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 0.0
                 "    if(a[ida] > x[idx]) {\n".
@@ -1262,9 +1506,9 @@ class OpenCLMathFixDiv5Bug
     public function greaterEqual(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1284,14 +1528,14 @@ class OpenCLMathFixDiv5Bug
         //$segments = (int)ceil($n/$segment_size);
         //$fraction = (int)($n%$segment_size);
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "greater_equal_${type}";
+        $kernel_name = "greater_equal_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1299,7 +1543,7 @@ class OpenCLMathFixDiv5Bug
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 1.0
                 "    if(a[ida] >= x[idx]) {\n".
@@ -1332,9 +1576,9 @@ class OpenCLMathFixDiv5Bug
     public function less(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1351,14 +1595,14 @@ class OpenCLMathFixDiv5Bug
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "less_${type}";
+        $kernel_name = "less_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1366,7 +1610,7 @@ class OpenCLMathFixDiv5Bug
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 0.0
                 "    if(a[ida] < x[idx]) {\n".
@@ -1396,9 +1640,9 @@ class OpenCLMathFixDiv5Bug
     public function lessEqual(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1415,14 +1659,14 @@ class OpenCLMathFixDiv5Bug
             throw new InvalidArgumentException("Buffer X is too small");
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "less_${type}";
+        $kernel_name = "less_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1430,7 +1674,7 @@ class OpenCLMathFixDiv5Bug
                 "    uint col_id = get_global_id(1);\n".
                 "    uint ida = row_id*lda+col_id+offset_a;\n".
                 "    uint idx = col_id*incx+offset_x;\n".
-                "    ${type} value;\n".
+                "    {$type} value;\n".
                 //   if NaN set 0.0
                 //   if equal set 1.0
                 "    if(a[ida] <= x[idx]) {\n".
@@ -1460,9 +1704,9 @@ class OpenCLMathFixDiv5Bug
         bool $trans,
         int $m,
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $A, int $offsetA, int $ldA,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        BufferInterface $A, int $offsetA, int $ldA,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         if($trans) {
@@ -1479,7 +1723,7 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "multiply_${type}_${trans}";
+        $kernel_name = "multiply_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'col_id*lda+row_id+offset_a';
@@ -1487,19 +1731,19 @@ class OpenCLMathFixDiv5Bug
                 $index_a = 'row_id*lda+col_id+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
                 "    const uint row_id = get_global_id(0);\n".
                 "    const uint col_id = get_global_id(1);\n".
-                "    const uint index_a = ${index_a};\n".
+                "    const uint index_a = {$index_a};\n".
                 "    const uint index_x = col_id*incx+offset_x;\n".
-                "    const ${type} work_x = x[index_x];\n".
+                "    const {$type} work_x = x[index_x];\n".
                 "    a[index_a] = a[index_a] * work_x;\n".
                 "}\n";
         }
@@ -1523,9 +1767,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         float $alpha,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $A, int $offsetA, int $ldA,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        BufferInterface $A, int $offsetA, int $ldA,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         if($trans) {
@@ -1542,7 +1786,7 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "add_${type}_${trans}";
+        $kernel_name = "add_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'col_id*lda+row_id+offset_a';
@@ -1550,20 +1794,20 @@ class OpenCLMathFixDiv5Bug
                 $index_a = 'row_id*lda+col_id+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "    const global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "    const global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
                 "    const uint row_id = get_global_id(0);\n".
                 "    const uint col_id = get_global_id(1);\n".
-                "    const uint index_a = ${index_a};\n".
+                "    const uint index_a = {$index_a};\n".
                 "    const uint index_x = col_id*incx+offset_x;\n".
-                "    const ${type} work_x = x[index_x];\n".
+                "    const {$type} work_x = x[index_x];\n".
                 "    a[index_a] = a[index_a] + alpha * work_x;\n".
                 "}\n";
         }
@@ -1586,8 +1830,8 @@ class OpenCLMathFixDiv5Bug
 
     public function square(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1595,12 +1839,12 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "square_${type}";
+        $kernel_name = "square_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1627,8 +1871,8 @@ class OpenCLMathFixDiv5Bug
      */
     public function sqrt(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1636,11 +1880,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "sqrt_${type}";
+        $kernel_name = "sqrt_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1663,9 +1907,9 @@ class OpenCLMathFixDiv5Bug
     public function rsqrt(
         int $n,
         float $alpha,
-        Buffer $X, int $offsetX, int $incX,
+        BufferInterface $X, int $offsetX, int $incX,
         float $beta,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1673,15 +1917,15 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "rsqrt_${type}";
+        $kernel_name = "rsqrt_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "    const        ${type} beta)\n".
+                "    const        {$type} beta)\n".
                 "{\n".
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    x[idx] = 1.0/(alpha * sqrt(x[idx]) + beta);\n".
@@ -1699,50 +1943,75 @@ class OpenCLMathFixDiv5Bug
     }
 
     /**
-     *     X := X ^ a
+     *    A(m,n) := A(m,n) ** X(n)
      */
     public function pow(
+        bool $trans,
+        int $m,
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        float $alpha,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
+        if($trans) {
+            $trans = 'trans';
+            $rows = $n;
+            $cols = $m;
+        } else {
+            $trans = 'norm';
+            $rows = $m;
+            $cols = $n;
+        }
         $dtypeX = $X->dtype();
         if($dtypeX==NDArray::float64) {
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "pow_${type}";
+        $kernel_name = "pow_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
+            if($trans=='trans') {
+                $index_a = 'col_id*lda+row_id+offset_a';
+            } else {
+                $index_a = 'row_id*lda+col_id+offset_a';
+            }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$type} * x,\n".
                 "    const        uint offset_x,\n".
-                "    const        uint incx)\n".
+                "    const        uint incx,\n".
+                "        __global {$type} * a,\n".
+                "    const        uint offset_a,\n".
+                "    const        uint lda)\n".
                 "{\n".
-                "    uint idx = get_global_id(0)*incx+offset_x;\n".
-                "    x[idx] = pow(x[idx],alpha);\n".
+                "    const uint row_id = get_global_id(0);\n".
+                "    const uint col_id = get_global_id(1);\n".
+                "    const uint index_a = {$index_a};\n".
+                "    const uint index_x = col_id*incx+offset_x;\n".
+                "    const {$type} work_x = x[index_x];\n".
+                "    a[index_a] = pow(a[index_a],work_x);\n".
                 "}\n";
         }
         $kernel = $this->createKernel($kernel_name);
-        $kernel->setArg(0,$alpha,NDArray::float32);
-        $kernel->setArg(1,$X);
-        $kernel->setArg(2,$offsetX,NDArray::uint32);
-        $kernel->setArg(3,$incX,NDArray::uint32);
-        $global_work_size = [$n];
+        $kernel->setArg(0,$X);
+        $kernel->setArg(1,$offsetX,NDArray::uint32);
+        $kernel->setArg(2,$incX,NDArray::uint32);
+        $kernel->setArg(3,$A);
+        $kernel->setArg(4,$offsetA,NDArray::uint32);
+        $kernel->setArg(5,$ldA,NDArray::uint32);
+        $global_work_size = [$rows,$cols];
         $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
             $events,$waitEvents);
     }
+
 
     /**
      *     X(i) := e ^ X(i)
      */
     public function exp(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1750,11 +2019,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "exp_${type}";
+        $kernel_name = "exp_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1776,8 +2045,8 @@ class OpenCLMathFixDiv5Bug
      */
     public function log(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1785,11 +2054,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "log_${type}";
+        $kernel_name = "log_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1811,8 +2080,8 @@ class OpenCLMathFixDiv5Bug
      */
     public function tanh(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1820,11 +2089,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "tanh_${type}";
+        $kernel_name = "tanh_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1846,8 +2115,8 @@ class OpenCLMathFixDiv5Bug
      */
     public function sin(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1855,11 +2124,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "sin_${type}";
+        $kernel_name = "sin_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1881,8 +2150,8 @@ class OpenCLMathFixDiv5Bug
      */
     public function cos(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1890,11 +2159,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "cos_${type}";
+        $kernel_name = "cos_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1916,8 +2185,8 @@ class OpenCLMathFixDiv5Bug
      */
     public function tan(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1925,11 +2194,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "tan_${type}";
+        $kernel_name = "tan_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -1952,9 +2221,9 @@ class OpenCLMathFixDiv5Bug
      */
     public function equal(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        BufferInterface $Y, int $offsetY, int $incY,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -1966,14 +2235,14 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $dtype = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "equal_${dtype}";
+        $kernel_name = "equal_{$dtype}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${dtype} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$dtype} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${dtype} * y,\n".
+                "        __global {$dtype} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint incy)\n".
                 "{\n".
@@ -2001,15 +2270,111 @@ class OpenCLMathFixDiv5Bug
     }
 
     /**
+     * Y(i) := 1  ( X(i) != Y(i) )
+     * Y(i) := 0  ( X(i) == Y(i) )
+     */
+    public function notEqual(
+        int $n,
+        BufferInterface $X, int $offsetX, int $incX,
+        BufferInterface $Y, int $offsetY, int $incY,
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtypeX = $X->dtype();
+        $dtypeY = $Y->dtype();
+        if($dtypeX != $dtypeY) {
+            throw new InvalidArgumentException('X and Y must be same data type.');
+        }
+        if($dtypeX==NDArray::float64 || $dtypeY==NDArray::float64) {
+            $this->assertFP64();
+        }
+        $dtype = $this->dtypeToOpenCLType[$dtypeX];
+        $kernel_name = "notEqual_{$dtype}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$dtype} * x,\n".
+                "    const        uint offset_x,\n".
+                "    const        uint incx,\n".
+                "        __global {$dtype} * y,\n".
+                "    const        uint offset_y,\n".
+                "    const        uint incy)\n".
+                "{\n".
+                "    uint gid = get_global_id(0);\n".
+                "    uint index_x = gid*incx+offset_x;\n".
+                "    uint index_y = gid*incy+offset_y;\n".
+                "    if(x[index_x]!=y[index_y]) {\n".
+                "        y[index_y] = 1;\n".
+                "    } else {\n".
+                "        y[index_y] = 0;\n".
+                "    }\n".
+                "}\n";
+        }
+        $kernel = $this->createKernel($kernel_name);
+
+        $kernel->setArg(0,$X);
+        $kernel->setArg(1,$offsetX,NDArray::uint32);
+        $kernel->setArg(2,$incX,NDArray::uint32);
+        $kernel->setArg(3,$Y);
+        $kernel->setArg(4,$offsetY,NDArray::uint32);
+        $kernel->setArg(5,$incY,NDArray::uint32);
+        $global_work_size = [$n];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
+            $events,$waitEvents);
+    }
+
+    /**
+     * X(i) := 1  ( X(i) != 0 )
+     * X(i) := 0  ( X(i) == 0 )
+     */
+    public function not(
+        int $n,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtypeX = $X->dtype();
+        if($dtypeX==NDArray::float64) {
+            $this->assertFP64();
+        }
+        $dtype = $this->dtypeToOpenCLType[$dtypeX];
+        $kernel_name = "not_{$dtype}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$dtype} * x,\n".
+                "    const        uint offset_x,\n".
+                "    const        uint incx)\n".
+                "{\n".
+                "    uint gid = get_global_id(0);\n".
+                "    uint index_x = gid*incx+offset_x;\n".
+                "    if(x[index_x]==0) {\n".
+                "        x[index_x] = 1;\n".
+                "    } else {\n".
+                "        x[index_x] = 0;\n".
+                "    }\n".
+                "}\n";
+        }
+        $kernel = $this->createKernel($kernel_name);
+
+        $kernel->setArg(0,$X);
+        $kernel->setArg(1,$offsetX,NDArray::uint32);
+        $kernel->setArg(2,$incX,NDArray::uint32);
+        $global_work_size = [$n];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
+            $events,$waitEvents);
+    }
+
+    /**
      *     A(m,n) := X(n)
      */
     public function duplicate(
         bool $trans,
         int $m,
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $A, int $offsetA, int $ldA,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        BufferInterface $A, int $offsetA, int $ldA,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         if($trans) {
@@ -2022,7 +2387,7 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "duplicate_${type}_${trans}";
+        $kernel_name = "duplicate_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $idxI = '1';
@@ -2034,17 +2399,17 @@ class OpenCLMathFixDiv5Bug
                 $index_a = 'i*lda+j+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
-                "    uint i = get_global_id(${idxI});\n".
-                "    uint j = get_global_id(${idxJ});\n".
-                "    uint index_a = ${index_a};\n".
+                "    uint i = get_global_id({$idxI});\n".
+                "    uint j = get_global_id({$idxJ});\n".
+                "    uint index_a = {$index_a};\n".
                 "    uint index_x = j*incx+offset_x;\n".
                 "    a[index_a] = x[index_x];\n".
                 "}\n";
@@ -2065,9 +2430,9 @@ class OpenCLMathFixDiv5Bug
     public function astype(
         int $n,
         int $dtype,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        BufferInterface $Y, int $offsetY, int $incY,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -2075,25 +2440,29 @@ class OpenCLMathFixDiv5Bug
         if($dtypeX==NDArray::float64 || $dtypeY==NDArray::float64) {
             $this->assertFP64();
         }
+        if($dtype!=$dtypeY) {
+            throw new InvalidArgumentException('unmatch data type between dtype and output buffer type');
+        }
         $from = $this->dtypeToOpenCLType[$dtypeX];
         $to = $this->dtypeToOpenCLType[$dtypeY];
         $toOrg = $to;
         if($dtypeY==NDArray::bool) {
             $toOrg = 'bool';
         }
-        $kernel_name = "astype_${from}_${toOrg}";
+        $kernel_name = "astype_{$from}_{$toOrg}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const global ${from} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const global {$from} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${to} * y,\n".
+                "        __global {$to} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint incy)\n".
                 "{\n".
                 "    uint gid = get_global_id(0);\n";
-            if($dtypeY==NDArray::bool&&($dtypeX==NDArray::float16||$dtypeX==NDArray::float32||$dtypeX==NDArray::float64)) {
+            if($dtypeY==NDArray::bool) {
+                if($dtypeX==NDArray::float16||$dtypeX==NDArray::float32||$dtypeX==NDArray::float64) {
                 $this->sources[$kernel_name] .=
                 "    int tmp = x[gid*incx+offset_x];\n".
                 "    if(tmp==0) {\n".
@@ -2101,6 +2470,14 @@ class OpenCLMathFixDiv5Bug
                 "    } else {\n".
                 "        y[gid*incy+offset_y] = 1;\n".
                 "    }\n";
+                } else {
+                $this->sources[$kernel_name] .=
+                "    if(x[gid*incx+offset_x]==0) {\n".
+                "        y[gid*incy+offset_y] = 0;\n".
+                "    } else {\n".
+                "        y[gid*incy+offset_y] = 1;\n".
+                "    }\n";
+                }
             } else {
                 $this->sources[$kernel_name] .=
                 "    y[gid*incy+offset_y] = x[gid*incx+offset_x];\n";
@@ -2130,10 +2507,10 @@ class OpenCLMathFixDiv5Bug
         int $n,
         int $k,
         int $numClass,
-        Buffer $X, int $offsetX,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         if($reverse==true && $addMode==true) {
@@ -2172,7 +2549,7 @@ class OpenCLMathFixDiv5Bug
             $direction = 'f';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "gather_${op}_${type}_${direction}";
+        $kernel_name = "gather_{$op}_{$type}_{$direction}";
         if(!isset($this->sources[$kernel_name])) {
             $a_variable = "a[offset_a+label*k+p]";
             $b_variable = "b[offset_b+j*k+p]";
@@ -2193,22 +2570,22 @@ class OpenCLMathFixDiv5Bug
                 $operator = '=';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
                 "    const        uint numClass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    ${a_arg_type} ${type} * a,\n".
+                "    {$a_arg_type} {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    ${b_arg_type} ${type} * b,\n".
+                "    {$b_arg_type} {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    uint p = get_global_id(0);\n".
                 "    uint j = get_global_id(1);\n".
                 "    uint label = x[j+offset_x];\n".
                 "    if(label<numClass) {\n".
-                "        ${to} ${operator} ${from};\n".
+                "        {$to} {$operator} {$from};\n".
                 "    }\n".
                 "}\n";
         }
@@ -2236,10 +2613,10 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $numClass,
-        Buffer $X, int $offsetX,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -2266,7 +2643,7 @@ class OpenCLMathFixDiv5Bug
             $direction = 'f';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceGather_${op}_${type}_${direction}";
+        $kernel_name = "reduceGather_{$op}_{$type}_{$direction}";
         if(!isset($this->sources[$kernel_name])) {
             $a_variable = "a[offset_a+i*n*numClass+j+label*n]";
             $b_variable = "b[offset_b+i*n+j]";
@@ -2287,22 +2664,22 @@ class OpenCLMathFixDiv5Bug
                 $operator = '=';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint m,\n".
                 "    const        uint n,\n".
                 "    const        uint numClass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    ${a_arg_type} ${type} * a,\n".
+                "    {$a_arg_type} {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    ${b_arg_type} ${type} * b,\n".
+                "    {$b_arg_type} {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    uint j = get_global_id(0);\n".
                 "    uint i = get_global_id(1);\n".
                 "    uint label = x[j+offset_x+n*i];\n".
                 "    if(label<numClass) {\n".
-                "        ${to} ${operator} ${from};\n".
+                "        {$to} {$operator} {$from};\n".
                 "    }\n".
                 "}\n";
         }
@@ -2369,10 +2746,10 @@ class OpenCLMathFixDiv5Bug
         int $n,
         int $k,
         int $numClass,
-        Buffer $X, int $offsetX,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
@@ -2484,35 +2861,35 @@ class OpenCLMathFixDiv5Bug
         int $n,
         int $k,
         int $numClass,
-        Buffer $X, int $offsetX,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
 //echo "mode=0\n";
         $dtype = $A->dtype();
         $total_local_items = $n;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAdd_0_${type}";
+        $kernel_name = "scatterAdd_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    const uint p = get_global_id(0);\n".  // A col id(p)
                 "    const uint i = get_global_id(1);\n".  // A row id(i)
                 "    uint pos_x = offset_x;\n".  // A col id
                 "    uint pos_b = offset_b+p;\n".  // A col id
-                "    ${type} sum = 0;\n".
+                "    {$type} sum = 0;\n".
                 //"    if(p<k && i<numclass) {\n".
                 "        for(int j=0;j<total_local_items;j++,pos_x++,pos_b+=k) {\n".
                 "            uint label = x[pos_x];\n".
@@ -2548,10 +2925,10 @@ class OpenCLMathFixDiv5Bug
         int $n,
         int $k,
         int $numClass,
-        Buffer $X, int $offsetX,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
 //echo "mode=1\n";
@@ -2569,20 +2946,20 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAdd_S_${type}";
+        $kernel_name = "scatterAdd_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b,\n".
-                "         __local ${type} * local_work,\n".
+                "         __local {$type} * local_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".  // A col id (p)
@@ -2625,10 +3002,10 @@ class OpenCLMathFixDiv5Bug
         int $n,
         int $k,
         int $numClass,
-        Buffer $X, int $offsetX,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
 //echo "mode=2\n";
@@ -2647,22 +3024,22 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "scatterAdd_M_${type}";
+        $kernel_name = "scatterAdd_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n". // k => n
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint segments,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".  // A col id(p)(n => k)
@@ -2707,10 +3084,10 @@ class OpenCLMathFixDiv5Bug
         int $n,
         int $k,
         int $numClass,
-        Buffer $X, int $offsetX,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
 //echo "mode=3\n";
@@ -2735,26 +3112,25 @@ class OpenCLMathFixDiv5Bug
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "scatterAdd_L1_${type}";
-        $kernel_name2 = "scatterAdd_L2_${type}";
+        $kernel_name1 = "scatterAdd_L1_{$type}";
+        $kernel_name2 = "scatterAdd_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const uint inner_id = get_global_id(1);\n".
-                "    const uint outer_id = get_global_id(2);\n".
-                "    const uint parallel_item_id = outer_id*k+inner_id;\n".
-                    $this->kernelTemplateLSum1(
-                        "${type} input;\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
+                $this->splitPointer('inner_id','outer_id','parallel_item_id','k').
+                $this->kernelTemplateLSum1(
+                        "{$type} input;\n".
                         // inner_id = (p)(cols k)
                         // outer_id = (i)(rows class)
                         "const uint label = x[local_item_id+offset_x];\n".
@@ -2771,17 +3147,14 @@ class OpenCLMathFixDiv5Bug
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "          __global ${type} * a,\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "          __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const uint inner_id = get_global_id(1);\n".
-                "    const uint outer_id = get_global_id(2);\n".
-                "    const uint parallel_item_id = outer_id*k+inner_id;\n".
-                //"    const uint parallel_item_id = get_global_id(1);\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
                     $this->kernelTemplateLSum2(
                         #"const uint inner_id = parallel_item_id%k;\n". // (p)(cols k)
                         #"const uint outer_id = parallel_item_id/k;\n". // (i)(rows class)
@@ -2800,8 +3173,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(6,$offsetB,NDArray::uint32);
         $kernel->setArg(7,$temp_buffer);
         $kernel->setArg(8,null,$this->adjBoundary($work_items1*$value_size));
-        $global_work_size = [$work_items1*$temp_size,$k,$numClass];
-        $local_work_size = [$work_items1,1,1];
+        $global_work_size = [$work_items1*$temp_size,$k*$numClass];
+        $local_work_size = [$work_items1,1];
         $phase1Events = $this->newEventList();
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $phase1Events,$waitEvents);
@@ -2811,8 +3184,8 @@ class OpenCLMathFixDiv5Bug
         $kernel2->setArg(2,$A);
         $kernel2->setArg(3,$offsetA,NDArray::uint32);
         $kernel2->setArg(4,null,$this->adjBoundary($work_items2*$value_size));
-        $global_work_size = [$work_items2,$k,$numClass];
-        $local_work_size = [$work_items2,1,1];
+        $global_work_size = [$work_items2,$k*$numClass];
+        $local_work_size = [$work_items2,1];
         $kernel2->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$phase1Events);
     }
@@ -2824,26 +3197,26 @@ class OpenCLMathFixDiv5Bug
          int $n,
          int $k,
          int $numClass,
-         Buffer $X, int $offsetX,
-         Buffer $A, int $offsetA,
-         Buffer $B, int $offsetB,
-         EventList $events=null, EventList $waitEvents=null
+         BufferInterface $X, int $offsetX,
+         BufferInterface $A, int $offsetA,
+         BufferInterface $B, int $offsetB,
+         object $events=null, object $waitEvents=null
          ) : void
     {
 //echo "mode=4\n";
         $type = $this->dtypeToOpenCLType[$B->dtype()];
-        $kernel_name = "scatterAdd_4_${type}";
+        $kernel_name = "scatterAdd_4_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
                 "    const        uint numclass,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const global ${type} * b,\n".
+                "    const global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
                 "    const uint gid = get_global_id(0);\n".
@@ -2887,28 +3260,28 @@ class OpenCLMathFixDiv5Bug
          int $m,
          int $k,
          int $repeats,
-         Buffer $A, int $offsetA,
-         Buffer $B, int $offsetB,
-         EventList $events=null, EventList $waitEvents=null
+         BufferInterface $A, int $offsetA,
+         BufferInterface $B, int $offsetB,
+         object $events=null, object $waitEvents=null
          ) : void
     {
 //echo "mode=4\n";
         $type = $this->dtypeToOpenCLType[$B->dtype()];
-        $kernel_name = "repeat_${type}";
+        $kernel_name = "repeat_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint m,\n".
                 "    const        uint k,\n".
                 "    const        uint repeats,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
-                "    const uint p = get_global_id(0);\n".
-                "    const uint j = get_global_id(1);\n".
-                "    const uint i = get_global_id(2);\n".
+                "    const uint gid = get_global_id(0);\n".
+                     $this->splitPointer('p','j','gid','k').
+                "    const uint i = get_global_id(1);\n".
                 //"    if(gid<n) {\n".
                 "        uint pos_a = i*k+offset_a;\n".
                 "        uint pos_b = i*repeats*k+offset_b;\n".
@@ -2928,7 +3301,7 @@ class OpenCLMathFixDiv5Bug
         //$multiple = $this->kernelMultiple($kernel);
         //$global_work_size = [$this->ceil($k,$multiple)];
         //$local_work_size = [$multiple];
-        $global_work_size = [$k,$repeats,$m];
+        $global_work_size = [$k*$repeats,$m];
         $local_work_size = null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
@@ -2941,10 +3314,10 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         float $alpha,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $ldY,
+        BufferInterface $X, int $offsetX, int $incX,
+        BufferInterface $Y, int $offsetY, int $ldY,
         bool $addMode,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         ) : void
     {
         if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
@@ -2962,26 +3335,26 @@ class OpenCLMathFixDiv5Bug
         $type = $this->dtypeToOpenCLType[$Y->dtype()];
         $mode = $addMode ? 'add' : 'set';
         $operator = $addMode ? '+=' : '=';
-        if(!isset($this->sources["onehot_${type}_${mode}"])) {
-            $this->sources["onehot_${type}_${mode}"] =
-                "__kernel void onehot_${type}_${mode}(\n".
+        if(!isset($this->sources["onehot_{$type}_{$mode}"])) {
+            $this->sources["onehot_{$type}_{$mode}"] =
+                "__kernel void onehot_{$type}_{$mode}(\n".
                 "    const        uint n,\n".
-                "    const        ${type} alpha,\n".
+                "    const        {$type} alpha,\n".
                 "    const global uint * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
-                "        __global ${type} * y,\n".
+                "        __global {$type} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint ldy)\n".
                 "{\n".
                 "    uint gid = get_global_id(0);\n".
                 "    uint label = x[gid*incx+offset_x];\n".
                 "    if(label<n) {\n".
-                "        y[gid*ldy+label+offset_y] ${operator} alpha;\n".
+                "        y[gid*ldy+label+offset_y] {$operator} alpha;\n".
                 "    }\n".
                 "}\n";
         }
-        $kernel = $this->createKernel("onehot_${type}_${mode}");
+        $kernel = $this->createKernel("onehot_{$type}_{$mode}");
 
         $kernel->setArg(0,$n,NDArray::uint32);
         $kernel->setArg(1,$alpha,$Y->dtype());
@@ -3021,9 +3394,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3111,9 +3484,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3122,31 +3495,31 @@ class OpenCLMathFixDiv5Bug
         $ldA = $n*$k;
         $ldB = $k;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceSum_0_${type}";
+        $kernel_name = "reduceSum_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
-            $index_a = 'gid1*lda+gid0+offset_a';
-            $index_b = 'gid1*ldb+gid0+offset_b';
+            $index_a = 'gid0*lda+gid1+offset_a';
+            $index_b = 'gid0*ldb+gid1+offset_b';
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "          global ${type} * b,\n".
+                "          global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb)\n".
                 "{\n".
-                "    const uint gid0 = get_global_id(0);\n".
-                "    const uint gid1 = get_global_id(1);\n".
-                "    ${type} sum = 0;\n".
-                //"    if(gid<rows) {\n".
-                "        uint pos = ${index_a};\n".
+                "    const uint gid = get_global_id(0);\n".
+                     $this->splitPointer('gid1','gid0','gid','k').
+                "    {$type} sum = 0;\n".
+                //"    if(gid0<rows) {\n".
+                "        uint pos = {$index_a};\n".
                 "        for(uint i=total_local_items; i>0; i--,pos+=k) {\n".
                 "            sum += a[pos];\n".
                 "        }\n".
-                "        b[${index_b}] = sum;\n".
+                "        b[{$index_b}] = sum;\n".
                 //"    }\n".
                 "}\n";
         }
@@ -3161,10 +3534,10 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(6,$B);
         $kernel->setArg(7,$offsetB,NDArray::uint32);
         $kernel->setArg(8,$ldB,NDArray::uint32);
-        $multiple = $this->kernelMultiple($kernel);
+        //$multiple = $this->kernelMultiple($kernel);
         //$global_work_size = [$this->ceil($rows*$k,$multiple)];
         //$local_work_size = [$multiple];
-        $global_work_size = [$k,$rows];
+        $global_work_size = [$rows*$k];
         $local_work_size = null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
@@ -3177,9 +3550,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3197,22 +3570,22 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceSum_S_${type}";
+        $kernel_name = "reduceSum_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const uint gid_r = get_group_id(0);\n".
-                "    const uint gid_l = get_global_id(1);\n".
+                "    const uint grid = get_group_id(0);\n".
+                     $this->splitPointer('gid_r','gid_l','grid','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                      $this->kernelTemplateSSum(
@@ -3232,8 +3605,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(6,$offsetB,NDArray::uint32);
         $kernel->setArg(7,$ldB,NDArray::uint32);
         $kernel->setArg(8,null,$this->adjBoundary($max_work_items*$value_size));
-        $global_work_size = [$max_work_items*$k,$rows];
-        $local_work_size = [$max_work_items,1];
+        $global_work_size = [$max_work_items*$k*$rows];
+        $local_work_size = [$max_work_items];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
     }
@@ -3245,9 +3618,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3268,25 +3641,25 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceSum_M_${type}";
+        $kernel_name = "reduceSum_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
-                "    const uint gid_r = get_group_id(0);\n".
-                "    const uint gid_l = get_global_id(1);\n".
+                "    const uint grid = get_group_id(0);\n".
+                     $this->splitPointer('gid_r','gid_l','grid','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                      $this->kernelTemplateQSum(
@@ -3310,8 +3683,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(9,null,$this->adjBoundary($max_work_items*$value_size));
         $kernel->setArg(10,null,$this->adjBoundary($segments*$value_size));
         $kernel->setArg(11,$work_items,NDArray::uint32);
-        $global_work_size = [$max_work_items*$k,$rows];
-        $local_work_size = [$max_work_items,1];
+        $global_work_size = [$max_work_items*$k*$rows];
+        $local_work_size = [$max_work_items];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
     }
@@ -3323,9 +3696,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3352,25 +3725,24 @@ class OpenCLMathFixDiv5Bug
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "reduceSum_L1_${type}";
-        $kernel_name2 = "reduceSum_L2_${type}";
+        $kernel_name1 = "reduceSum_L1_{$type}";
+        $kernel_name2 = "reduceSum_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * a,\n".
+                "    const __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const uint gid_r = get_global_id(1);\n".
-                "    const uint gid_l = get_global_id(2);\n".
-                "    const uint parallel_item_id = gid_l*k+gid_r;\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
+                     $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                     $this->kernelTemplateLSum1(
-                        "${type} input = a[pos_a+local_item_id*k];",
+                        "{$type} input = a[pos_a+local_item_id*k];",
                         $dtype
                     ).
                 "}\n";
@@ -3379,17 +3751,16 @@ class OpenCLMathFixDiv5Bug
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "        __global ${type} * b,\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const uint gid_r = get_global_id(1);\n".
-                "    const uint gid_l = get_global_id(2);\n".
-                "    const uint parallel_item_id = gid_l*k+gid_r;\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
+                     $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                     $this->kernelTemplateLSum2(
                         "b[pos_b] = local_work[0];"
@@ -3405,8 +3776,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(4,$ldA,NDArray::uint32);
         $kernel->setArg(5,$temp_buffer);
         $kernel->setArg(6,null,$this->adjBoundary($work_items1*$value_size));
-        $global_work_size = [$work_items1*$temp_size,$k,$rows];
-        $local_work_size  = [$work_items1,1,1];
+        $global_work_size = [$work_items1*$temp_size,$rows*$k];
+        $local_work_size  = [$work_items1,1];
         $phase1Events = $this->newEventList();
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $phase1Events,$waitEvents);
@@ -3417,8 +3788,8 @@ class OpenCLMathFixDiv5Bug
         $kernel2->setArg(3,$offsetB,NDArray::uint32);
         $kernel2->setArg(4,$ldB,NDArray::uint32);
         $kernel2->setArg(5,null,$this->adjBoundary($work_items2*$value_size));
-        $global_work_size = [$work_items2,$k,$rows];
-        $local_work_size = [$work_items2,1,1];
+        $global_work_size = [$work_items2,$rows*$k];
+        $local_work_size = [$work_items2,1];
         $kernel2->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$phase1Events);
     }
@@ -3430,9 +3801,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3520,9 +3891,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3531,38 +3902,38 @@ class OpenCLMathFixDiv5Bug
         $ldA = $n*$k;
         $ldB = $k;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceMax_0_${type}";
+        $kernel_name = "reduceMax_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
-            $index_a = 'gid1*lda+gid0+offset_a';
-            $index_b = 'gid1*ldb+gid0+offset_b';
+            $index_a = 'gid0*lda+gid1+offset_a';
+            $index_b = 'gid0*ldb+gid1+offset_b';
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "          global ${type} * b,\n".
+                "          global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb)\n".
                 "{\n".
-                "    const uint gid0 = get_global_id(0);\n".
-                "    const uint gid1 = get_global_id(1);\n".
-                //"    if(gid<rows) {\n".
+                "    const uint gid = get_global_id(0);\n".
+                     $this->splitPointer('gid1','gid0','gid','k').
+                //"    if(gid0<rows) {\n".
                 "        uint i=0;\n".
-                "        uint pos = ${index_a};\n".
-                "        ${type} max = a[pos];\n".
+                "        uint pos = {$index_a};\n".
+                "        {$type} max = a[pos];\n".
                 "        pos += k;\n".
                 "        for(uint i=1; i<total_local_items; i++,pos+=k) {\n".
-                "            ${type} value = a[pos];\n".
+                "            {$type} value = a[pos];\n".
                 //           if NaN set NaN
                 //           Compatible with reduce_max of tensorflow 2.6
                 "            if(max<value||isnan(value)) {\n".
                 "                max = value;\n".
                 "            }\n".
                 "        }\n".
-                "        b[${index_b}] = max;\n".
+                "        b[{$index_b}] = max;\n".
                 //"    }\n".
                 "}\n";
         }
@@ -3577,10 +3948,10 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(6,$B);
         $kernel->setArg(7,$offsetB,NDArray::uint32);
         $kernel->setArg(8,$ldB,NDArray::uint32);
-        $multiple = $this->kernelMultiple($kernel);
+        //$multiple = $this->kernelMultiple($kernel);
         //$global_work_size = [$this->ceil($rows*$k,$multiple)];
         //$local_work_size = [$multiple];
-        $global_work_size = [$k,$rows];
+        $global_work_size = [$rows*$k];
         $local_work_size = null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
@@ -3593,9 +3964,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3613,22 +3984,22 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceMax_S_${type}";
+        $kernel_name = "reduceMax_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const int gid_r = get_group_id(0);\n".
-                "    const int gid_l = get_global_id(1);\n".
+                "    const uint grid = get_group_id(0);\n".
+                     $this->splitPointer('gid_r','gid_l','grid','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                      $this->kernelTemplateSMax(
@@ -3649,8 +4020,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(6,$offsetB,NDArray::uint32);
         $kernel->setArg(7,$ldB,NDArray::uint32);
         $kernel->setArg(8,null,$this->adjBoundary($max_work_items*$value_size));
-        $global_work_size = [$max_work_items*$k,$rows];
-        $local_work_size = [$max_work_items,1];
+        $global_work_size = [$max_work_items*$k*$rows];
+        $local_work_size = [$max_work_items];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
     }
@@ -3662,9 +4033,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3685,25 +4056,25 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceMax_M_${type}";
+        $kernel_name = "reduceMax_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
-                "    const uint gid_r = get_group_id(0);\n".
-                "    const uint gid_l = get_global_id(1);\n".
+                "    const uint grid = get_group_id(0);\n".
+                     $this->splitPointer('gid_r','gid_l','grid','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                      $this->kernelTemplateQMax(
@@ -3728,8 +4099,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(9,null,$this->adjBoundary($max_work_items*$value_size));
         $kernel->setArg(10,null,$this->adjBoundary($segments*$value_size));
         $kernel->setArg(11,$work_items,NDArray::uint32);
-        $global_work_size = [$max_work_items*$k,$rows];
-        $local_work_size = [$max_work_items,1];
+        $global_work_size = [$max_work_items*$k*$rows];
+        $local_work_size = [$max_work_items];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
     }
@@ -3741,9 +4112,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3770,25 +4141,24 @@ class OpenCLMathFixDiv5Bug
             OpenCL::CL_MEM_READ_WRITE,null,null,$dtype);
 
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "reduceMax_L1_${type}";
-        $kernel_name2 = "reduceMax_L2_${type}";
+        $kernel_name1 = "reduceMax_L1_{$type}";
+        $kernel_name2 = "reduceMax_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * a,\n".
+                "    const __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work)\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const uint gid_r = get_global_id(1);\n".
-                "    const uint gid_l = get_global_id(2);\n".
-                "    const uint parallel_item_id = gid_l*k+gid_r;\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
+                     $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                     $this->kernelTemplateLMax1(
-                        "${type} input = a[pos_a+local_item_id*k];",
+                        "{$type} input = a[pos_a+local_item_id*k];",
                         $dtype
                     ).
                 "}\n";
@@ -3797,17 +4167,17 @@ class OpenCLMathFixDiv5Bug
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
-                "        __global ${type} * b,\n".
+                "    const __global {$type} * temp_buffer,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
-                "    const uint gid_r = get_global_id(1);\n".
-                "    const uint gid_l = get_global_id(2);\n".
-                "    const uint parallel_item_id = gid_l*k+gid_r;\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
+                "    const uint gid_l = parallel_item_id/k;\n".
+                "    const uint gid_r = parallel_item_id%k;\n".
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                     $this->kernelTemplateLMax2(
                         "b[pos_b] = local_work[0];"
@@ -3823,8 +4193,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(4,$ldA,NDArray::uint32);
         $kernel->setArg(5,$temp_buffer);
         $kernel->setArg(6,null,$this->adjBoundary($work_items1*$value_size));
-        $global_work_size = [$work_items1*$temp_size,$k,$rows];
-        $local_work_size  = [$work_items1,1,1];
+        $global_work_size = [$work_items1*$temp_size,$rows*$k];
+        $local_work_size  = [$work_items1,1];
         $phase1Events = $this->newEventList();
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $phase1Events,$waitEvents);
@@ -3835,8 +4205,8 @@ class OpenCLMathFixDiv5Bug
         $kernel2->setArg(3,$offsetB,NDArray::uint32);
         $kernel2->setArg(4,$ldB,NDArray::uint32);
         $kernel2->setArg(5,null,$this->adjBoundary($work_items2*$value_size));
-        $global_work_size = [$work_items2,$k,$rows];
-        $local_work_size = [$work_items2,1,1];
+        $global_work_size = [$work_items2,$rows*$k];
+        $local_work_size = [$work_items2,1];
         $kernel2->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$phase1Events);
     }
@@ -3848,9 +4218,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3858,7 +4228,8 @@ class OpenCLMathFixDiv5Bug
             throw new InvalidArgumentException("B must be 32bit integer:".
                                             $this->dtypeToString($B->dtype()));
         }
-        if($dtype!=NDArray::float64 && $dtype!=NDArray::float32) {
+        //if($dtype!=NDArray::float64 && $dtype!=NDArray::float32)
+        if($dtype==NDArray::bool) {
             throw new InvalidArgumentException("Unsuppored data type:".
                                             $this->dtypeToString($dtype));
         }
@@ -3938,9 +4309,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -3949,38 +4320,38 @@ class OpenCLMathFixDiv5Bug
         $ldA = $n*$k;
         $ldB = $k;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceArgMax_0_${type}";
+        $kernel_name = "reduceArgMax_0_{$type}";
         if(!isset($this->sources[$kernel_name])) {
-            $index_a = 'gid1*lda+gid0+offset_a';
-            $index_b = 'gid1*ldb+gid0+offset_b';
+            $index_a = 'gid0*lda+gid1+offset_a';
+            $index_b = 'gid0*ldb+gid1+offset_b';
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
                 "          global uint * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb)\n".
                 "{\n".
-                "    const uint gid0 = get_global_id(0);\n".
-                "    const uint gid1 = get_global_id(1);\n".
-                //"    if(gid<rows) {\n".
+                "    const uint gid = get_global_id(0);\n".
+                     $this->splitPointer('gid1','gid0','gid','k').
+                //"    if(gid0<rows) {\n".
                 "        uint i=0;\n".
-                "        uint pos = ${index_a};\n".
-                "        ${type} max = a[pos];\n".
+                "        uint pos = {$index_a};\n".
+                "        {$type} max = a[pos];\n".
                 "        uint imax = i;\n".
                 "        pos += k;\n".
                 "        for(uint i=1; i<total_local_items; i++,pos+=k) {\n".
-                "            ${type} value = a[pos];\n".
+                "            {$type} value = a[pos];\n".
                 "            if(value>max) {\n".
                 "                max = value;\n".
                 "                imax = i;\n".
                 "            }\n".
                 "        }\n".
-                "        b[${index_b}] = imax;\n".
+                "        b[{$index_b}] = imax;\n".
                 //"    }\n".
                 "}\n";
         }
@@ -3995,10 +4366,10 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(6,$B);
         $kernel->setArg(7,$offsetB,NDArray::uint32);
         $kernel->setArg(8,$ldB,NDArray::uint32);
-        $multiple = $this->kernelMultiple($kernel);
+        //$multiple = $this->kernelMultiple($kernel);
         //$global_work_size = [$this->ceil($rows*$k,$multiple)];
         //$local_work_size = [$multiple];
-        $global_work_size = [$k,$rows];
+        $global_work_size = [$rows*$k];
         $local_work_size = null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
@@ -4011,9 +4382,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -4030,25 +4401,26 @@ class OpenCLMathFixDiv5Bug
             }
         }
         $value_size = $A->value_size();
-        $index_value_size = $B->value_size();
+        //$index_value_size = $B->value_size();
+        $index_value_size = (int)(32/8); // uint32 size
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceArgMax_S_${type}";
+        $kernel_name = "reduceArgMax_S_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
                 "        __global uint * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
+                "         __local {$type} * local_work,\n".
                 "         __local uint * local_iwork)\n".
                 "{\n".
-                "    const uint gid_r = get_group_id(0);\n".
-                "    const uint gid_l = get_global_id(1);\n".
+                "    const uint grid = get_group_id(0);\n".
+                     $this->splitPointer('gid_r','gid_l','grid','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                      $this->kernelTemplateSiMax(
@@ -4071,8 +4443,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(7,$ldB,NDArray::uint32);
         $kernel->setArg(8,null,$this->adjBoundary($max_work_items*$value_size));
         $kernel->setArg(9,null,$this->adjBoundary($max_work_items*$index_value_size));
-        $global_work_size = [$max_work_items*$k,$rows];
-        $local_work_size = [$max_work_items,1];
+        $global_work_size = [$max_work_items*$k*$rows];
+        $local_work_size = [$max_work_items];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
     }
@@ -4084,9 +4456,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -4106,29 +4478,30 @@ class OpenCLMathFixDiv5Bug
             $work_items = $total_local_items;
         }
         $value_size = $A->value_size();
-        $index_value_size = $B->value_size();
+        //$index_value_size = $B->value_size();
+        $index_value_size = (int)(32/8); // uint32 size
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "reduceArgMax_M_${type}";
+        $kernel_name = "reduceArgMax_M_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
                 "    const        uint k,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
                 "        __global uint * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "         __local uint * local_iwork,\n".
                 "         __local uint * seg_iwork,\n".
                 "    const        uint work_items)\n".
                 "{\n".
-                "    const uint gid_r = get_group_id(0);\n".
-                "    const uint gid_l = get_global_id(1);\n".
+                "    const uint grid = get_group_id(0);\n".
+                     $this->splitPointer('gid_r','gid_l','grid','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                      $this->kernelTemplateQiMax(
@@ -4156,8 +4529,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(11,null,$this->adjBoundary($max_work_items*$index_value_size));
         $kernel->setArg(12,null,$this->adjBoundary($segments*$index_value_size));
         $kernel->setArg(13,$work_items,NDArray::uint32);
-        $global_work_size = [$max_work_items*$k,$rows];
-        $local_work_size = [$max_work_items,1];
+        $global_work_size = [$max_work_items*$k*$rows];
+        $local_work_size = [$max_work_items];
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$waitEvents);
     }
@@ -4169,9 +4542,9 @@ class OpenCLMathFixDiv5Bug
         int $m,
         int $n,
         int $k,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -4201,27 +4574,26 @@ class OpenCLMathFixDiv5Bug
             $index_value_size*$temp_size*$rows*$k,
             OpenCL::CL_MEM_READ_WRITE,null,null,$B->dtype());
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name1 = "reduceArgMax_L1_${type}";
-        $kernel_name2 = "reduceArgMax_L2_${type}";
+        $kernel_name1 = "reduceArgMax_L1_{$type}";
+        $kernel_name2 = "reduceArgMax_L2_{$type}";
         if(!isset($this->sources[$kernel_name1])) {
             $this->sources[$kernel_name1] =
-                "__kernel void ${kernel_name1}(\n".
+                "__kernel void {$kernel_name1}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * a,\n".
+                "    const __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "        __global ${type} * temp_buffer,\n".
-                "         __local ${type} * local_work,\n".
+                "        __global {$type} * temp_buffer,\n".
+                "         __local {$type} * local_work,\n".
                 "        __global uint * temp_ibuffer,\n".
                 "         __local uint * local_iwork)\n".
                 "{\n".
-                "    const uint gid_r = get_global_id(1);\n".
-                "    const uint gid_l = get_global_id(2);\n".
-                "    const uint parallel_item_id = gid_l*k+gid_r;\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
+                     $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_a = gid_l*lda+gid_r+offset_a;\n".
                     $this->kernelTemplateLiMax1(
-                        "${type} input = a[pos_a+local_item_id*k];".
+                        "{$type} input = a[pos_a+local_item_id*k];".
                         "uint input_index = local_item_id;\n",
                         $dtype
                     ).
@@ -4231,19 +4603,18 @@ class OpenCLMathFixDiv5Bug
 
         if(!isset($this->sources[$kernel_name2])) {
             $this->sources[$kernel_name2] =
-                "__kernel void ${kernel_name2}(\n".
+                "__kernel void {$kernel_name2}(\n".
                 "    const        uint k,\n".
-                "    const __global ${type} * temp_buffer,\n".
+                "    const __global {$type} * temp_buffer,\n".
                 "    const __global uint * temp_ibuffer,\n".
                 "        __global uint * b,\n".
                 "    const        uint offset_b,\n".
                 "    const        uint ldb,\n".
-                "         __local ${type} * local_work,\n".
+                "         __local {$type} * local_work,\n".
                 "         __local uint * local_iwork)\n".
                 "{\n".
-                "    const uint gid_r = get_global_id(1);\n".
-                "    const uint gid_l = get_global_id(2);\n".
-                "    const uint parallel_item_id = gid_l*k+gid_r;\n".
+                "    const uint parallel_item_id = get_global_id(1);\n".
+                    $this->splitPointer('gid_r','gid_l','parallel_item_id','k').
                 "    const uint pos_b = gid_l*ldb+gid_r+offset_b;\n".
                     $this->kernelTemplateLiMax2(
                         "b[pos_b] = local_iwork[0];"
@@ -4261,8 +4632,8 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(6,null,$this->adjBoundary($work_items1*$value_size));
         $kernel->setArg(7,$temp_ibuffer);
         $kernel->setArg(8,null,$this->adjBoundary($work_items1*$index_value_size));
-        $global_work_size = [$work_items1*$temp_size,$k,$rows];
-        $local_work_size  = [$work_items1,1,1];
+        $global_work_size = [$work_items1*$temp_size,$rows*$k];
+        $local_work_size  = [$work_items1,1];
         $phase1Events = $this->newEventList();
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $phase1Events,$waitEvents);
@@ -4275,8 +4646,8 @@ class OpenCLMathFixDiv5Bug
         $kernel2->setArg(5,$ldB,NDArray::uint32);
         $kernel2->setArg(6,null,$this->adjBoundary($work_items2*$value_size));
         $kernel2->setArg(7,null,$this->adjBoundary($work_items2*$index_value_size));
-        $global_work_size = [$work_items2,$k,$rows];
-        $local_work_size = [$work_items2,1,1];
+        $global_work_size = [$work_items2,$rows*$k];
+        $local_work_size = [$work_items2,1];
         $kernel2->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
                 $events,$phase1Events);
     }
@@ -4287,8 +4658,8 @@ class OpenCLMathFixDiv5Bug
     public function softmax(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtype = $A->dtype();
@@ -4321,8 +4692,8 @@ class OpenCLMathFixDiv5Bug
     public function softmax0(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $trans = false;
@@ -4338,7 +4709,7 @@ class OpenCLMathFixDiv5Bug
         }
         $total_local_items = $cols;
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "softmax_4_${type}_${trans}";
+        $kernel_name = "softmax_4_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'i*lda+gid+offset_a';
@@ -4346,29 +4717,29 @@ class OpenCLMathFixDiv5Bug
                 $index_a = 'gid*lda+i+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda)\n".
                 "{\n".
                 "    const uint gid = get_global_id(0);\n".
                 //"    if(gid<rows) {\n".
                 "        uint i=0;\n".
-                "        ${type} max = a[${index_a}];\n".
+                "        {$type} max = a[{$index_a}];\n".
                 "        for(i=1;i<total_local_items;i++) {\n".
-                "            ${type} value = a[${index_a}];\n".
+                "            {$type} value = a[{$index_a}];\n".
                 "            if(value > max) {\n".
                 "                max = value;\n".
                 "            }\n".
                 "        }\n".
-                "        ${type} sum=0;\n".
+                "        {$type} sum=0;\n".
                 "        for(i=0;i<total_local_items;i++) {\n".
-                "            sum += exp(a[${index_a}]-max);".
+                "            sum += exp(a[{$index_a}]-max);".
                 "        }\n".
                 "        for(i=0;i<total_local_items;i++) {\n".
-                "            a[${index_a}] = exp(a[${index_a}]-max)/sum;\n".
+                "            a[{$index_a}] = exp(a[{$index_a}]-max)/sum;\n".
                 "        }\n".
                 //"    }\n".
                 "}\n";
@@ -4393,8 +4764,8 @@ class OpenCLMathFixDiv5Bug
     public function softmax1(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $trans = false;
@@ -4419,7 +4790,7 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "softmax_S_${type}_${trans}";
+        $kernel_name = "softmax_S_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = 'lid*lda+grid+offset_a';
@@ -4427,24 +4798,24 @@ class OpenCLMathFixDiv5Bug
                 $index_a = 'grid*lda+lid+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "         __local ${type} * local_work)\n".
+                "         __local {$type} * local_work)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
-                "    __local ${type} max;\n".
-                "    __local ${type} sum;\n".
+                "    __local {$type} max;\n".
+                "    __local {$type} sum;\n".
                      $this->kernelTemplateSMax(
-                         "local_work[lid] = a[${index_a}];\n",
+                         "local_work[lid] = a[{$index_a}];\n",
                          "max = local_work[0];\n",
                          $dtype
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
                      $this->kernelTemplateSSum(
-                         "local_work[lid] = exp(a[${index_a}]-max);",
+                         "local_work[lid] = exp(a[{$index_a}]-max);",
                          "sum = local_work[0];\n"
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
@@ -4452,7 +4823,7 @@ class OpenCLMathFixDiv5Bug
                 "        const uint lid = get_local_id(0);\n".
                 "        const uint lws = get_local_size(0);\n".
                 "        if(lid<total_local_items) {\n".
-                "            a[${index_a}] = exp(a[${index_a}]-max)/sum;\n".
+                "            a[{$index_a}] = exp(a[{$index_a}]-max)/sum;\n".
                 "        }\n".
                 "    }\n".
                 "}\n";
@@ -4473,8 +4844,8 @@ class OpenCLMathFixDiv5Bug
     public function softmax2(
         int $m,
         int $n,
-        Buffer $A, int $offsetA, int $ldA,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $A, int $offsetA, int $ldA,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $trans = false;
@@ -4502,7 +4873,7 @@ class OpenCLMathFixDiv5Bug
         }
         $value_size = $A->value_size();
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "softmax_M_${type}_${trans}";
+        $kernel_name = "softmax_M_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
             if($trans=='trans') {
                 $index_a = '(seg*lws+lid)*lda+grid+offset_a';
@@ -4510,27 +4881,27 @@ class OpenCLMathFixDiv5Bug
                 $index_a = 'grid*lda+(seg*lws+lid)+offset_a';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
                 "    const        uint segments,\n".
-                "        __global ${type} * a,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint lda,\n".
-                "         __local ${type} * local_work,\n".
-                "         __local ${type} * seg_work,\n".
+                "         __local {$type} * local_work,\n".
+                "         __local {$type} * seg_work,\n".
                 "    const        uint work_items)\n".
                 "{\n".
                 "    const uint grid = get_group_id(0);\n".
-                "    __local ${type} max;\n".
-                "    __local ${type} sum;\n".
+                "    __local {$type} max;\n".
+                "    __local {$type} sum;\n".
                      $this->kernelTemplateQMax(
-                         "local_work[lid] = a[${index_a}];\n",
+                         "local_work[lid] = a[{$index_a}];\n",
                          "max = seg_work[0];\n",
                          $dtype
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
                      $this->kernelTemplateQSum(
-                         "local_work[lid] = exp(a[${index_a}]-max);",
+                         "local_work[lid] = exp(a[{$index_a}]-max);",
                          "sum = seg_work[0];\n"
                      ).
                      "barrier(CLK_LOCAL_MEM_FENCE);\n".
@@ -4542,7 +4913,7 @@ class OpenCLMathFixDiv5Bug
                 "        uint left_local_items = total_local_items;\n".
                 "        for(int seg=0;seg<seg_count;seg++) {\n".
                 "            if(lid<local_items) {\n".
-                "                a[${index_a}] = exp(a[${index_a}]-max)/sum;\n".
+                "                a[{$index_a}] = exp(a[{$index_a}]-max)/sum;\n".
                 "            }\n".
                 "            barrier(CLK_LOCAL_MEM_FENCE);\n".
                 "            left_local_items -= local_items;\n".
@@ -4580,15 +4951,15 @@ class OpenCLMathFixDiv5Bug
         int $n,
         int $k,
         int $size,
-        Buffer $A, int $offsetA, int $incA,
-        Buffer $Y, int $offsetY, int $incY,
+        BufferInterface $A, int $offsetA, int $incA,
+        BufferInterface $Y, int $offsetY, int $incY,
         int $startAxis0,
         int $sizeAxis0,
         int $startAxis1,
         int $sizeAxis1,
         int $startAxis2,
         int $sizeAxis2,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         if($A->dtype()!=$Y->dtype()) {
@@ -4608,11 +4979,8 @@ class OpenCLMathFixDiv5Bug
         } else {
             $direction = 'f';
         }
-        if($size>$this->maxWorkItem[0]) {
-            throw new InvalidArgumentException("size is too big. size=".$size);
-        }
         $type = $this->dtypeToOpenCLType[$A->dtype()];
-        $kernel_name = "slice_${type}_${direction}_${op}";
+        $kernel_name = "slice_{$type}_{$direction}_{$op}";
         if(!isset($this->sources[$kernel_name])) {
             $y_variable = 'y[i0*i1size*i2size*size+'.
                             'i1*i2size*size+'.
@@ -4637,13 +5005,13 @@ class OpenCLMathFixDiv5Bug
                 $operator = '=';
             }
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        uint n,\n".
                 "    const        uint k,\n".
-                "    $a_arg_type ${type} * a,\n".
+                "    $a_arg_type {$type} * a,\n".
                 "    const        uint offset_a,\n".
                 "    const        uint inca,\n".
-                "    $y_arg_type ${type} * y,\n".
+                "    $y_arg_type {$type} * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint incy,\n".
                 "    const        uint startAxis0,\n".
@@ -4654,32 +5022,32 @@ class OpenCLMathFixDiv5Bug
                 "    const        uint i2size,\n".
                 "    const        uint size)\n".
                 "{\n".
-                "    uint lid = get_local_id(0);\n".
-                "    uint i2 = get_group_id(0);\n".
-                "    uint i1 = get_global_id(1);\n".
-                "    uint i0 = get_global_id(2);\n".
-                "    ${to} ${operator} ${from};\n".
+                "    uint gid0 = get_global_id(0);\n".
+                "    uint gid1 = get_global_id(1);\n".
+                    $this->splitPointer('lid','i2','gid0','size').
+                    $this->splitPointer('i1','i0','gid1','i1size').
+                "    {$to} {$operator} {$from};\n".
                 "}\n";
         }
 
         $kernel = $this->createKernel($kernel_name);
-        $kernel->setArg(0,$n,NDArray::uint32);          // n
-        $kernel->setArg(1,$k,NDArray::uint32);          // k
-        $kernel->setArg(2,$A);                          // a
-        $kernel->setArg(3,$offsetA,NDArray::uint32);    // offset_a
-        $kernel->setArg(4,$incA,NDArray::uint32);       // inca
-        $kernel->setArg(5,$Y);                          // y
-        $kernel->setArg(6,$offsetY,NDArray::uint32);    // offset_y
-        $kernel->setArg(7,$incY,NDArray::uint32);       // incy
-        $kernel->setArg(8,$startAxis0,NDArray::uint32); // startAxis0
-        $kernel->setArg(9,$startAxis1,NDArray::uint32); // startAxis1
-        $kernel->setArg(10,$startAxis2,NDArray::uint32);// startAxis2
-        $kernel->setArg(11,$sizeAxis0,NDArray::uint32); // i0size
-        $kernel->setArg(12,$sizeAxis1,NDArray::uint32); // i1size
-        $kernel->setArg(13,$sizeAxis2,NDArray::uint32); // i2size
-        $kernel->setArg(14,$size,NDArray::uint32);      // size
-        $global_work_size = [$size*$sizeAxis2, $sizeAxis1, $sizeAxis0];
-        $local_work_size = [$size,1,1];
+        $kernel->setArg(0,$n,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$A);
+        $kernel->setArg(3,$offsetA,NDArray::uint32);
+        $kernel->setArg(4,$incA,NDArray::uint32);
+        $kernel->setArg(5,$Y);
+        $kernel->setArg(6,$offsetY,NDArray::uint32);
+        $kernel->setArg(7,$incY,NDArray::uint32);
+        $kernel->setArg(8,$startAxis0,NDArray::uint32);
+        $kernel->setArg(9,$startAxis1,NDArray::uint32);
+        $kernel->setArg(10,$startAxis2,NDArray::uint32);
+        $kernel->setArg(11,$sizeAxis0,NDArray::uint32);
+        $kernel->setArg(12,$sizeAxis1,NDArray::uint32);
+        $kernel->setArg(13,$sizeAxis2,NDArray::uint32);
+        $kernel->setArg(14,$size,NDArray::uint32);
+        $global_work_size = [$size*$sizeAxis2,$sizeAxis1*$sizeAxis0];
+        $local_work_size=null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
     }
@@ -4689,12 +5057,12 @@ class OpenCLMathFixDiv5Bug
      */
     public function searchsorted(
         int $m,
-        Buffer $A, int $offsetA, int $incA, // float
         int $n,
-        Buffer $X, int $offsetX, int $incX, // float
+        BufferInterface $A, int $offsetA, int $ldA, // float
+        BufferInterface $X, int $offsetX, int $incX, // float
         bool $right,
-        Buffer $Y, int $offsetY, int $incY, // int
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $Y, int $offsetY, int $incY, // int
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -4716,46 +5084,48 @@ class OpenCLMathFixDiv5Bug
             $cmp = ">";
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "searchsorted_${type}_${subname}";
+        $kernel_name = "searchsorted_{$type}_{$subname}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        uint m,\n".
-                "        __global ${type} * a,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        uint n,\n".
+                "        __global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "    const        uint inca,\n".
-                "        __global ${type} * x,\n".
+                "    const        uint lda,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx,\n".
                 "        __global uint * y,\n".
                 "    const        uint offset_y,\n".
                 "    const        uint incy)\n".
                 "{\n".
+                "    uint ida = get_global_id(0)*lda+offset_a;\n".
                 "    uint idx = get_global_id(0)*incx+offset_x;\n".
                 "    uint idy = get_global_id(0)*incy+offset_y;\n".
                 "    uint i;\n".
-                "    ${type} v = x[idx];\n".
-                "    for(i=0;i<m;i++) {\n".
-                "        if(!(v ${cmp} a[offset_a+i*inca])) {\n".
+                "    {$type} v = x[idx];\n".
+                "    for(i=0;i<n;i++) {\n".
+                "        if(!(v {$cmp} a[ida])) {\n".
                 "            break;\n".
                 "        }\n".
+                "        ++ida;\n".
                 "    }\n".
                 "    y[idy] = i;\n".
                 "}\n";
         }
 
         $kernel = $this->createKernel($kernel_name);
-        $kernel->setArg(0,$m,NDArray::uint32);
+        $kernel->setArg(0,$n,NDArray::uint32);
         $kernel->setArg(1,$A);
         $kernel->setArg(2,$offsetA,NDArray::uint32);
-        $kernel->setArg(3,$incA,NDArray::uint32);
+        $kernel->setArg(3,$ldA,NDArray::uint32);
         $kernel->setArg(4,$X);
         $kernel->setArg(5,$offsetX,NDArray::uint32);
         $kernel->setArg(6,$incX,NDArray::uint32);
         $kernel->setArg(7,$Y);
         $kernel->setArg(8,$offsetY,NDArray::uint32);
         $kernel->setArg(9,$incY,NDArray::uint32);
-        $global_work_size = [$n];
+        $global_work_size = [$m];
         $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
             $events,$waitEvents);
     }
@@ -4765,11 +5135,11 @@ class OpenCLMathFixDiv5Bug
      */
     public function cumsum(
         int $n,
-        Buffer $X, int $offsetX, int $incX, // float
+        BufferInterface $X, int $offsetX, int $incX, // float
         bool $exclusive,
         bool $reverse,
-        Buffer $Y, int $offsetY, int $incY, // float
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $Y, int $offsetY, int $incY, // float
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -4796,21 +5166,21 @@ class OpenCLMathFixDiv5Bug
             $subname = 'n';
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "cumsum_${type}_${subname}";
+        $kernel_name = "cumsum_{$type}_{$subname}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        int n,\n".
-                "        __global ${type} * x,\n".
+                "        __global {$type} * x,\n".
                 "    const        int offset_x,\n".
                 "    const        int incx,\n".
-                "        __global ${type} * y,\n".
+                "        __global {$type} * y,\n".
                 "    const        int offset_y,\n".
                 "    const        int incy)\n".
                 "{\n".
                 "    int idx = offset_x;\n".
                 "    int idy = offset_y;\n".
-                "    ${type} value = 0;\n".
+                "    {$type} value = 0;\n".
                 "    for(int i=0;i<n;i++,idx+=incx,idy+=incy) {\n".
                         $execute.
                 "    }\n".
@@ -4835,9 +5205,9 @@ class OpenCLMathFixDiv5Bug
      */
     public function nan2num(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
+        BufferInterface $X, int $offsetX, int $incX,
         float $alpha,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -4845,12 +5215,12 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "nan2num_${type}";
+        $kernel_name = "nan2num_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "    const        ${type} alpha,\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "    const        {$type} alpha,\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -4875,8 +5245,8 @@ class OpenCLMathFixDiv5Bug
      */
     public function isnan(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        EventList $events=null, EventList $waitEvents=null
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
         ) : void
     {
         $dtypeX = $X->dtype();
@@ -4884,11 +5254,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
         $type = $this->dtypeToOpenCLType[$dtypeX];
-        $kernel_name = "isnan_${type}";
+        $kernel_name = "isnan_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
-                "        __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$type} * x,\n".
                 "    const        uint offset_x,\n".
                 "    const        uint incx)\n".
                 "{\n".
@@ -4916,15 +5286,15 @@ class OpenCLMathFixDiv5Bug
         int $height,
         int $width,
         int $channels,
-        Buffer $A, int $offsetA,
-        Buffer $B, int $offsetB,
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB,
         bool $channelsFirst,
         int $heightShift,
         int $widthShift,
         bool $verticalFlip,
         bool $horizontalFlip,
         bool $rgbFlip,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         if($A->dtype()!=$B->dtype()) {
@@ -4963,10 +5333,10 @@ class OpenCLMathFixDiv5Bug
         $biasX -= $widthShift*$directionX;
 
         $type = $this->dtypeToOpenCLType[$A->dtype()];
-        $kernel_name = "imagecopy_${type}";
+        $kernel_name = "imagecopy_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-                "__kernel void ${kernel_name}(\n".
+                "__kernel void {$kernel_name}(\n".
                 "    const        int height,\n".
                 "    const        int width,\n".
                 "    const        int directionY,\n".
@@ -4977,14 +5347,15 @@ class OpenCLMathFixDiv5Bug
                 "    const        int ldX,\n".
                 "    const        int ldC,\n".
                 "    const        int rgbFlip,\n".
-                "    const global ${type} * a,\n".
+                "    const global {$type} * a,\n".
                 "    const        uint offset_a,\n".
-                "        __global ${type} * b,\n".
+                "        __global {$type} * b,\n".
                 "    const        uint offset_b)\n".
                 "{\n".
-                "    uint c = get_global_id(0);\n".
-                "    uint x = get_global_id(1);\n".
-                "    uint y = get_global_id(2);\n".
+                "    uint gid0 = get_global_id(0);\n".
+                "    uint gid1 = get_global_id(1);\n".
+                "    int c  = gid0;\n".
+                    $this->splitPointer('x','y','gid1','width').
                 "    int sy = y*directionY+biasY;\n".
                 "    int sx = x*directionX+biasX;\n".
                 "    if(sy<0) {\n".
@@ -5018,7 +5389,7 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(11,$offsetA,NDArray::uint32);
         $kernel->setArg(12,$B);
         $kernel->setArg(13,$offsetB,NDArray::uint32);
-        $global_work_size = [$channels,$width,$height];
+        $global_work_size = [$channels,$width*$height];
         $local_work_size=null;
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
@@ -5036,7 +5407,7 @@ class OpenCLMathFixDiv5Bug
     */
     public function im2col1d(
         bool $reverse,
-        Buffer $images,
+        BufferInterface $images,
         int $images_offset,
         int $images_size,
         int $batches,
@@ -5048,10 +5419,10 @@ class OpenCLMathFixDiv5Bug
         bool $channels_first,
         int $dilation_w,
         bool $cols_channels_first,
-        Buffer $cols,
+        BufferInterface $cols,
         int $cols_offset,
         int $cols_size,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         $dtype = $images->dtype();
@@ -5062,15 +5433,10 @@ class OpenCLMathFixDiv5Bug
         if($dtype==NDArray::float64) {
             $this->assertFP64();
         }
-        if($this->hasDiv5Bug) {
-            if($stride_w==5||$stride_w==9||$stride_w==10||$stride_w==17) {
-                throw new InvalidArgumentException("This OpenCL C has dividing with integer. So It can't calculate a specific stride_w: ".$stride_w);
-            }
-        }
 
-        $output_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        $output_w = intdiv(($im_w-($kernel_w-1)*$dilation_w-1),$stride_w)+1;
         if($padding) {
-            $pad_w = (int)floor((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1)/2);
+            $pad_w = intdiv((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1),2);
             $output_w = $im_w;
         } else {
             $pad_w = 0;
@@ -5091,7 +5457,7 @@ class OpenCLMathFixDiv5Bug
             $tmode = 'F';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "im2col1d_${tmode}_${type}_${channel_mode}_${cols_mode}";
+        $kernel_name = "im2col1d_{$tmode}_{$type}_{$channel_mode}_{$cols_mode}";
         if(!isset($this->sources[$kernel_name])) {
             if($reverse) {
                 $col_arg_type = 'const global';
@@ -5115,10 +5481,10 @@ class OpenCLMathFixDiv5Bug
             $input_x = '(im_x*stride_w+kernel_x*dilation_w-pad_w)';
             if($reverse) {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_w,\n".
@@ -5129,28 +5495,29 @@ class OpenCLMathFixDiv5Bug
                     "    const        uint dilation_w,\n".
                     "    const        uint output_w)\n".
                     "{\n".
-                    "    const uint channel_id = get_global_id(0);\n".
-                    "    const uint input_x = get_global_id(1);\n".
-                    "    const uint batch_id = get_global_id(2);\n".
+                    "    const uint gid0 = get_global_id(0);\n".
+                    "    const uint gid1 = get_global_id(1);\n".
+                        $this->splitPointer('channel_id','input_x','gid0','channels').
+                    "    const uint batch_id   = gid1;\n".
                     "    if(input_x<im_w && batch_id<batches){\n".
-                    "        ${type} value=0;\n".
+                    "        {$type} value=0;\n".
                     "        for(int kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
                     "            const int tmp_x = input_x-kernel_x*dilation_w+pad_w;\n".
-                    "            const int im_x = tmp_x/stride_w;\n".
-                    "            if(tmp_x%stride_w==0 &&\n".
-                    "                im_x>=0 && im_x<output_w) {\n".
-                    "                value += cols[${cols_id}];\n".
+                    "            const int im_x = tmp_x/stride_w;\n". // div5bug
+                    "            if(tmp_x%stride_w==0 &&\n". // div5bug
+                    "               im_x>=0 && im_x<output_w) {\n".
+                    "                value += cols[{$cols_id}];\n".
                     "            }\n".
                     "        }\n".
-                    "        images[${input_id}] += value;\n".
+                    "        images[{$input_id}] += value;\n".
                     "    }\n".
                     "}\n";
             } else {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_w,\n".
@@ -5161,20 +5528,21 @@ class OpenCLMathFixDiv5Bug
                     "    const        uint dilation_w,\n".
                     "    const        uint output_w)\n".
                     "{\n".
-                    "    const uint channel_id = get_global_id(0);\n".
-                    "    const uint im_x = get_global_id(1);\n".
-                    "    const uint batch_id = get_global_id(2);\n".
+                    "    const uint gid = get_global_id(0);\n".
+                        $this->splitPointer('channel_id','im_x','gid','channels').
+                    "    uint batch_id = get_global_id(1);\n".
+                    //"    uint kernel_x = get_global_id(2);\n".
                     "    if(im_x<output_w && batch_id<batches){\n".
                     "        for(uint kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
-                    "            int input_x = ${input_x};\n".
-                    "            ${type} value;\n".
+                    "            int input_x = {$input_x};\n".
+                    "            {$type} value;\n".
                     "            if(input_x>=0 && input_x<im_w) {\n".
-                    "                uint input_id = ${input_id};\n".
+                    "                uint input_id = {$input_id};\n".
                     "                value = images[input_id];\n".
                     "            } else {\n".
                     "                value = 0;\n".
                     "            }\n".
-                    "            uint cols_id = ${cols_id};\n".
+                    "            uint cols_id = {$cols_id};\n".
                     "            cols[cols_id] = value;\n".
                     "        }\n".
                     "    }\n".
@@ -5195,19 +5563,12 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(9,$pad_w,NDArray::uint32);
         $kernel->setArg(10,$dilation_w,NDArray::uint32);
         $kernel->setArg(11,$output_w,NDArray::uint32);
-        //if($reverse) {
-        //    $global_work_size = [$this->ceil($im_w*$channels,4),$this->ceil($batches,8)];
-        //    $local_work_size = [4,8];
-        //} else {
-        //    $global_work_size = [$this->ceil($output_w*$channels,4),$this->ceil($batches,8)];
-        //    $local_work_size=[4,8];
-        //}
         if($reverse) {
-            $global_work_size = [$channels,$im_w,$batches];
-            $local_work_size = null;
+            $global_work_size = [$this->ceil($im_w*$channels,4),$this->ceil($batches,8)];
+            $local_work_size = [4,8];
         } else {
-            $global_work_size = [$channels,$output_w,$batches];
-            $local_work_size = null;
+            $global_work_size = [$this->ceil($output_w*$channels,4),$this->ceil($batches,8)];
+            $local_work_size=[4,8];
         }
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
@@ -5225,7 +5586,7 @@ class OpenCLMathFixDiv5Bug
     */
     public function im2col2d(
         bool $reverse,
-        Buffer $images,
+        BufferInterface $images,
         int $images_offset,
         int $images_size,
         int $batches,
@@ -5241,10 +5602,10 @@ class OpenCLMathFixDiv5Bug
         int $dilation_h,
         int $dilation_w,
         bool $cols_channels_first,
-        Buffer $cols,
+        BufferInterface $cols,
         int $cols_offset,
         int $cols_size,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         $dtype = $images->dtype();
@@ -5256,11 +5617,11 @@ class OpenCLMathFixDiv5Bug
             $this->assertFP64();
         }
 
-        $output_h = intval(floor(($im_h-($kernel_h-1)*$dilation_h-1)/$stride_h)+1);
-        $output_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        $output_h = intdiv(($im_h-($kernel_h-1)*$dilation_h-1),$stride_h)+1;
+        $output_w = intdiv(($im_w-($kernel_w-1)*$dilation_w-1),$stride_w)+1;
         if($padding) {
-            $pad_h = (int)floor((($im_h-1)*$stride_h-$im_h+($kernel_h-1)*$dilation_h+1)/2);
-            $pad_w = (int)floor((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1)/2);
+            $pad_h = intdiv((($im_h-1)*$stride_h-$im_h+($kernel_h-1)*$dilation_h+1),2);
+            $pad_w = intdiv((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1),2);
             $output_h = $im_h;
             $output_w = $im_w;
         } else {
@@ -5281,16 +5642,8 @@ class OpenCLMathFixDiv5Bug
         } else {
             $tmode = 'F';
         }
-        if($this->hasDiv5Bug) {
-            if($stride_w==5||$stride_w==9||$stride_w==10||$stride_w==17) {
-                throw new InvalidArgumentException("This OpenCL C has dividing with integer. So It can't calculate a specific stride_w: ".$stride_w);
-            }
-            if($stride_h==5||$stride_h==9||$stride_h==10||$stride_h==17) {
-                throw new InvalidArgumentException("This OpenCL C has dividing with integer. So It can't calculate a specific stride_w: ".$stride_w);
-            }
-        }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "im2col2d_${tmode}_${type}_${channel_mode}_${cols_mode}";
+        $kernel_name = "im2col2d_{$tmode}_{$type}_{$channel_mode}_{$cols_mode}";
         if(!isset($this->sources[$kernel_name])) {
             if($channels_first) {
                 $input_id = '(((batch_id*channels+channel_id)*im_h+input_y)*im_w+input_x)';
@@ -5310,10 +5663,10 @@ class OpenCLMathFixDiv5Bug
                 $col_arg_type = 'const global';
                 $im_arg_type = '__global';
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_h,\n".
@@ -5331,34 +5684,38 @@ class OpenCLMathFixDiv5Bug
                     "    const        uint output_w\n".
                     "    )\n".
                     "{\n".
-                    "    const uint input_x = get_global_id(0);\n".
-                    "    const uint input_y = get_global_id(1);\n".
-                    "    const uint batch_id = get_global_id(2);\n".
-                    "    for(uint channel_id=0;channel_id<channels;channel_id++){\n".
-                    "        ${type} value=0;\n".
+                    "    const uint gid0 = get_global_id(0);\n".
+                    "    const uint gid1 = get_global_id(1);\n".
+                         $this->splitPointer('channel_id','input_x','gid0','channels').
+                         $this->splitPointer('input_y','batch_id','gid1','im_h').
+                    //"    const uint kernel_idx = {$kernel_idx};\n".
+                    //"    const uint kernel_y = kernel_idx/kernel_w;\n".
+                    //"    const uint kernel_x = kernel_idx%kernel_w;\n".
+                    "    if(input_x<im_w && batch_id<batches){\n".
+                    "        {$type} value=0;\n".
                     "        for(int kernel_y=0;kernel_y<kernel_h;kernel_y++) {".
                     "            for(int kernel_x=0;kernel_x<kernel_w;kernel_x++) {".
                     "                const int tmp_y = input_y-kernel_y*dilation_h+pad_h;\n".
                     "                const int tmp_x = input_x-kernel_x*dilation_w+pad_w;\n".
-                    "                const int im_y = tmp_y/stride_h;\n".
-                    "                const int im_x = tmp_x/stride_w;\n".
-                    "                if(tmp_y%stride_h==0 && tmp_x%stride_w==0 &&\n".
+                    "                const int im_y = tmp_y/stride_h;\n". // div5bug
+                    "                const int im_x = tmp_x/stride_w;\n". // div5bug
+                    "                if(tmp_y%stride_h==0 && tmp_x%stride_w==0 &&\n". // div5bug
                     "                   im_y>=0 && im_y<output_h && im_x>=0 && im_x<output_w) {\n".
-                    "                    value += cols[${cols_id}];\n".
+                    "                    value += cols[{$cols_id}];\n".
                     "                }\n".
                     "            }\n".
                     "        }\n".
-                    "        images[${input_id}] += value;\n".
+                    "        images[{$input_id}] += value;\n".
                     "    }\n".
                     "}\n";
             } else {
                 $im_arg_type = 'const global';
                 $col_arg_type = '__global';
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_h,\n".
@@ -5376,22 +5733,23 @@ class OpenCLMathFixDiv5Bug
                     "    const        uint output_w\n".
                     "    )\n".
                     "{\n".
-                    "    const uint im_x = get_global_id(0);\n".
-                    "    const uint im_y = get_global_id(1);\n".
-                    "    const uint batch_id = get_global_id(2);\n".
-                    "    for(uint channel_id=0;channel_id<channels;channel_id++){\n".
+                    "    const uint gid0 = get_global_id(0);\n".
+                    "    const uint gid1 = get_global_id(1);\n".
+                         $this->splitPointer('channel_id','im_x','gid0','channels').
+                         $this->splitPointer('im_y','batch_id','gid1','output_h').
+                    "    if(im_x<output_w && batch_id<batches){\n".
                     "        for(uint kernel_y=0;kernel_y<kernel_h;kernel_y++) {\n".
                     "            for(uint kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
-                    "                int input_y = ${input_y};\n".
-                    "                int input_x = ${input_x};\n".
-                    "                ${type} value;\n".
+                    "                int input_y = {$input_y};\n".
+                    "                int input_x = {$input_x};\n".
+                    "                {$type} value;\n".
                     "                if(input_y>=0 && input_y<im_h && input_x>=0 && input_x<im_w) {\n".
-                    "                    uint input_id = ${input_id};\n".
+                    "                    uint input_id = {$input_id};\n".
                     "                    value = images[input_id];\n".
                     "                } else {\n".
                     "                    value = 0;\n".
                     "                }\n".
-                    "                uint cols_id = ${cols_id};\n".
+                    "                uint cols_id = {$cols_id};\n".
                     "                cols[cols_id] = value;\n".
                     "            }\n".
                     "        }\n".
@@ -5418,21 +5776,14 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(15,$dilation_w,NDArray::uint32);
         $kernel->setArg(16,$output_h,NDArray::uint32);
         $kernel->setArg(17,$output_w,NDArray::uint32);
-        //if($reverse) {
-        //    $global_work_size = [$this->ceil($im_w*$channels,4),$this->ceil($batches*$im_h,8)];
-        //    $local_work_size = [4,8];
-        //} else {
-        //    $global_work_size = [$this->ceil($output_w*$channels,4),$this->ceil($batches*$output_h,8)];
-        //    $local_work_size=[4,8];
-        //    //$global_work_size = [$output_w*$channels,$batches*$output_h];
-        //    //$local_work_size=null;
-        //}
         if($reverse) {
-            $global_work_size = [$im_w,$im_h,$batches];
-            $local_work_size = null;
+            $global_work_size = [$this->ceil($im_w*$channels,4),$this->ceil($batches*$im_h,8)];
+            $local_work_size = [4,8];
         } else {
-            $global_work_size = [$output_w,$output_h,$batches];
-            $local_work_size = null;
+            $global_work_size = [$this->ceil($output_w*$channels,4),$this->ceil($batches*$output_h,8)];
+            $local_work_size=[4,8];
+            //$global_work_size = [$output_w*$channels,$batches*$output_h];
+            //$local_work_size=null;
         }
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
@@ -5451,7 +5802,7 @@ class OpenCLMathFixDiv5Bug
     */
     public function im2col3d(
         bool $reverse,
-        Buffer $images,
+        BufferInterface $images,
         int $images_offset,
         int $images_size,
         int $batches,
@@ -5471,10 +5822,10 @@ class OpenCLMathFixDiv5Bug
         int $dilation_h,
         int $dilation_w,
         bool $cols_channels_first,
-        Buffer $cols,
+        BufferInterface $cols,
         int $cols_offset,
         int $cols_size,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         $dtype = $images->dtype();
@@ -5485,25 +5836,14 @@ class OpenCLMathFixDiv5Bug
         if($dtype==NDArray::float64) {
             $this->assertFP64();
         }
-        if($this->hasDiv5Bug) {
-            if($stride_w==5||$stride_w==9||$stride_w==10||$stride_w==17) {
-                throw new InvalidArgumentException("This OpenCL C has dividing with integer. So It can't calculate a specific stride_w: ".$stride_w);
-            }
-            if($stride_h==5||$stride_h==9||$stride_h==10||$stride_h==17) {
-                throw new InvalidArgumentException("This OpenCL C has dividing with integer. So It can't calculate a specific stride_w: ".$stride_h);
-            }
-            if($stride_d==5||$stride_d==9||$stride_d==10||$stride_d==17) {
-                throw new InvalidArgumentException("This OpenCL C has dividing with integer. So It can't calculate a specific stride_w: ".$stride_d);
-            }
-        }
 
-        $output_d = intval(floor(($im_d-($kernel_d-1)*$dilation_d-1)/$stride_d)+1);
-        $output_h = intval(floor(($im_h-($kernel_h-1)*$dilation_h-1)/$stride_h)+1);
-        $output_w = intval(floor(($im_w-($kernel_w-1)*$dilation_w-1)/$stride_w)+1);
+        $output_d = intdiv(($im_d-($kernel_d-1)*$dilation_d-1),$stride_d)+1;
+        $output_h = intdiv(($im_h-($kernel_h-1)*$dilation_h-1),$stride_h)+1;
+        $output_w = intdiv(($im_w-($kernel_w-1)*$dilation_w-1),$stride_w)+1;
         if($padding) {
-            $pad_d = (int)floor((($im_d-1)*$stride_d-$im_d+($kernel_d-1)*$dilation_d+1)/2);
-            $pad_h = (int)floor((($im_h-1)*$stride_h-$im_h+($kernel_h-1)*$dilation_h+1)/2);
-            $pad_w = (int)floor((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1)/2);
+            $pad_d = intdiv((($im_d-1)*$stride_d-$im_d+($kernel_d-1)*$dilation_d+1),2);
+            $pad_h = intdiv((($im_h-1)*$stride_h-$im_h+($kernel_h-1)*$dilation_h+1),2);
+            $pad_w = intdiv((($im_w-1)*$stride_w-$im_w+($kernel_w-1)*$dilation_w+1),2);
             $output_d = $im_d;
             $output_h = $im_h;
             $output_w = $im_w;
@@ -5527,7 +5867,7 @@ class OpenCLMathFixDiv5Bug
             $tmode = 'F';
         }
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "im2col3d_${tmode}_${type}_${channel_mode}_${cols_mode}";
+        $kernel_name = "im2col3d_{$tmode}_{$type}_{$channel_mode}_{$cols_mode}";
         if(!isset($this->sources[$kernel_name])) {
             if($reverse) {
                 $col_arg_type = 'const global';
@@ -5553,10 +5893,10 @@ class OpenCLMathFixDiv5Bug
             $input_x = '(im_x*stride_w+kernel_x*dilation_w-pad_w)';
             if($reverse) {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_d,\n".
@@ -5579,42 +5919,41 @@ class OpenCLMathFixDiv5Bug
                     "    const        uint output_h,\n".
                     "    const        uint output_w)\n".
                     "{\n".
-                    "    const uint input_y = get_global_id(0);\n".
-                    "    const uint input_z = get_global_id(1);\n".
-                    "    const uint batch_id = get_global_id(2);\n".
-                         //$this->splitPointer('channel_id','input_x','gid0','channels').
-                         //$this->splitPointer('input_y','input_z','gid1','im_h').
-                    "    for(uint input_x=0;input_x<im_w;input_x++){\n".
-                    "        for(uint channel_id=0;channel_id<channels;channel_id++){\n".
-                    "            ${type} value=0;\n".
-                    "            for(int kernel_z=0;kernel_z<kernel_d;kernel_z++) {".
-                    "                for(int kernel_y=0;kernel_y<kernel_h;kernel_y++) {".
-                    "                    for(int kernel_x=0;kernel_x<kernel_w;kernel_x++) {".
-                    "                        const int tmp_z = input_z-kernel_z*dilation_d+pad_d;\n".
-                    "                        const int tmp_y = input_y-kernel_y*dilation_h+pad_h;\n".
-                    "                        const int tmp_x = input_x-kernel_x*dilation_w+pad_w;\n".
-                    "                        const int im_z = tmp_z/stride_d;\n".
-                    "                        const int im_y = tmp_y/stride_h;\n".
-                    "                        const int im_x = tmp_x/stride_w;\n".
-                    "                        if(tmp_z%stride_d==0 && tmp_y%stride_h==0 && tmp_x%stride_w==0 &&\n".
-                    "                            im_z>=0 && im_z<output_d &&\n".
-                    "                            im_y>=0 && im_y<output_h &&\n".
-                    "                            im_x>=0 && im_x<output_w) {\n".
-                    "                            value += cols[${cols_id}];\n".
-                    "                        }\n".
+                    "    const uint gid0 = get_global_id(0);\n".
+                    "    const uint gid1 = get_global_id(1);\n".
+                    "    const uint gid2 = get_global_id(2);\n".
+                         $this->splitPointer('channel_id','input_x','gid0','channels').
+                         $this->splitPointer('input_y','input_z','gid1','im_h').
+                    "    const int batch_id   = gid2;\n".
+                    "    if(input_x<im_w && input_z<im_d && batch_id<batches){\n".
+                    "        {$type} value=0;\n".
+                    "        for(int kernel_z=0;kernel_z<kernel_d;kernel_z++) {".
+                    "            for(int kernel_y=0;kernel_y<kernel_h;kernel_y++) {".
+                    "                for(int kernel_x=0;kernel_x<kernel_w;kernel_x++) {".
+                    "                    const int tmp_z = input_z-kernel_z*dilation_d+pad_d;\n".
+                    "                    const int tmp_y = input_y-kernel_y*dilation_h+pad_h;\n".
+                    "                    const int tmp_x = input_x-kernel_x*dilation_w+pad_w;\n".
+                    "                    const int im_z = tmp_z/stride_d;\n". // div5bug
+                    "                    const int im_y = tmp_y/stride_h;\n". // div5bug
+                    "                    const int im_x = tmp_x/stride_w;\n". // div5bug
+                    "                    if(tmp_z%stride_d==0 && tmp_y%stride_h==0 && tmp_x%stride_w==0 &&\n". // div5bug
+                    "                        im_z>=0 && im_z<output_d &&\n".
+                    "                        im_y>=0 && im_y<output_h &&\n".
+                    "                        im_x>=0 && im_x<output_w) {\n".
+                    "                        value += cols[{$cols_id}];\n".
                     "                    }\n".
                     "                }\n".
                     "            }\n".
-                    "            images[${input_id}] += value;\n".
                     "        }\n".
+                    "        images[{$input_id}] += value;\n".
                     "    }\n".
                     "}\n";
             } else {
                 $this->sources[$kernel_name] =
-                    "__kernel void ${kernel_name}(\n".
-                    "    $im_arg_type ${type} * images,\n".
+                    "__kernel void {$kernel_name}(\n".
+                    "    $im_arg_type {$type} * images,\n".
                     "    const        uint offset_images,\n".
-                    "    $col_arg_type ${type} * cols,\n".
+                    "    $col_arg_type {$type} * cols,\n".
                     "    const        uint offset_cols,\n".
                     "    const        uint batches,\n".
                     "    const        uint im_d,\n".
@@ -5637,29 +5976,28 @@ class OpenCLMathFixDiv5Bug
                     "    const        uint output_h,\n".
                     "    const        uint output_w)\n".
                     "{\n".
-                    "    const uint im_y = get_global_id(0);\n".
-                    "    const uint im_z = get_global_id(1);\n".
-                    "    const uint batch_id = get_global_id(2);\n".
-                         //$this->splitPointer('channel_id','im_x','gid0','channels').
-                         //$this->splitPointer('im_y','im_z','gid1','output_h').
-                    "    for(uint im_x=0;im_x<output_w;im_x++){\n".
-                    "        for(uint channel_id=0;channel_id<channels;channel_id++){\n".
-                    "            for(uint kernel_z=0;kernel_z<kernel_d;kernel_z++) {\n".
-                    "                for(uint kernel_y=0;kernel_y<kernel_h;kernel_y++) {\n".
-                    "                    for(uint kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
-                    "                        int input_z = ${input_z};\n".
-                    "                        int input_y = ${input_y};\n".
-                    "                        int input_x = ${input_x};\n".
-                    "                        ${type} value;\n".
-                    "                        if(input_z>=0 && input_z<im_d && input_y>=0 && input_y<im_h && input_x>=0 && input_x<im_w) {\n".
-                    "                            uint input_id = ${input_id};\n".
-                    "                            value = images[input_id];\n".
-                    "                        } else {\n".
-                    "                            value = 0;\n".
-                    "                        }\n".
-                    "                        uint cols_id = ${cols_id};\n".
-                    "                        cols[cols_id] = value;\n".
+                    "    const uint gid0 = get_global_id(0);\n".
+                    "    const uint gid1 = get_global_id(1);\n".
+                    "    const uint gid2 = get_global_id(2);\n".
+                         $this->splitPointer('channel_id','im_x','gid0','channels').
+                         $this->splitPointer('im_y','im_z','gid1','output_h').
+                    "    const int batch_id =   gid2;\n".
+                    "    if(im_x<output_w && im_z<output_d && batch_id<batches){\n".
+                    "        for(uint kernel_z=0;kernel_z<kernel_d;kernel_z++) {\n".
+                    "            for(uint kernel_y=0;kernel_y<kernel_h;kernel_y++) {\n".
+                    "                for(uint kernel_x=0;kernel_x<kernel_w;kernel_x++) {\n".
+                    "                    int input_z = {$input_z};\n".
+                    "                    int input_y = {$input_y};\n".
+                    "                    int input_x = {$input_x};\n".
+                    "                    {$type} value;\n".
+                    "                    if(input_z>=0 && input_z<im_d && input_y>=0 && input_y<im_h && input_x>=0 && input_x<im_w) {\n".
+                    "                        uint input_id = {$input_id};\n".
+                    "                        value = images[input_id];\n".
+                    "                    } else {\n".
+                    "                        value = 0;\n".
                     "                    }\n".
+                    "                    uint cols_id = {$cols_id};\n".
+                    "                    cols[cols_id] = value;\n".
                     "                }\n".
                     "            }\n".
                     "        }\n".
@@ -5694,11 +6032,11 @@ class OpenCLMathFixDiv5Bug
         $kernel->setArg(22,$output_h,NDArray::uint32);
         $kernel->setArg(23,$output_w,NDArray::uint32);
         if($reverse) {
-            $global_work_size = [$im_h,$im_d,$batches];
-            $local_work_size = null;
+            $global_work_size = [$this->ceil($channels*$im_w,2),$this->ceil($im_h*$im_d,2),$this->ceil($batches,8)];
+            $local_work_size=[2,2,8];
         } else {
-            $global_work_size = [$output_h,$output_d,$batches];
-            $local_work_size = null;
+            $global_work_size = [$this->ceil($output_w*$channels,2),$this->ceil($output_h*$output_d,2),$this->ceil($batches,8)];
+            $local_work_size=[2,2,8];
         }
         $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
             $events,$waitEvents);
@@ -5709,11 +6047,11 @@ class OpenCLMathFixDiv5Bug
     */
     public function randomUniform(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
+        BufferInterface $X, int $offsetX, int $incX,
         $low,
         $high,
         int $seed,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         $dtype = $X->dtype();
@@ -5723,7 +6061,7 @@ class OpenCLMathFixDiv5Bug
         $isInt = array_key_exists($dtype,$this->intTypes);
         $itype = ($isInt) ? 'i' : 'f';
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "randomUniform_${type}_${itype}";
+        $kernel_name = "randomUniform_{$type}_{$itype}";
         if(!isset($this->sources[$kernel_name])) {
             if($isInt) {
                 $this->sources[$kernel_name] =
@@ -5736,17 +6074,17 @@ class OpenCLMathFixDiv5Bug
                 "    seed = seed ^ (seed >> 15);\n".
                 "    return seed;\n".
                 "}\n".
-                "__kernel void ${kernel_name}(const uint seed,\n".
-                "                      const ${type} low,\n".
-                "                      const ${type} high,\n".
-                "                    __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(const uint seed,\n".
+                "                      const {$type} low,\n".
+                "                      const {$type} high,\n".
+                "                    __global {$type} * x,\n".
                 "                      const uint offsetX,\n".
                 "                      const uint incX)\n".
                 "{\n".
                 "   uint gid = get_global_id(0);\n".
                 "   uint randmax = 0;\n".
                 "   randmax--;\n".
-                "   ${type} randx = (${type})floor((float)wang_hash(gid+seed)*\n".
+                "   {$type} randx = ({$type})floor((float)wang_hash(gid+seed)*\n".
                 "                         ((float)(high+1-low)/(float)randmax)+(float)low);\n".
                 "   if(randx>=high) {\n".
                 "       randx = high;\n".
@@ -5764,18 +6102,18 @@ class OpenCLMathFixDiv5Bug
                 "    seed = seed ^ (seed >> 15);\n".
                 "    return seed;\n".
                 "}\n".
-                "__kernel void ${kernel_name}(const uint seed,\n".
-                "                      const ${type} low,\n".
-                "                      const ${type} high,\n".
-                "                    __global ${type} * x,\n".
+                "__kernel void {$kernel_name}(const uint seed,\n".
+                "                      const {$type} low,\n".
+                "                      const {$type} high,\n".
+                "                    __global {$type} * x,\n".
                 "                      const uint offsetX,\n".
                 "                      const uint incX)\n".
                 "{\n".
                 "   uint gid = get_global_id(0);\n".
                 "   uint randmax = 0;\n".
                 "   randmax--;\n".
-                "   ${type} randx = (${type})((${type})wang_hash(gid+seed)*\n".
-                "                         ((high-low)/(${type})randmax)+low);\n".
+                "   {$type} randx = ({$type})(({$type})wang_hash(gid+seed)*\n".
+                "                         ((high-low)/({$type})randmax)+low);\n".
                 "   x[offsetX+gid*incX] = randx;\n".
                 "}\n";
             }
@@ -5800,11 +6138,11 @@ class OpenCLMathFixDiv5Bug
     */
     public function randomNormal(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
+        BufferInterface $X, int $offsetX, int $incX,
         float $mean,
         float $scale,
         int $seed,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         $dtype = $X->dtype();
@@ -5816,7 +6154,7 @@ class OpenCLMathFixDiv5Bug
         }
         $isInt = array_key_exists($dtype,$this->intTypes);
         $type = $this->dtypeToOpenCLType[$dtype];
-        $kernel_name = "randomNormal_${type}";
+        $kernel_name = "randomNormal_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $PI = ($dtype==NDArray::float32) ? 'M_PI_F' : 'M_PI';
             $this->sources[$kernel_name] =
@@ -5829,10 +6167,10 @@ class OpenCLMathFixDiv5Bug
             "    seed = seed ^ (seed >> 15);\n".
             "    return seed;\n".
             "}\n".
-            "__kernel void ${kernel_name}(const uint seed,\n".
-            "                      const ${type} mean,\n".
-            "                      const ${type} scale,\n".
-            "                    __global ${type} * x,\n".
+            "__kernel void {$kernel_name}(const uint seed,\n".
+            "                      const {$type} mean,\n".
+            "                      const {$type} scale,\n".
+            "                    __global {$type} * x,\n".
             "                      const uint offsetX,\n".
             "                      const uint incX)\n".
             "{\n".
@@ -5841,9 +6179,9 @@ class OpenCLMathFixDiv5Bug
             "   randmax--;\n".
             "   uint seed1 = wang_hash(gid+seed);\n".
             "   uint seed2 = wang_hash(gid+seed1);\n".
-            "   ${type} randx = (${type})seed1/(${type})randmax;\n".
-            "   ${type} randy = (${type})seed2/(${type})randmax;\n".
-            "   x[offsetX+gid*incX] = sqrt(-2*log(randx))*cos(2*${PI}*randy)*scale+mean;\n".
+            "   {$type} randx = ({$type})seed1/({$type})randmax;\n".
+            "   {$type} randy = ({$type})seed2/({$type})randmax;\n".
+            "   x[offsetX+gid*incX] = sqrt(-2*log(randx))*cos(2*{$PI}*randy)*scale+mean;\n".
             "}\n";
         }
 
@@ -5863,9 +6201,9 @@ class OpenCLMathFixDiv5Bug
 
     public function fill(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
+        BufferInterface $X, int $offsetX, int $incX,
         $pattern,
-        EventList $events=null, EventList $waitEvents=null
+        object $events=null, object $waitEvents=null
         )
     {
         if(!is_scalar($pattern)) {
@@ -5887,14 +6225,14 @@ class OpenCLMathFixDiv5Bug
         } else {
             $pattern = (float)$pattern;
         }
-        $kernel_name = "fill_${type}";
+        $kernel_name = "fill_{$type}";
         if(!isset($this->sources[$kernel_name])) {
             $this->sources[$kernel_name] =
-            "__kernel void ${kernel_name}(\n".
-            "                    __global ${type} * x,\n".
+            "__kernel void {$kernel_name}(\n".
+            "                    __global {$type} * x,\n".
             "                      const uint offsetX,\n".
             "                      const uint incX,\n".
-            "                      const ${type} pattern)\n".
+            "                      const {$type} pattern)\n".
             "{\n".
             "   uint gid = get_global_id(0);\n".
             "   x[offsetX+gid*incX] = pattern;\n".
@@ -5913,4 +6251,285 @@ class OpenCLMathFixDiv5Bug
             $events,$waitEvents);
     }
 
+    protected function toHostBuffer(
+        BufferInterface $clBuffer,
+        int $offset,
+        bool $blocking_read=true,object $waitEvents=null,
+        EventList &$events=null) : NDArray
+    {
+        $dtype = $clBuffer->dtype();
+        $bytes = $clBuffer->bytes();
+        $valueSize = $clBuffer->value_size();
+        $size = $clBuffer->count();
+        $hostBuffer = $this->newHostBuffer($size,$dtype);
+        $event = $clBuffer->read($this->queue,$hostBuffer,$bytes,
+            $offset*$valueSize,$hostoffset=0,$blocking_read,$waitEvents);
+        $events = $event;
+        return $hostBuffer;
+    }
+
+    public function transpose(
+        AnyBuffer $shape,   // DeviceBuffer or HostBuffer
+        AnyBuffer $perm,    // DeviceBuffer or HostBuffer
+        BufferInterface $A, int $offsetA,
+        BufferInterface $B, int $offsetB, 
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtype = $A->dtype();
+        if($dtype==NDArray::float64) {
+            $this->assertFP64();
+        }
+        $isInt = array_key_exists($dtype,$this->intTypes);
+        $type = $this->dtypeToOpenCLType[$dtype];
+        $ndim = count($shape);
+
+        // check shape
+        if($shape->dtype()!=NDArray::int32) {
+            throw new InvalidArgumentException('data type of shape buffer must be int32.');
+        }
+        $orgShape = $shape;
+        if($shape instanceof BufferInterface) {
+            $shape = $this->toHostBuffer($shape,0);
+        }
+        $size = 1;
+        for($i=0;$i<$ndim;$i++) {
+            $size *= $shape[$i];
+        }
+        
+        // check shape
+        if($ndim!=count($perm)) {
+            throw new InvalidArgumentException('matrix shape and perm must be same size.');
+        }
+        if($perm->dtype()!=NDArray::int32) {
+            throw new InvalidArgumentException('data type of perm buffer must be int32.');
+        }
+        $orgPerm = $perm;
+        if($perm instanceof BufferInterface) {
+            $perm = $this->toHostBuffer($perm,0);
+        }
+
+        if($dtype!=$B->dtype()) {
+            throw new InvalidArgumentException("Unmatch data type for A and B.".
+            $this->dtypeToString($dtype).",".$this->dtypeToString($cols->dtype()));
+        }
+
+        $strides = $this->newHostBuffer($ndim,NDArray::int32);
+        $targetStrides = $this->newHostBuffer($ndim,NDArray::int32);
+        $stride = 1;
+        $targetStride = 1;
+        for($dimDepth=$ndim-1;$dimDepth>=0;$dimDepth--) {
+            $strides[$dimDepth] = $stride;
+            $stride *= $shape[$dimDepth];
+            $targDepth = $perm[$dimDepth];
+            if($targDepth>=$ndim) {
+                throw new InvalidArgumentException('perm contained an out-of-bounds axis.');
+            }
+            $targetStrides[$targDepth] = $targetStride;
+            $targetStride *= $shape[$targDepth];
+        }
+        if($stride!=$targetStride) {
+            throw new InvalidArgumentException('Perm contained duplicate axis.');
+        }
+    
+        if($dtype==NDArray::bool) {
+            $dtype = NDArray::uint8;
+        }
+
+        $repeat = $shape[0];
+        $stride = $strides[0];
+        $targetStride = $targetStrides[0];
+
+        $shape = $orgShape;
+        if(!($shape instanceof DeviceBuffer)) {
+            $valueSize = $shape->value_size();
+            $shape = $this->newBuffer(
+                count($shape)*$valueSize,
+                OpenCL::CL_MEM_READ_ONLY|OpenCL::CL_MEM_COPY_HOST_PTR,
+                $shape, 0,
+                $shape->dtype());
+        }
+
+        $valueSize = $strides->value_size();
+        $strides = $this->newBuffer(
+            $strides->count()*$valueSize,
+            OpenCL::CL_MEM_READ_ONLY|OpenCL::CL_MEM_COPY_HOST_PTR,
+            $strides, 0,
+            $strides->dtype()
+        );
+        $valueSize = $strides->value_size();
+        $targetStrides = $this->newBuffer(
+            $targetStrides->count()*$valueSize,
+            OpenCL::CL_MEM_READ_ONLY|OpenCL::CL_MEM_COPY_HOST_PTR,
+            $targetStrides, 0,
+            $targetStrides->dtype()
+        );
+
+        $kernel_name = "transpose_{$type}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+            "void {$kernel_name}_copy(\n".
+            "                      const  int n,\n".
+            "                    __global {$type} * a,\n".
+            "                             int offsetA,\n".
+            "                      const  int incA,\n".
+            "                    __global {$type} * b,\n".
+            "                             int offsetB,\n".
+            "                      const  int incB)\n".
+            "{\n".
+            "    for(int i=0;i<n;i++,offsetA+=incA,offsetB+=incB) {\n".
+            "        b[offsetB] = a[offsetA];\n".
+            "    }\n".
+            "}\n".
+            "__kernel void {$kernel_name}(\n".
+            "                      const  int ndim,\n".
+            "                    __global int * shape,\n".
+            "                    __global int * strides,\n".
+            "                    __global int * targetStrides,\n".
+            "                    __global {$type} * a,\n".
+            "                             int offsetA,\n".
+            "                    __global {$type} * b,\n".
+            "                             int offsetB,\n".
+            "                    __local {$type} * stackPos,\n".
+            "                    __local {$type} * stackOfsA,\n".
+            "                    __local {$type} * stackOfsB)\n".
+            "{\n".
+            //"   const int dbg = -1;"."\n".
+            "   const int gid = get_global_id(0);\n".
+            "   const int surface = 1;\n".
+            "   const int bed = 2;\n".
+            "   int depth = surface;\n".
+            "   int pos = 0;\n".
+            //'   if(gid==dbg) printf("start kernel(%d)\n",gid);'."\n".
+            "   offsetA = offsetA+strides[0]*gid;\n".
+            "   offsetB = offsetB+targetStrides[0]*gid;\n".
+            "   if(depth>=ndim) {\n".
+            "       b[offsetB] = a[offsetA];\n".
+            "       return;\n".
+            "   }\n".
+            "   while(depth>=surface) {\n".
+            //'       if(gid==dbg) printf("top(%d):  dep=%d,pos=%d,rep=%d,ofsA=%d,ofsB=%d,st=%d,ta=%d\n",'."\n".
+            //'           gid,depth,pos,shape[depth],offsetA,offsetB,strides[depth],targetStrides[depth]);'."\n".
+            "       while(depth<ndim-bed) {\n".
+            //'           if(gid==dbg) printf("push(%d): dep=%d,pos=%d,rep=%d,ofsA=%d,ofsB=%d,st=%d,ta=%d\n",'."\n".
+            //'               gid,depth,pos,shape[depth],offsetA,offsetB,strides[depth],targetStrides[depth]);'."\n".
+            "           stackPos[depth] = pos;\n".
+            "           stackOfsA[depth] = offsetA;\n".
+            "           stackOfsB[depth] = offsetB;\n".
+            "           pos = 0;\n".
+            "           depth++;\n".
+            //'           if(gid==dbg) printf("psh2(%d): dep=%d,pos=%d,rep=%d,ofsA=%d,ofsB=%d,st=%d,ta=%d\n",'."\n".
+            //'               gid,depth,pos,shape[depth],offsetA,offsetB,strides[depth],targetStrides[depth]);'."\n".
+            "       }\n".
+            "       if(depth>=ndim-bed) {\n".
+            "           int dp=0;\n".
+            "           if(ndim>2) {\n".
+            "               depth++;\n".
+            "               dp=1;\n".
+            "           }\n".
+            //'           if(gid==dbg) printf("copy(%d): dep=%d,      n=  %d,ofsA=%d,ofsB=%d,st=%d,ta=%d\n",'."\n".
+            //'               gid,depth,shape[depth],offsetA,offsetB,strides[depth],targetStrides[depth]);'."\n".
+            "           {$kernel_name}_copy(\n".
+            "               shape[depth],\n".
+            "               a,offsetA,strides[depth],\n".
+            "               b,offsetB,targetStrides[depth]\n".
+            "           );\n".
+            "           if(dp!=0) {\n".
+            "               depth--;\n".
+            "           }\n".
+            "       }\n".
+            "       while(true) {\n".
+            "           if(depth<=ndim-bed) {\n".
+            "               offsetA += strides[depth];\n".
+            "               offsetB += targetStrides[depth];\n".
+            "               pos++;\n".
+            //'               if(gid==dbg) printf("incr(%d): dep=%d,pos=%d,rep=%d,ofsA=%d,ofsB=%d,st=%d,ta=%d\n",'."\n".
+            //'                   gid,depth,pos,shape[depth],offsetA,offsetB,strides[depth],targetStrides[depth]);'."\n".
+            "               if(pos<shape[depth]) {\n".
+            "                   break;\n".
+            "               }\n".
+            "           }\n".
+            "           depth--;\n".
+            "           if(depth<surface) {\n".
+            //'               if(gid==dbg) printf("dep(%d)=%d\n",gid,depth);'."\n".
+            "               break;\n".
+            "           }\n".
+            "           pos = stackPos[depth];\n".
+            "           offsetA = stackOfsA[depth];\n".
+            "           offsetB = stackOfsB[depth];\n".
+            //'           if(gid==dbg) printf("pop(%d):  dep=%d,pos=%d,rep=%d,ofsA=%d,ofsB=%d,st=%d,ta=%d\n",'."\n".
+            //'               gid,depth,pos,shape[depth],offsetA,offsetB,strides[depth],targetStrides[depth]);'."\n".
+            "       }\n".
+            "   }\n".
+            "}\n";
+        }
+
+        $intSize = $strides->value_size();
+        $kernel = $this->createKernel($kernel_name);
+        $kernel->setArg(0,$ndim,NDArray::int32);
+        $kernel->setArg(1,$shape);
+        $kernel->setArg(2,$strides);
+        $kernel->setArg(3,$targetStrides);
+        $kernel->setArg(4,$A);
+        $kernel->setArg(5,$offsetA,NDArray::int32);
+        $kernel->setArg(6,$B);
+        $kernel->setArg(7,$offsetB,NDArray::int32);
+        $kernel->setArg(8,null,$ndim*$intSize);
+        $kernel->setArg(9,null,$ndim*$intSize);
+        $kernel->setArg(10,null,$ndim*$intSize);
+        $global_work_size = [$repeat];
+        $local_work_size = [1];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,$local_work_size,null,
+            $events,$waitEvents);
+    }
+
+    /**
+     *     X := bandpart(X,lower,upper)
+     */
+    public function bandpart(
+        int $m,
+        int $n,
+        int $k,
+        BufferInterface $A, int $offset,
+        int $lower,
+        int $upper,
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtype = $A->dtype();
+        if($dtype==NDArray::float64) {
+            $this->assertFP64();
+        }
+        $type = $this->dtypeToOpenCLType[$dtype];
+        $kernel_name = "bandpart_{$type}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void {$kernel_name}(\n".
+                "    const        int n,\n".
+                "    const        int k,\n".
+                "        __global {$type} * a,\n".
+                "    const        int offset,\n".
+                "    const        int lower,\n".
+                "    const        int upper)\n".
+                "{\n".
+                "    int idx = get_global_id(0)*n*k+offset;\n".
+                "    int i = get_global_id(1);\n".
+                "    for(int j=0;j<k;j++) {\n".
+                "        if((lower >= 0 && (i-j) > lower) || (upper >= 0 && (j-i) > upper)) {\n".
+                "            a[idx+i*k+j] = 0;\n".
+                "        }\n".
+                "    }\n".
+                "}\n";
+        }
+        $kernel = $this->createKernel($kernel_name);
+        $kernel->setArg(0,$n,NDArray::uint32);
+        $kernel->setArg(1,$k,NDArray::uint32);
+        $kernel->setArg(2,$A);
+        $kernel->setArg(3,$offset,NDArray::uint32);
+        $kernel->setArg(4,$lower,NDArray::uint32);
+        $kernel->setArg(5,$upper,NDArray::uint32);
+        $global_work_size = [$m,$n];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
+            $events,$waitEvents);
+    }
 }

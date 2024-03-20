@@ -5,17 +5,13 @@ use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Rindow\Math\Matrix\MatrixOperator;
 use ArrayObject;
-use SplFixedArray;
 use InvalidArgumentException;
 
-class Test extends TestCase
+class RandomTest extends TestCase
 {
     public function newMatrixOperator()
     {
         $mo = new MatrixOperator();
-        if(extension_loaded('rindow_openblas')) {
-            $mo->blas()->forceBlas(true);
-        }
         return $mo;
     }
 
@@ -63,7 +59,7 @@ class Test extends TestCase
     public function testChoiceFromSource()
     {
         $mo = $this->newMatrixOperator();
-        $source = $mo->array([10,11,12,13,14],NDArray::int32);
+        $source = $mo->array([10,11,12,13,14],dtype:NDArray::int32);
 
         $choice = $mo->random()->choice($source,$sampling=1);
         $this->assertTrue(is_int($choice));

@@ -1,5 +1,5 @@
 <?php
-namespace Rindow\Math\Matrix;
+namespace Rindow\Math\Matrix\Drivers\MatlibCL;
 
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\OpenCL;
