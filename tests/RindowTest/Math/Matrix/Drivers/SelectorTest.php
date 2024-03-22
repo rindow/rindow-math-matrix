@@ -20,23 +20,31 @@ class SelectorTest extends TestCase
     public function testDefault()
     {
         $ext = null;
+        $extLevel = 0;
         if(class_exists('Rindow\Math\Matrix\Drivers\MatlibExt\MatlibExt')) {
             $ext = new MatlibExt();
         }
         $ffi = null;
-        if(class_exists('Rindow\Math\Matrix\Drivers\MatlibExt\MatlibExt')) {
+        $ffiLevel = 0;
+        if(class_exists('Rindow\Math\Matrix\Drivers\MatlibFFI\MatlibFFI')) {
             $ffi = new MatlibFFI();
         }
         $php = new MatlibPhp();
         $selector = $this->newSelector();
         $service = $selector->select();
-        if($ffi!==null && $ffi->serviceLevel()<=Service::LV_BASIC && 
-          ($ext!==null && $ext->serviceLevel()>Service::LV_BASIC) ) {
-            $this->assertInstanceOf(MatlibExt::class,$service);
-        } elseif($service->serviceLevel()>=Service::LV_ADVANCED) {
+        if($ext != null) {
+            $extLevel = $ext->serviceLevel();
+        }
+        if($ffi != null) {
+            $ffiLevel = $ffi->serviceLevel();
+        }
+
+        if($ffiLevel==0 && $extLevel==0) {
+            $this->assertInstanceOf(MatlibPhp::class,$service);
+        } elseif($ffiLevel>$extLevel) {
             $this->assertInstanceOf(MatlibFFI::class,$service);
         } else {
-            $this->assertInstanceOf(MatlibPhp::class,$service);
+            $this->assertInstanceOf(MatlibExt::class,$service);
         }
     }
 

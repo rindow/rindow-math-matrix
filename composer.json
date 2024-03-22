@@ -16,5 +16,6 @@
         "psr-4": {
             "Rindow\\Math\\Matrix\\": "src/"
         }
-    }
+    },
+    "bin": [ "bin/rindow-math-matrix.bat", "bin/rindow-math-matrix" ]
 }

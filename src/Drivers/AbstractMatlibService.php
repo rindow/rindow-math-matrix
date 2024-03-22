@@ -101,11 +101,15 @@ abstract class AbstractMatlibService implements Service
 
     public function info() : string
     {
-        $info = "Service Level: ".$this->levelString[$this->serviceLevel]."\n";
-        $info .= "Buffer Factory: ".get_class($this->buffer)."\n";
-        $info .= "BLAS Driver: ".get_class($this->blas)."\n";
-        $info .= "LAPACK Driver: ".get_class($this->lapack)."\n";
-        $info .= "Math Driver: ".get_class($this->math)."\n";
+        $info =  "Service Level   : ".$this->levelString[$this->serviceLevel]."\n";
+        $info .= "Buffer Factory  : ".get_class($this->buffer)."\n";
+        $info .= "BLAS Driver     : ".get_class($this->blas)."\n";
+        $info .= "LAPACK Driver   : ".get_class($this->lapack)."\n";
+        $info .= "Math Driver     : ".get_class($this->math)."\n";
+        if($this->serviceLevel()>=Service::LV_ACCELERATED) {
+            $info .= "OpenCL Factory  : ".get_class($this->openclFactory)."\n";
+            $info .= "CLBlast Factory : ".get_class($this->clblastFactory)."\n";
+        }
         return $info;
     }
 
