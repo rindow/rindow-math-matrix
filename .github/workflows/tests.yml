@@ -1,17 +1,40 @@
 name: tests
 
-on: [push]
+on: 
+  push:
+      branches:
+          - master
 
 jobs:
-  no_ext_tests:
+  tests:
     runs-on: ubuntu-22.04
 
     strategy:
       fail-fast: true
       matrix:
         php: ['8.1','8.2','8.3']
+        #ffi: ['','ffi']
   
     steps:
+      #- name: Setup PHP ${{ matrix.php }}
+      #  uses: shivammathur/setup-php@v2
+      #  with:
+      #    php-version: ${{ matrix.php }}
+      #    # PHP Extras
+      #    coverage: none
+      #    tools: composer, phpunit:10.5
+      #    ini-values: "memory_limit=512M"
+      #    extensions: ${{ matrix.ffi }}
+
+      #- name: Install Libs
+      #  run: |
+      #    if [ 'ffi' == '${{ matrix.ffi }}' ] ; then
+      #      sudo apt install -y libopenblas-base liblapacke
+      #      wget https://github.com/rindow/rindow-matlib/releases/download/1.0.0/rindow-matlib_1.0.0_amd64.deb
+      #      sudo apt install -y ./rindow-matlib_1.0.0_amd64.deb
+      #      sudo update-alternatives --set librindowmatlib.so /usr/lib/rindowmatlib-serial/librindowmatlib.so
+      #    fi
+
       - name: Checkout codes
         uses: "actions/checkout@v4"
 
@@ -20,6 +43,14 @@ jobs:
         with:
           php_version: ${{ matrix.php }}
 
+      #- name: Composer
+      #  run: |
+      #    composer update
+      #    if [ 'ffi' == '${{ matrix.ffi }}' ] ; then
+      #      mkdir addpack
+      #      ( cd addpack && composer require rindow/rindow-math-matrix-matlibffi )
+      #    fi
+
       - name: PHPUnit Tests
         uses: php-actions/phpunit@v3
         with:
@@ -27,3 +58,6 @@ jobs:
           version: 10.5
           php_version: ${{ matrix.php }}
           memory_limit: 512M
+
+      #- name: PHPUnit Tests with ${{ matrix.ffi }}.
+      #  run: phpunit -c tests

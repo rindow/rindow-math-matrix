@@ -39,7 +39,7 @@ class SelectorTest extends TestCase
             $ffiLevel = $ffi->serviceLevel();
         }
 
-        if($ffiLevel==0 && $extLevel==0) {
+        if($ffiLevel<=Service::LV_BASIC && $extLevel<=Service::LV_BASIC) {
             $this->assertInstanceOf(MatlibPhp::class,$service);
         } elseif($ffiLevel>$extLevel) {
             $this->assertInstanceOf(MatlibFFI::class,$service);
