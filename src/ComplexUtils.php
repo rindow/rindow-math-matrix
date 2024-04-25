@@ -7,14 +7,14 @@ use Interop\Polite\Math\Matrix\NDArray;
 
 trait ComplexUtils
 {
-    protected function cbuild(float $r=null,float $i=null) : object
+    protected function cbuild(float $r=null, float $i=null) : object
     {
-        return C($r,i:$i);
+        return C($r, i:$i);
     }
 
     protected function crebuild(object $value) : object
     {
-        return C($value->real,i:$value->imag);
+        return C($value->real, i:$value->imag);
     }
 
     protected function cisobject(mixed $value) : bool
@@ -22,8 +22,8 @@ trait ComplexUtils
         if(!is_object($value)) {
             return false;
         }
-        return (property_exists($value,'real') &&
-                property_exists($value,'imag')     );
+        return (property_exists($value, 'real') &&
+                property_exists($value, 'imag'));
     }
 
     protected function cobjecttype(mixed $value) : string
@@ -56,42 +56,42 @@ trait ComplexUtils
 
     protected function cconj(object $value) : object
     {
-        return C($value->real,i:-$value->imag);
+        return C($value->real, i:-$value->imag);
     }
 
-    protected function cadd(object $x,object $y) : object
+    protected function cadd(object $x, object $y) : object
     {
         return C(
-              ($x->real+$y->real),
+            ($x->real+$y->real),
             i:($x->imag+$y->imag)
         );
     }
 
-    protected function csub(object $x,object $y) : object
+    protected function csub(object $x, object $y) : object
     {
         return C(
-              ($x->real-$y->real),
+            ($x->real-$y->real),
             i:($x->imag-$y->imag)
         );
     }
 
-    protected function cmul(object $x,object $y) : object
+    protected function cmul(object $x, object $y) : object
     {
         return C(
-              (($x->real*$y->real)-($x->imag*$y->imag)),
+            (($x->real*$y->real)-($x->imag*$y->imag)),
             i:(($x->real*$y->imag)+($x->imag*$y->real))
         );
     }
 
-    protected function cdiv(object $x,object $y) : object
+    protected function cdiv(object $x, object $y) : object
     {
         $denominator = $y->real * $y->real + $y->imag * $y->imag;
         if($denominator==0) {
-            return C(NAN,i:NAN);
+            return C(NAN, i:NAN);
         }
         $real = (($x->real*$y->real)+($x->imag*$y->imag))/$denominator;
         $imag = (($x->imag*$y->real)-($x->real*$y->imag))/$denominator;
-        return C($real,i:$imag);
+        return C($real, i:$imag);
     }
 
     protected function csqrt(object $x) : object
@@ -99,7 +99,7 @@ trait ComplexUtils
         $r = sqrt($x->real*$x->real + $x->imag*$x->imag);
         $theta = atan2($x->imag, $x->real) / 2.0;
         return C(
-              (sqrt($r)*cos($theta)),
+            (sqrt($r)*cos($theta)),
             i:(sqrt($r)*sin($theta))
         );
     }

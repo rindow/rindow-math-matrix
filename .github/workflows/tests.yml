@@ -51,6 +51,12 @@ jobs:
       #      ( cd addpack && composer require rindow/rindow-math-matrix-matlibffi )
       #    fi
 
+      - name: PHP Static Analysys
+        uses: php-actions/phpstan@v3
+        with:
+          php_version: ${{ matrix.php }}
+          path: src/
+
       - name: PHPUnit Tests
         uses: php-actions/phpunit@v3
         with:

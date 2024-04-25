@@ -1,7 +1,7 @@
 <?php
 namespace Rindow\Math\Matrix;
 
-use ArrayAccess as Buffer;
+use Interop\Polite\Math\Matrix\Buffer;
 
 /**
  *

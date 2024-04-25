@@ -4,7 +4,6 @@ namespace Rindow\Math\Matrix;
 require_once __DIR__.'/C.php';
 require_once __DIR__.'/R.php';
 
-use ArrayAccess;
 use Countable;
 use IteratorAggregate;
 use Traversable;
@@ -16,17 +15,22 @@ use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\LinearBuffer;
 use Interop\Polite\Math\Matrix\DeviceBuffer;
+use Interop\Polite\Math\Matrix\Buffer;
 use Interop\Polite\Math\Matrix\OpenCL;
 use Rindow\Math\Matrix\Drivers\Service;
 
-class NDArrayCL implements NDArray,Countable,IteratorAggregate
+/**
+ * @implements IteratorAggregate<int, mixed>
+ */
+class NDArrayCL implements NDArray, Countable, IteratorAggregate
 {
     const RANGE_STYLE_DEFAULT = 0;
     const RANGE_STYLE_1 = 1;
     const RANGE_STYLE_FORCE2 = 2;
-    static public int $rangeStyle = self::RANGE_STYLE_DEFAULT;
+    public static int $rangeStyle = self::RANGE_STYLE_DEFAULT;
 
-    static protected $valueSizeTable = [
+    /** @var array<int,int> $valueSizeTable */
+    protected static $valueSizeTable = [
         NDArray::bool  => 1,
         NDArray::int8  => 1,
         NDArray::int16 => 2,
@@ -45,30 +49,38 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         NDArray::complex64 => 8,
         NDArray::complex128 => 16,
     ];
-    protected $service;
-    protected $clBufferFactory;
-    protected $context;
-    protected $queue;
-    protected $shape;
-    protected $buffer;
-    protected $offset;
-    protected $dtype;
-    protected $flags;
-    protected $portableSerializeMode = false;
-    protected $events;
+    protected Service $service;
+    protected object $clBufferFactory;
+    protected object $context;
+    protected object $queue;
+    /** @var array<int> $shape */
+    protected array $shape;
+    protected DeviceBuffer $buffer;
+    protected int $offset;
+    protected int $dtype;
+    protected int $flags;
+    protected bool $portableSerializeMode = false;
+    protected object $events;
 
-    public function __construct(
-        object $queue, mixed $buffer=null, int $dtype=null, array $shape = null,
-        int $offset=null, int $flags=null,
-        Service $service=null)
-    {
+    /**
+     * @param array<int> $shape
+     */
+    final public function __construct(
+        object $queue,
+        mixed $buffer=null,
+        int $dtype=null,
+        array $shape = null,
+        int $offset=null,
+        int $flags=null,
+        Service $service=null
+    ) {
         if($service===null) {
             throw new InvalidArgumentException("No service specified.");
         }
         $this->service = $service;
         $this->clBufferFactory = $service->buffer(Service::LV_ACCELERATED);
         $context = $queue->getContext();
-        $this->context = $context; 
+        $this->context = $context;
         $this->queue = $queue;
         if($dtype===null) {
             $dtype = NDArray::float32;
@@ -80,6 +92,9 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         }
         if($flags===null) {
             $flags = OpenCL::CL_MEM_READ_WRITE;
+        }
+        if($shape===null) {
+            throw new InvalidArgumentException("Invalid dimension size");
         }
 
         $this->assertShape($shape);
@@ -96,18 +111,22 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
             $this->offset = $offset;
         } elseif($buffer===null) {
             $size = (int)array_product($shape);
-            $this->buffer = $this->newBuffer($context,$size,$dtype,$flags);
+            $this->buffer = $this->newBuffer($context, $size, $dtype, $flags);
             $this->dtype  = $dtype;
             $this->offset = 0;
         } elseif($buffer instanceof LinearBuffer) {
-            if($offset===null||!is_int($offset))
-                throw new InvalidArgumentException("Must specify offset with the buffer");
             $size = (int)array_product($shape);
-            if($size > count($buffer)-$offset)
+            if($size > count($buffer)-$offset) {
                 throw new InvalidArgumentException("host buffer is too small");
-            $this->buffer = $this->newBuffer($context,
-                    $size, $buffer->dtype(), $flags,
-                    $buffer, $offset);
+            }
+            $this->buffer = $this->newBuffer(
+                $context,
+                $size,
+                $buffer->dtype(),
+                $flags,
+                $buffer,
+                $offset
+            );
             $this->dtype = $buffer->dtype();
             $this->offset = 0;
         } else {
@@ -120,33 +139,56 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         }
     }
 
-    protected function newBuffer(
-        object $context, int $size, int $dtype, int $flags=0,
-        object $hostBuffer=null, int $hostOffset=0)
+    public function service() : Service
     {
+        return $this->service;
+    }
+
+    protected function newBuffer(
+        object $context,
+        int $size,
+        int $dtype,
+        int $flags=0,
+        object $hostBuffer=null,
+        int $hostOffset=0
+    ) : DeviceBuffer {
         //if(!extension_loaded('rindow_opencl')) {
         //    throw new LogicException("rindow_opencl extension is not loaded.");
         //}
         //return new OpenCLBuffer($context,static::$valueSizeTable[$dtype]*$size,
         //    $flags,$hostBuffer,$hostOffset,$dtype);
-        return $this->clBufferFactory->Buffer($context,static::$valueSizeTable[$dtype]*$size,
-            $flags,$hostBuffer,$hostOffset,$dtype);
+        return $this->clBufferFactory->Buffer(
+            $context,
+            static::$valueSizeTable[$dtype]*$size,
+            $flags,
+            $hostBuffer,
+            $hostOffset,
+            $dtype
+        );
     }
 
-    protected function assertShape(array $shape)
+    /**
+     * @param array<mixed> $shape
+     */
+    protected function assertShape(array $shape) : void
     {
         foreach($shape as $num) {
             if(!is_int($num)) {
                 throw new InvalidArgumentException(
-                    "Invalid shape numbers. It gives ".gettype($num));
+                    "Invalid shape numbers. It gives ".gettype($num)
+                );
             }
             if($num<=0) {
                 throw new InvalidArgumentException(
-                    "Invalid shape numbers. It gives ".$num);
+                    "Invalid shape numbers. It gives ".$num
+                );
             }
         }
     }
 
+    /**
+     * @return array<int>
+     */
     public function shape() : array
     {
         return $this->shape;
@@ -157,17 +199,17 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         return count($this->shape);
     }
 
-    public function dtype()
+    public function dtype() : int
     {
         return $this->dtype;
     }
 
-    public function flags()
+    public function flags() : int
     {
         return $this->flags;
     }
 
-    public function buffer() : ArrayAccess
+    public function buffer() : Buffer
     {
         return $this->buffer;
     }
@@ -187,50 +229,74 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         return (int)array_product($this->shape);
     }
 
+    /**
+     * @param array<int> $shape
+     */
     public function reshape(array $shape) : NDArray
     {
         $this->assertShape($shape);
         if($this->size()!=array_product($shape)) {
             throw new InvalidArgumentException("Unmatch size to reshape: ".
-                "[".implode(',',$this->shape())."]=>[".implode(',',$shape)."]");
+                "[".implode(',', $this->shape())."]=>[".implode(',', $shape)."]");
         }
         $newArray = new static($this->queue,$this->buffer,
-            $this->dtype,$shape,$this->offset,$this->flags, service:$this->service);
+            $this->dtype,$shape,$this->offset,$this->flags, service:$this->service());
         return $newArray;
     }
 
-    public function toArray()
+    public function toArray() : mixed
     {
         return $this->toNDArray()->toArray();
     }
 
     public function toNDArray(
-        bool $blocking_read=null,EventList $waitEvents=null,
-        EventList &$events=null) : NDArray
-    {
+        bool $blocking_read=null,
+        object $events=null,
+        object $waitEvents=null
+    ) : NDArray {
         $blocking_read = $blocking_read ?? true;
-        $array = new NDArrayPhp(null,$this->dtype,$this->shape,service:$this->service);
+        $array = new NDArrayPhp(null, $this->dtype, $this->shape, service:$this->service());
         $valueSize = static::$valueSizeTable[$this->dtype];
         $size = array_product($this->shape);
-        $event = $this->buffer->read($this->queue,$array->buffer(),$size*$valueSize,
-            $this->offset*$valueSize,$hostoffset=0,$blocking_read,$waitEvents);
-        $events = $event;
+        $this->buffer->read(
+            $this->queue,
+            $array->buffer(),
+            $size*$valueSize,
+            $this->offset*$valueSize,
+            $hostoffset=0,
+            $blocking_read,
+            $events,
+            $waitEvents
+        );
         return $array;
     }
 
-    public function offsetExists( $offset ) : bool
+    /**
+     * @return int|array<int>|Range
+     */
+    protected function castOffset(mixed $offset) : int|array|Range
     {
+        if(!is_int($offset)&&!is_array($offset)&&!($offset instanceof Range)) {
+            throw new InvalidArgumentException("Array offsets must be integers or ranges.");
+        }
+        return $offset;
+    }
+
+    public function offsetExists($offset) : bool
+    {
+        $offset = $this->castOffset($offset);
         if(is_array($offset) && self::$rangeStyle==self::RANGE_STYLE_FORCE2) {
             throw new InvalidArgumentException("offset style is old renge style.");
         }
         if(is_array($offset)) {
             if(count($offset)!=2 ||
-                !array_key_exists(0,$offset) || !array_key_exists(1,$offset) ||
+                !array_key_exists(0, $offset) || !array_key_exists(1, $offset) ||
                 $offset[0]>$offset[1]) {
-                    $det = '';
-                    if(is_numeric($offset[0])&&is_numeric($offset[1]))
-                        $det = ':['. implode (',',$offset).']';
-                    throw new OutOfRangeException("Illegal range specification.".$det);
+                $det = '';
+                if(is_numeric($offset[0])&&is_numeric($offset[1])) {
+                    $det = ':['. implode(',', $offset).']';
+                }
+                throw new OutOfRangeException("Illegal range specification.".$det);
             }
             $start = $offset[0];
             $limit = $offset[1];
@@ -240,7 +306,7 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         } elseif(is_int($offset)) {
             $start = $offset;
             $limit = $offset+1;
-        } elseif($offset instanceof Range) {
+        } else {
             $start = $offset->start();
             $limit = $offset->limit();
             $delta = $offset->delta();
@@ -248,16 +314,16 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
                 $det = ":[$start,$limit".(($delta!=1)?",$delta":"").']';
                 throw new OutOfRangeException("Illegal range specification.".$det);
             }
-        } else {
-            throw new OutOfRangeException("Dimension must be integer");
         }
-        if($start < 0 || $limit > $this->shape[0])
+        if($start < 0 || $limit > $this->shape[0]) {
             return false;
+        }
         return true;
     }
 
-    public function offsetGet( $offset ) : mixed
+    public function offsetGet($offset) : mixed
     {
+        $offset = $this->castOffset($offset);
         if(!$this->offsetExists($offset)) {
             if(count($this->shape)==0) {
                 throw new OutOfRangeException("This object is scalar.");
@@ -268,16 +334,17 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
 
         // for single index specification
         if(is_numeric($offset)) {
+            $offset = (int)$offset;
             $shape = $this->shape;
             $max = array_shift($shape);
             if(count($shape)==0) {
                 $new = new static($this->queue,$this->buffer,$this->dtype,
-                    $shape, $this->offset+$offset, $this->flags, service:$this->service);
+                    $shape, $this->offset+$offset, $this->flags, service:$this->service());
                 return $new;
             }
             $size = (int)array_product($shape);
             $new = new static($this->queue, $this->buffer, $this->dtype,
-                $shape, $this->offset+$offset*$size, $this->flags, service:$this->service);
+                $shape, $this->offset+$offset*$size, $this->flags, service:$this->service());
             return $new;
         }
         
@@ -285,14 +352,14 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         $shape = $this->shape;
         array_shift($shape);
         if(is_array($offset)) {
-            $start = $offset[0];
-            $limit = $offset[1];
+            $start = (int)$offset[0];
+            $limit = (int)$offset[1];
             if(self::$rangeStyle==self::RANGE_STYLE_1) {
                 ++$limit;
             }
         } else {
-            $start = $offset->start();
-            $limit = $offset->limit();
+            $start = (int)$offset->start();
+            $limit = (int)$offset->limit();
             if($offset->delta()!=1) {
                 throw new OutOfRangeException("Illegal range specification.:delta=".$offset->delta());
             }
@@ -306,15 +373,16 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         if($rowsCount<0) {
             throw new OutOfRangeException('Invalid range');
         }
-        array_unshift($shape,$rowsCount);
+        array_unshift($shape, $rowsCount);
         $size = (int)array_product($shape);
         $new = new static($this->queue,$this->buffer,$this->dtype,
-            $shape,$this->offset+$start*$itemSize, $this->flags, service:$this->service);
+            $shape,$this->offset+$start*$itemSize, $this->flags, service:$this->service());
         return $new;
     }
 
-    public function offsetSet( $offset , $value ) : void
+    public function offsetSet($offset, $value) : void
     {
+        $offset = $this->castOffset($offset);
         if(!$this->offsetExists($offset)) {
             if(count($this->shape)==0) {
                 throw new OutOfRangeException("This object is scalar.");
@@ -323,21 +391,28 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
             }
         }
         // for range spesification
-        if(is_array($offset)) {
+        if(!is_int($offset)) {
             throw new OutOfRangeException("Unsuppored to set for range specification.");
         }
         // for single index specification
         $shape = $this->shape;
         $max = array_shift($shape);
         if(count($shape)==0) {
-            if(!($value instanceof NDArray))
+            if(!($value instanceof NDArray)) {
                 throw new LogicException("Must be NDArray on OpenCL.");
+            }
             $buffer = $value->buffer();
-            if(!($buffer instanceof DeviceBuffer))
+            if(!($buffer instanceof DeviceBuffer)) {
                 throw new LogicException("Must be NDArray on OpenCL.");
+            }
             $valueSize = static::$valueSizeTable[$value->dtype()];
-            $this->buffer->copy($this->queue, $buffer, $valueSize,
-                $value->offset()*$valueSize, ($this->offset+$offset)*$valueSize);
+            $this->buffer->copy(
+                $this->queue,
+                $buffer,
+                $valueSize,
+                $value->offset()*$valueSize,
+                ($this->offset+$offset)*$valueSize
+            );
             return;
         }
 
@@ -350,11 +425,16 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         $idx=$this->offset+$offset*$size;
 
         $valueSize = static::$valueSizeTable[$value->dtype()];
-        $this->buffer->copy($this->queue, $src, $size*$valueSize,
-            $src_idx*$valueSize ,$idx*$valueSize);
+        $this->buffer->copy(
+            $this->queue,
+            $src,
+            $size*$valueSize,
+            $src_idx*$valueSize,
+            $idx*$valueSize
+        );
     }
 
-    public function offsetUnset( $offset ) : void
+    public function offsetUnset($offset) : void
     {
         throw new LogicException("Unsuppored Operation");
     }
@@ -364,7 +444,7 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         return $this->shape[0];
     }
 
-    public function  getIterator() : Traversable
+    public function getIterator() : Traversable
     {
         $count = $this->shape[0];
         for($i=0;$i<$count;$i++) {
@@ -372,49 +452,57 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         }
     }
 
-    public function setPortableSerializeMode(bool $mode)
+    public function setPortableSerializeMode(bool $mode) : void
     {
         throw new LogicException("Unsuppored Operation");
     }
 
-    public function getPortableSerializeMode()
+    public function getPortableSerializeMode() : bool
     {
         return $this->portableSerializeMode;
     }
 
-    public function __serialize()
+    public function __serialize() : array
     {
         throw new LogicException("Unsuppored Operation");
     }
 
-    public function __unserialize($serialized)
+    /**
+     * @param array<string,mixed> $serialized
+     */
+    public function __unserialize(array $serialized) : void
     {
         throw new LogicException("Unsuppored Operation");
     }
 
-    public function setEvents($events)
+    public function setEvents(object $events) : void
     {
         $this->events = $events;
     }
 
-    public function getEvents()
+    public function getEvents() : object
     {
-        return $this->events = $events;
+        return $this->events;
     }
 
     public function __clone()
     {
         if(!($this->buffer instanceof DeviceBuffer)) {
-            throw new RuntimeException('Unknown buffer type is uncloneable:'.get_class($this->_buffer));
+            throw new RuntimeException('Unknown buffer type is uncloneable:'.get_class($this->buffer));
         }
         $bytes = $this->buffer->bytes();
         $dtype = $this->buffer->dtype();
         $flags = $this->flags & ~OpenCL::CL_MEM_COPY_HOST_PTR;
         $newBuffer = $this->clBufferFactory->Buffer(
-            $this->context,$bytes,
-            $flags,null,0,$dtype);
-        $events = $this->service->openCL()->EventList();
-        $newBuffer->copy($this->queue,$this->buffer,0,0,0,$events);
+            $this->context,
+            $bytes,
+            $flags,
+            null,
+            0,
+            $dtype
+        );
+        $events = $this->service()->openCL()->EventList();
+        $newBuffer->copy($this->queue, $this->buffer, 0, 0, 0, $events);
         $events->wait();
         $this->flags = $flags;
         $this->buffer = $newBuffer;

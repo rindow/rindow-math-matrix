@@ -1,10 +1,10 @@
 <?php
 namespace Rindow\Math\Matrix\Drivers\MatlibPHP;
 
-use ArrayAccess as Buffer;
 use RuntimeException;
 use InvalidArgumentException;
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\Math\Matrix\Buffer;
 use Rindow\Math\Matrix\NDArrayPhp;
 use Rindow\Math\Matrix\Drivers\Service;
 use function Rindow\Math\Matrix\R;
@@ -12,20 +12,22 @@ use function Rindow\Math\Matrix\R;
 class PhpLapack
 {
     protected Service $service;
-    protected $defaultFloatType = NDArray::float32;
-    protected $lapack;
-    protected $forceLapack;
+    protected int $defaultFloatType = NDArray::float32;
+    protected object $lapack;
+    protected bool $forceLapack;
+    /** @var array<int> $intTypes */
     protected $intTypes= [
         NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
         NDArray::uint8,NDArray::uint16,NDArray::uint32,NDArray::uint64,
     ];
+    /** @var array<int> $floatTypes */
     protected $floatTypes= [
         NDArray::float16,NDArray::float32,NDArray::float64,
     ];
 
     public function __construct(
-        $lapack=null,
-        $forceLapack=null
+        object $lapack=null,
+        bool $forceLapack=null
         )
     {
         //$this->lapack = $lapack;
@@ -33,7 +35,7 @@ class PhpLapack
         $this->service = $this->dummyService();
     }
 
-    protected function dummyService()
+    protected function dummyService() : Service
     {
         $service = new class implements Service
         {
@@ -53,6 +55,16 @@ class PhpLapack
             {
                 return $this->bufferFactory;
             }
+            public function info() : string {throw new \Exception("error");}
+            public function name() : string {throw new \Exception("error");}
+            public function blas(int $level=null) : object {throw new \Exception("error");}
+            public function lapack(int $level=null) : object {throw new \Exception("error");}
+            public function math(int $level=null) : object {throw new \Exception("error");}
+            public function openCL() : object {throw new \Exception("error");}
+            public function blasCL(object $queue) : object {throw new \Exception("error");}
+            public function mathCL(object $queue) : object {throw new \Exception("error");}
+            public function mathCLBlast(object $queue) : object {throw new \Exception("error");}
+            public function createQueue(array $options=null) : object { throw new \Exception("error");}
         };
         return $service;
     }
@@ -155,6 +167,9 @@ class PhpLapack
 
         // Householder reduction to bidiagonal form.
         $g = $scale = $anorm = 0.0;
+        $l = 0;
+        $rv1 = [];
+        $W = [];
         for($i = 0; $i < $ldU; $i++){
             $l = $i + 2;
             $rv1[$i] = $scale * $g;
@@ -363,6 +378,8 @@ class PhpLapack
             $inc = (int)($inc / 3);
             for($i = $inc; $i < $n; $i++){
                 $sw = $W[$i];
+                $su = [];
+                $sv = [];
                 for($k = 0; $k < $m; $k++) $su[$k] = $U[$k][$i];
                 for($k = 0; $k < $n; $k++) $sv[$k] = $V[$k][$i];
                 $j = $i;
@@ -436,30 +453,34 @@ class PhpLapack
         #return [$U,$S,$this->transpose($V)];
     }
 
-    private function print($a)
-    {
-        foreach($a->toArray() as $array)
-            echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
-    }
+    //private function print(NDArray $a) : void
+    //{
+    //    foreach($a->toArray() as $array) {
+    //        echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
+    //    }
+    //}
 
-    private function alloc(array $shape, $dtype)
+    /**
+     * @param array<int> $shape
+     */
+    private function alloc(array $shape, int $dtype) : NDArray
     {
         return new NDArrayPhp(null,$dtype,$shape,service:$this->service);
     }
 
-    private function zeros(NDArray $X)
-    {
-        $N = $X->size();
-        $XX = $X->buffer();
-        $offX = $X->offset();
-        $posX = $offX;
-        for($i=0;$i<$N;$i++) {
-            $XX[$posX] = 0;
-            $posX++;
-        }
-    }
+    //private function zeros(NDArray $X) : void
+    //{
+    //    $N = $X->size();
+    //    $XX = $X->buffer();
+    //    $offX = $X->offset();
+    //    $posX = $offX;
+    //    for($i=0;$i<$N;$i++) {
+    //        $XX[$posX] = 0;
+    //        $posX++;
+    //    }
+    //}
 
-    private function copy(NDArray $X, NDArray $Y)
+    private function copy(NDArray $X, NDArray $Y) : void
     {
         if($X->shape()!=$Y->shape()) {
             throw new InvalidArgumentException('unmatch shape:');
@@ -478,7 +499,7 @@ class PhpLapack
         }
     }
 
-    private function sameSign($a, $b)
+    private function sameSign(float $a, float $b) : float
     {
         if($b >= 0){
             $result = abs($a);
@@ -488,7 +509,7 @@ class PhpLapack
         return $result;
     }
 
-    private function pythag($a, $b)
+    private function pythag(float $a, float $b) : float
     {
         $absa = abs($a);
         $absb = abs($b);
@@ -519,7 +540,13 @@ class PhpLapack
         return $Y;
     }
 
-    protected function _transpose($shape, $w, $bufX, $offX, $posX, $bufY, &$posY)
+    /**
+     * @param array<int> $shape
+     */
+    protected function _transpose(
+        array $shape, int $w,
+        Buffer $bufX, int $offX, int $posX,
+        Buffer $bufY, int &$posY) : void
     {
         $n=array_shift($shape);
         $W = $w*$n;

@@ -16,6 +16,7 @@ use Rindow\Math\Matrix\Drivers\Service;
 
 class OpenCLMath
 {
+    /** @var array<int,string> $dtypeToString */
     protected $dtypeToString = [
         NDArray::bool=>'bool',
         NDArray::int8=>'int8',   NDArray::uint8=>'uint8',
@@ -26,6 +27,7 @@ class OpenCLMath
         NDArray::float32=>'float32', NDArray::float64=>'float64',
     ];
 
+    /** @var array<int,string> $dtypeToOpenCLType */
     protected $dtypeToOpenCLType = [
         NDArray::bool=>'uchar',
         NDArray::int8=>'char',   NDArray::uint8=>'uchar',
@@ -36,6 +38,7 @@ class OpenCLMath
         NDArray::float32=>'float', NDArray::float64=>'double',
     ];
 
+    /** @var array<int,string> $alternativeUnsignedCLType */
     protected $alternativeUnsignedCLType = [
         NDArray::bool=>'char',
         NDArray::uint8=>'char',
@@ -44,6 +47,7 @@ class OpenCLMath
         NDArray::uint64=>'long',
     ];
 
+    /** @var array<int,int|float> $smallests */
     protected $smallests = [
         NDArray::bool  => 0,
         NDArray::int8  => -128,         NDArray::uint8  => 0,
@@ -53,6 +57,7 @@ class OpenCLMath
         NDArray::float16 => -1.0e+14,
         NDArray::float32 => -1.0e+37, NDArray::float64 => -1.0e+37,
     ];
+    /** @var array<int,int|float> $largests */
     protected $largests = [
         NDArray::bool  => 1,
         NDArray::int8  => 127,          NDArray::uint8  => 255,
@@ -63,11 +68,13 @@ class OpenCLMath
         NDArray::float32 => 1.0e+37, NDArray::float64 => 1.0e+37,
     ];
 
+    /** @var array<int> $intTypes */
     protected $intTypes= [
         NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
         NDArray::uint8,NDArray::uint16,NDArray::uint32,NDArray::uint64,
     ];
 
+    /** @var array<string,string> $kernelCoreOperation */
     protected $kernelCoreOperation = [
         'qsum' =>
             "i >>= 1;\n".
@@ -170,18 +177,24 @@ class OpenCLMath
 
     ];
 
-    protected $context;
-    protected $queue;
+    protected object $context;
+    protected object $queue;
     protected Service $service;
-    protected $deviceTypes = [];
-    protected $sources = [];
-    protected $program = [];
-    protected $fp64=null;
-    protected $maxWorkItem;
-    protected $kernelMultiple;
-    protected $hasDiv5Bug;
-    protected $testMode=null;
+    /** @var array<string> $deviceTypes */
+    protected array $deviceTypes = [];
+    /** @var array<string,string> $sources */
+    protected array $sources = [];
+    /** @var array<string,object> $program */
+    protected array $program = [];
+    protected bool $fp64;
+    /** @var array<int> $maxWorkItem */
+    protected array $maxWorkItem;
+    protected ?int $kernelMultiple=null;
+    protected bool $hasDiv5Bug;
+    protected ?int $testMode=null;
+    /** @var array<mixed> $timesPredictionScatterAdd */
     protected $timesPredictionScatterAdd = [];
+    /** @var array<mixed> $timesPredictionReduceSum */
     protected $timesPredictionReduceSum = [];
 
     public function __construct(object $queue, Service $service)
@@ -210,7 +223,7 @@ class OpenCLMath
         $this->checkDiv5Bug();
     }
 
-    public function setTestMode($testMode)
+    public function setTestMode(?int $testMode) : void
     {
         $this->testMode = $testMode;
     }
@@ -220,7 +233,7 @@ class OpenCLMath
         return $this->fp64;
     }
 
-    public function dtypeToString($dtype)
+    public function dtypeToString(int $dtype) : string
     {
         return $this->dtypeToString[$dtype];
     }
@@ -232,17 +245,23 @@ class OpenCLMath
         }
     }
 
-    public function maxWorkItem()
+    /**
+     * @return array<int>
+     */
+    public function maxWorkItem() : array
     {
         return $this->maxWorkItem;
     }
 
-    public function deviceTypes()
+    /**
+     * @return array<string>
+     */
+    public function deviceTypes() : array
     {
         return $this->deviceTypes;
     }
 
-    protected function kernelMultiple($kernel)
+    protected function kernelMultiple(object $kernel) : int
     {
         if($this->kernelMultiple) {
             return $this->kernelMultiple;
@@ -251,7 +270,7 @@ class OpenCLMath
         return $this->kernelMultiple;
     }
 
-    protected function createKernel($name)
+    protected function createKernel(string $name) : object
     {
         if(!isset($this->program[$name])) {
             $source = $this->sources[$name];
@@ -277,7 +296,7 @@ class OpenCLMath
         return $kernel;
     }
 
-    public function checkDiv5Bug()
+    public function checkDiv5Bug() : void
     {
         $kernel_name = "checkDiv5Bug";
         if(!isset($this->sources[$kernel_name])) {
@@ -326,32 +345,32 @@ class OpenCLMath
     }
 
     protected function splitPointer(
-        $low,
-        $high,
-        $pointer,
-        $base
-    )
+        string $low,
+        string $high,
+        string $pointer,
+        string $base
+    ) : string
     {
         return
             "    const uint {$low} = {$pointer}%{$base};\n".
             "    const uint {$high} = {$pointer}/{$base};\n";
     }
 
-    public function kernelTemplateQSum($inputs,$outputs)
+    public function kernelTemplateQSum(string $inputs,string $outputs) : string
     {
         $operation = $this->kernelCoreOperation['qsum'];
         $initial = 0;
         return $this->kernelQTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelTemplateSSum($inputs,$outputs)
+    public function kernelTemplateSSum(string $inputs,string $outputs) : string
     {
         $operation = $this->kernelCoreOperation['qsum'];
         $initial = 0;
         return $this->kernelSTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelTemplateLSingleSum1($inputs,$dtype)
+    public function kernelTemplateLSingleSum1(string $inputs,int $dtype) : string
     {
         $operation1 = $this->kernelCoreOperation['lsum-1'];
         $operation2 = $this->kernelCoreOperation['lsum-2'];
@@ -362,7 +381,7 @@ class OpenCLMath
             $operation1,$operation2,$operation3,$inputs,$type,$initial);
     }
 
-    public function kernelTemplateLSingleSum2($output)
+    public function kernelTemplateLSingleSum2(string $output) : string
     {
         $operation2 = $this->kernelCoreOperation['lsum-2'];
         $operation4 = $this->kernelCoreOperation['lsum-4'];
@@ -370,7 +389,7 @@ class OpenCLMath
             $operation2,$operation4,$output);
     }
 
-    public function kernelTemplateLSum1($inputs,$dtype)
+    public function kernelTemplateLSum1(string $inputs,int $dtype) : string
     {
         $operation1 = $this->kernelCoreOperation['lrsum-1'];
         $operation2 = $this->kernelCoreOperation['lrsum-2'];
@@ -381,7 +400,7 @@ class OpenCLMath
             $operation1,$operation2,$operation3,$inputs,$type,$initial);
     }
 
-    public function kernelTemplateLSum2($output)
+    public function kernelTemplateLSum2(string $output) : string
     {
         $operation2 = $this->kernelCoreOperation['lrsum-2'];
         $operation4 = $this->kernelCoreOperation['lrsum-4'];
@@ -389,35 +408,35 @@ class OpenCLMath
             $operation2,$operation4,$output);
     }
 
-    public function kernelTemplateQMax($inputs,$outputs,$dtype)
+    public function kernelTemplateQMax(string $inputs,string $outputs,int $dtype) : string
     {
         $operation = $this->kernelCoreOperation['qmax'];
         $initial = $this->smallests[$dtype];
         return $this->kernelQTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelTemplateSMax($inputs,$outputs,$dtype)
+    public function kernelTemplateSMax(string $inputs,string $outputs,int $dtype) : string
     {
         $operation = $this->kernelCoreOperation['qmax'];
         $initial = $this->smallests[$dtype];
         return $this->kernelSTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelTemplateQiMax($inputs,$outputs,$dtype)
+    public function kernelTemplateQiMax(string $inputs,string $outputs,int $dtype) : string
     {
         $operation = $this->kernelCoreOperation['qimax'];
         $initial = $this->smallests[$dtype];
         return $this->kernelQiTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelTemplateSiMax($inputs,$outputs,$dtype)
+    public function kernelTemplateSiMax(string $inputs,string $outputs,int $dtype) : string
     {
         $operation = $this->kernelCoreOperation['qimax'];
         $initial = $this->smallests[$dtype];
         return $this->kernelSiTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelTemplateLMax1($inputs,$dtype)
+    public function kernelTemplateLMax1(string $inputs,int $dtype) : string
     {
         $operation1 = $this->kernelCoreOperation['lrmax-1'];
         $operation2 = $this->kernelCoreOperation['lrmax-2'];
@@ -428,7 +447,7 @@ class OpenCLMath
             $operation1,$operation2,$operation3,$inputs,$type,$initial);
     }
 
-    public function kernelTemplateLMax2($output)
+    public function kernelTemplateLMax2(string $output) : string
     {
         $operation2 = $this->kernelCoreOperation['lrmax-2'];
         $operation4 = $this->kernelCoreOperation['lrmax-4'];
@@ -436,7 +455,7 @@ class OpenCLMath
             $operation2,$operation4,$output);
     }
 
-    public function kernelTemplateLiMax1($inputs,$dtype)
+    public function kernelTemplateLiMax1(string $inputs,int $dtype) : string
     {
         $operation1 = $this->kernelCoreOperation['lrimax-1'];
         $operation2 = $this->kernelCoreOperation['lrimax-2'];
@@ -447,7 +466,7 @@ class OpenCLMath
             $operation1,$operation2,$operation3,$inputs,$type,$initial);
     }
 
-    public function kernelTemplateLiMax2($output)
+    public function kernelTemplateLiMax2(string $output) : string
     {
         $operation2 = $this->kernelCoreOperation['lrimax-2'];
         $operation4 = $this->kernelCoreOperation['lrimax-4'];
@@ -455,21 +474,34 @@ class OpenCLMath
             $operation2,$operation4,$output);
     }
 
-    public function kernelTemplateQiMin($inputs,$outputs,$dtype)
+    public function kernelTemplateQiMin(
+        string $inputs,
+        string $outputs,
+        int $dtype
+        ) : string
     {
         $operation = $this->kernelCoreOperation['qimin'];
         $initial = $this->largests[$dtype];
         return $this->kernelQiTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelTemplateSiMin($inputs,$outputs,$dtype)
+    public function kernelTemplateSiMin(
+        string $inputs,
+        string $outputs,
+        int $dtype
+        ) : string 
     {
         $operation = $this->kernelCoreOperation['qimin'];
         $initial = $this->largests[$dtype];
         return $this->kernelSiTemplate($operation,$inputs,$outputs,$initial);
     }
 
-    public function kernelQTemplate($operation,$inputs,$outputs,$initial)
+    public function kernelQTemplate(
+        string $operation,
+        string $inputs,
+        string $outputs,
+        int|float $initial
+        ) : string
     {
         return
         "{\n".
@@ -522,7 +554,12 @@ class OpenCLMath
         "}\n";
     }
 
-    public function kernelQiTemplate($operation,$inputs,$outputs,$initial)
+    public function kernelQiTemplate(
+        string $operation,
+        string $inputs,
+        string $outputs,
+        int|float $initial
+        ) : string
     {
         return
         "{\n".
@@ -578,7 +615,12 @@ class OpenCLMath
         "}\n";
     }
 
-    public function kernelSTemplate($operation,$inputs,$outputs,$initial)
+    public function kernelSTemplate(
+        string $operation,
+        string $inputs,
+        string $outputs,
+        int|float $initial
+        ) : string
     {
         return
         "{\n".
@@ -603,7 +645,12 @@ class OpenCLMath
         "}\n";
     }
 
-    public function kernelSiTemplate($operation,$inputs,$outputs,$initial)
+    public function kernelSiTemplate(
+        string $operation,
+        string $inputs,
+        string $outputs,
+        int|float $initial
+        ) : string
     {
         return
         "{\n".
@@ -630,7 +677,13 @@ class OpenCLMath
     }
 
     public function kernelLTemplate1(
-        $operation1,$operation2,$operation3,$inputs,$type,$initial)
+        string $operation1,
+        string $operation2,
+        string $operation3,
+        string $inputs,
+        string $type,
+        int|float $initial
+        ) : string
     {
         return
         "{\n".
@@ -660,7 +713,10 @@ class OpenCLMath
     }
 
     public function kernelLTemplate2(
-        $operation2,$operation4,$output)
+        string $operation2,
+        string $operation4,
+        string $output
+        ) : string 
     {
         return
         "{\n".
@@ -681,7 +737,13 @@ class OpenCLMath
     }
 
     public function kernelLiTemplate1(
-        $operation1,$operation2,$operation3,$inputs,$type,$initial)
+        string $operation1,
+        string $operation2,
+        string $operation3,
+        string $inputs,
+        string $type,
+        int|float $initial
+        ) : string
     {
         return
         "{\n".
@@ -712,7 +774,7 @@ class OpenCLMath
         "}\n";
     }
 
-    protected function newEventList()
+    protected function newEventList() : object
     {
         return $this->service->opencl()->EventList();
     }
@@ -720,24 +782,30 @@ class OpenCLMath
     protected function newBuffer(
         int $size,int $flags=null,
         HostBufferInterface $hostBuffer=null, int $hostOffset=null,
-        int $dtype=null)
+        int $dtype=null) : BufferInterface
     {
         $hostOffset = $hostOffset ?? 0;
         return $this->service->buffer(Service::LV_ACCELERATED)->Buffer($this->context,
             $size,$flags,$hostBuffer,$hostOffset,$dtype);
     }
 
-    protected function newHostBuffer($size,$dtype)
+    protected function newHostBuffer(int $size, int $dtype) : HostBufferInterface
     {
         return $this->service->buffer(Service::LV_ADVANCED)->Buffer($size,$dtype);
     }
 
-    protected function ceil($value,$base)
+    /**
+     * Rounding up boundaries
+     *  ex. 1 base 4 => 4 
+     *      5 base 4 => 8 
+     *      6 base 4 => 12
+     */
+    protected function ceil(int $value,int $base) : int
     {
-        return (int)ceil($value/$base)*$base;
+        return intdiv(($value+$base-1),$base)*$base;
     }
 
-    protected function adjBoundary(int $bytes)
+    protected function adjBoundary(int $bytes) : int
     {
         $bytes += ($bytes%4) ? 4-($bytes%4) : 0; // Adjust word boundary
         return (int)$bytes;
@@ -2365,6 +2433,62 @@ class OpenCLMath
             $events,$waitEvents);
     }
 
+    protected function isComplex(int $dtypeX) : bool
+    {
+        return ($dtypeX==NDArray::complex64||$dtypeX==NDArray::complex128);
+    }
+
+    /**
+     * X(i) := abs(X(i))
+     */
+    public function abs(
+        int $n,
+        BufferInterface $X, int $offsetX, int $incX,
+        object $events=null, object $waitEvents=null
+        ) : void
+    {
+        $dtypeX = $X->dtype();
+        if($dtypeX==NDArray::float64||$dtypeX==NDArray::complex128) {
+            $this->assertFP64();
+        }
+        $isInt = array_key_exists($dtypeX,$this->intTypes);
+        $abs = $isInt ? 'abs' : 'fabs';
+        $isComplex = $this->isComplex($dtypeX);
+        if($isComplex) {
+            $dtype = ($dtypeX==NDArray::complex64)?'float':'double';
+            $statement  = "    x[index_x] = sqrt(x[index_x]*x[index_x] + x[index_x+1]*x[index_x+1]);\n";
+            $statement .= "    x[index_x+1] = 0;\n";
+            $incX *= 2;
+            $offsetX *= 2;
+        } else {
+            $dtype = $this->dtypeToOpenCLType[$dtypeX];
+            $statement = "    x[index_x] = {$abs}(x[index_x]);\n";
+        }
+
+
+        $kernel_name = "abs_{$dtype}";
+        if(!isset($this->sources[$kernel_name])) {
+            $this->sources[$kernel_name] =
+                "__kernel void {$kernel_name}(\n".
+                "        __global {$dtype} * x,\n".
+                "    const        uint offset_x,\n".
+                "    const        uint incx)\n".
+                "{\n".
+                "    uint gid = get_global_id(0);\n".
+                "    uint index_x = gid*incx+offset_x;\n".
+                $statement.
+                "}\n";
+        }
+        $kernel = $this->createKernel($kernel_name);
+
+        $kernel->setArg(0,$X);
+        $kernel->setArg(1,$offsetX,NDArray::uint32);
+        $kernel->setArg(2,$incX,NDArray::uint32);
+        $global_work_size = [$n];
+        $kernel->enqueueNDRange($this->queue,$global_work_size,null,null,
+            $events,$waitEvents);
+    }
+
     /**
      *     A(m,n) := X(n)
      */
@@ -2698,16 +2822,24 @@ class OpenCLMath
             $events,$waitEvents);
     }
 
-    protected function getHomeDirectory()
+    protected function getHomeDirectory() : string
     {
+        $path = '';
         if(PHP_OS=='WINNT') {
-            return getenv('USERPROFILE');
+            $path = getenv('USERPROFILE');
         } elseif(PHP_OS=='Linux') {
-            return getenv('HOME');
+            $path = getenv('HOME');
         }
+        if(!is_string($path)) {
+            $path = '';
+        }
+        return $path;
     }
 
-    protected function loadParameter($filename)
+    /**
+     * @return array<mixed>
+     */
+    protected function loadParameter(string $filename) : array
     {
         $filepath = $this->getHomeDirectory().'/.rindow/'.$filename;
         if(!file_exists($filepath)) {
@@ -2717,7 +2849,7 @@ class OpenCLMath
         return $times;
     }
 
-    public function predictTimeScatterAdd($mode,$numClass,$cols,$rows)
+    public function predictTimeScatterAdd(int $mode,int $numClass,int $cols,int $rows) : int
     {
         if(isset($this->timesPredictionScatterAdd[$mode])) {
             $times = $this->timesPredictionScatterAdd[$mode];
@@ -3369,7 +3501,7 @@ class OpenCLMath
             $events,$waitEvents);
     }
 
-    public function predictTimeReduceSum($mode,$cols,$rows)
+    public function predictTimeReduceSum(int $mode,int $cols,int $rows) : int
     {
         if(isset($this->timesPredictionReduceSum[$mode])) {
             $times = $this->timesPredictionReduceSum[$mode];
@@ -4696,26 +4828,26 @@ class OpenCLMath
         object $events=null, object $waitEvents=null
         ) : void
     {
-        $trans = false;
+        //$trans = false;  // disable transpose function yet
         $dtype = $A->dtype();
-        if($trans) {
-            $trans = 'trans';
-            $rows = $n;
-            $cols = $m;
-        } else {
+        //if($trans) {
+        //    $trans = 'trans';
+        //    $rows = $n;
+        //    $cols = $m;
+        //} else {
             $trans = 'norm';
             $rows = $m;
             $cols = $n;
-        }
+        //}
         $total_local_items = $cols;
         $type = $this->dtypeToOpenCLType[$dtype];
         $kernel_name = "softmax_4_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
-            if($trans=='trans') {
-                $index_a = 'i*lda+gid+offset_a';
-            } else {
+            //if($trans=='trans') {
+            //    $index_a = 'i*lda+gid+offset_a';
+            //} else {
                 $index_a = 'gid*lda+i+offset_a';
-            }
+            //}
             $this->sources[$kernel_name] =
                 "__kernel void {$kernel_name}(\n".
                 "    const        uint rows,\n".
@@ -4768,17 +4900,17 @@ class OpenCLMath
         object $events=null, object $waitEvents=null
         ) : void
     {
-        $trans = false;
+        //$trans = false;  // disable transpose function yet
         $dtype = $A->dtype();
-        if($trans) {
-            $trans = 'trans';
-            $rows = $n;
-            $cols = $m;
-        } else {
+        //if($trans) {
+        //    $trans = 'trans';
+        //    $rows = $n;
+        //    $cols = $m;
+        //} else {
             $trans = 'norm';
             $rows = $m;
             $cols = $n;
-        }
+        //}
         $total_local_items = $cols;
         $max_work_items = $this->maxWorkItem[0];
         if($total_local_items>$max_work_items) {
@@ -4792,11 +4924,11 @@ class OpenCLMath
         $type = $this->dtypeToOpenCLType[$dtype];
         $kernel_name = "softmax_S_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
-            if($trans=='trans') {
-                $index_a = 'lid*lda+grid+offset_a';
-            } else {
+            //if($trans=='trans') {
+            //    $index_a = 'lid*lda+grid+offset_a';
+            //} else {
                 $index_a = 'grid*lda+lid+offset_a';
-            }
+            //}
             $this->sources[$kernel_name] =
                 "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
@@ -4848,17 +4980,17 @@ class OpenCLMath
         object $events=null, object $waitEvents=null
         ) : void
     {
-        $trans = false;
+        //$trans = false;  // disable transpose function yet
         $dtype = $A->dtype();
-        if($trans) {
-            $trans = 'trans';
-            $rows = $n;
-            $cols = $m;
-        } else {
+        //if($trans) {
+        //    $trans = 'trans';
+        //    $rows = $n;
+        //    $cols = $m;
+        //} else {
             $trans = 'norm';
             $rows = $m;
             $cols = $n;
-        }
+        //}
         $total_local_items = $cols;
         $max_work_items = $this->maxWorkItem[0];
         if($total_local_items>$max_work_items) {
@@ -4875,11 +5007,11 @@ class OpenCLMath
         $type = $this->dtypeToOpenCLType[$dtype];
         $kernel_name = "softmax_M_{$type}_{$trans}";
         if(!isset($this->sources[$kernel_name])) {
-            if($trans=='trans') {
-                $index_a = '(seg*lws+lid)*lda+grid+offset_a';
-            } else {
+            //if($trans=='trans') {
+            //    $index_a = '(seg*lws+lid)*lda+grid+offset_a';
+            //} else {
                 $index_a = 'grid*lda+(seg*lws+lid)+offset_a';
-            }
+            //}
             $this->sources[$kernel_name] =
                 "__kernel void {$kernel_name}(\n".
                 "    const        uint total_local_items,\n".
@@ -4960,7 +5092,7 @@ class OpenCLMath
         int $startAxis2,
         int $sizeAxis2,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         if($A->dtype()!=$Y->dtype()) {
             throw new InvalidArgumentException("Unmatch data type A and Y:".
@@ -5295,11 +5427,11 @@ class OpenCLMath
         bool $horizontalFlip,
         bool $rgbFlip,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         if($A->dtype()!=$B->dtype()) {
-            throw new InvalidArgumentException("Unmatch data type A and Y:".
-            $this->dtypeToString($A->dtype()).",".$this->dtypeToString($Y->dtype()));
+            throw new InvalidArgumentException("Unmatch data type A and B:".
+            $this->dtypeToString($A->dtype()).",".$this->dtypeToString($B->dtype()));
         }
         if($A->dtype()==NDArray::float64) {
             $this->assertFP64();
@@ -5423,7 +5555,7 @@ class OpenCLMath
         int $cols_offset,
         int $cols_size,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         $dtype = $images->dtype();
         if($dtype!=$cols->dtype()) {
@@ -5606,7 +5738,7 @@ class OpenCLMath
         int $cols_offset,
         int $cols_size,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         $dtype = $images->dtype();
         if($dtype!=$cols->dtype()) {
@@ -5826,7 +5958,7 @@ class OpenCLMath
         int $cols_offset,
         int $cols_size,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         $dtype = $images->dtype();
         if($dtype!=$cols->dtype()) {
@@ -6048,11 +6180,11 @@ class OpenCLMath
     public function randomUniform(
         int $n,
         BufferInterface $X, int $offsetX, int $incX,
-        $low,
-        $high,
+        int|float $low,
+        int|float $high,
         int $seed,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         $dtype = $X->dtype();
         if($dtype==NDArray::float64) {
@@ -6143,7 +6275,7 @@ class OpenCLMath
         float $scale,
         int $seed,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         $dtype = $X->dtype();
         if($dtype!=NDArray::float32 && $dtype!=NDArray::float64) {
@@ -6202,9 +6334,9 @@ class OpenCLMath
     public function fill(
         int $n,
         BufferInterface $X, int $offsetX, int $incX,
-        $pattern,
+        mixed $pattern,
         object $events=null, object $waitEvents=null
-        )
+        ) : void
     {
         if(!is_scalar($pattern)) {
             throw new InvalidArgumentException('Pattern must be scalar type.');
@@ -6254,8 +6386,9 @@ class OpenCLMath
     protected function toHostBuffer(
         BufferInterface $clBuffer,
         int $offset,
-        bool $blocking_read=true,object $waitEvents=null,
-        EventList &$events=null) : NDArray
+        bool $blocking_read=true,
+        object $events=null,
+        object $waitEvents=null) : HostBufferInterface
     {
         $dtype = $clBuffer->dtype();
         $bytes = $clBuffer->bytes();
@@ -6263,14 +6396,13 @@ class OpenCLMath
         $size = $clBuffer->count();
         $hostBuffer = $this->newHostBuffer($size,$dtype);
         $event = $clBuffer->read($this->queue,$hostBuffer,$bytes,
-            $offset*$valueSize,$hostoffset=0,$blocking_read,$waitEvents);
-        $events = $event;
+            $offset*$valueSize,$hostoffset=0,$blocking_read,$events,$waitEvents);
         return $hostBuffer;
     }
 
     public function transpose(
-        AnyBuffer $shape,   // DeviceBuffer or HostBuffer
-        AnyBuffer $perm,    // DeviceBuffer or HostBuffer
+        HostBufferInterface|BufferInterface $shape,   // DeviceBuffer or HostBuffer
+        HostBufferInterface|BufferInterface $perm,    // DeviceBuffer or HostBuffer
         BufferInterface $A, int $offsetA,
         BufferInterface $B, int $offsetB, 
         object $events=null, object $waitEvents=null
@@ -6311,7 +6443,7 @@ class OpenCLMath
 
         if($dtype!=$B->dtype()) {
             throw new InvalidArgumentException("Unmatch data type for A and B.".
-            $this->dtypeToString($dtype).",".$this->dtypeToString($cols->dtype()));
+            $this->dtypeToString($dtype).",".$this->dtypeToString($B->dtype()));
         }
 
         $strides = $this->newHostBuffer($ndim,NDArray::int32);
@@ -6341,7 +6473,7 @@ class OpenCLMath
         $targetStride = $targetStrides[0];
 
         $shape = $orgShape;
-        if(!($shape instanceof DeviceBuffer)) {
+        if(!($shape instanceof BufferInterface)) {
             $valueSize = $shape->value_size();
             $shape = $this->newBuffer(
                 count($shape)*$valueSize,

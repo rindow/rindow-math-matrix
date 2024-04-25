@@ -1,0 +1,26 @@
+includes:
+	- phpstan-interop.neon
+	- phpstan-baseline.neon
+
+parameters:
+	level: 6
+	paths:
+		- src
+	excludePaths:
+		- src/Drivers/MatlibCL/OpenCLMathTunner.php
+
+#	ignoreErrors:
+# level 7
+#		-
+#			message: "#^Call to an undefined method object::#"
+#		-
+#			message: "#^Access to an undefined property object::\\$real#"
+#			path: src/ComplexUtils.php
+#		-
+#			message: "#^Access to an undefined property object::\\$imag#"
+#			path: src/ComplexUtils.php
+# level 8
+#		-
+#			message: "#^Cannot access property \\$real#"
+#		-
+#			message: "#^Cannot access property \\$imag#"

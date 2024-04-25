@@ -1,27 +1,29 @@
 <?php
 namespace Rindow\Math\Matrix\Drivers\MatlibPHP;
 
-use ArrayAccess as Buffer;
 use RuntimeException;
 use InvalidArgumentException;
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\Math\Matrix\Buffer;
 use Rindow\Math\Matrix\ComplexUtils;
 
 class PhpMath
 {
     use ComplexUtils;
 
-    protected $math;
-    protected $forceMath;
-    protected $intTypes= [
+    protected ?object $math;
+    protected ?bool $forceMath;
+    /** @var array<int> $intTypes */
+    protected array $intTypes= [
         NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
         NDArray::uint8,NDArray::uint16,NDArray::uint32,NDArray::uint64,
     ];
+    /** @var array<int> $floatTypes */
     protected $floatTypes= [
         NDArray::float16,NDArray::float32,NDArray::float64,
     ];
 
-    public function __construct($math=null,$forceMath=null)
+    public function __construct(object $math=null, bool $forceMath=null)
     {
         //$this->math = $math;
         //$this->forceMath = $forceMath;
@@ -42,7 +44,7 @@ class PhpMath
     //    return false;
     //}
 
-    public function logging($message)
+    public function logging(string $message) : void
     {
         fwrite(STDERR,$message."\n");
     }
@@ -124,6 +126,21 @@ class PhpMath
             }
         }
         return $imax;
+    }
+
+    public function getNumThreads() : int
+    {
+        return 1;
+    }
+
+    public function getNumProcs() : int
+    {
+        return 1;
+    }
+
+    public function getParallel() : int
+    {
+        return 0; // parallel mode = 0 : serial
     }
 
     /**
@@ -872,7 +889,10 @@ class PhpMath
             $idA += $incAj;
         }
     }
-    protected function duplicate_blas_copy($n,$X,$offsetX,$incX,$Y,$offsetY,$incY)
+    protected function duplicate_blas_copy(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY) : void
     {
         $idX = $offsetX;
         $idY = $offsetY;
@@ -1410,21 +1430,20 @@ class PhpMath
         //    return;
         //}
 
+        $mask = null;
+        $isFloat = false;
         if(in_array($dtype,$this->floatTypes)) {
             $isFloat = true;
         } elseif(in_array($dtype,$this->intTypes)) {
-            $isFloat = false;
             if($dtype==NDArray::uint8) {
                 $mask = 0xff;
             } elseif($dtype==NDArray::uint16) {
                 $mask = 0xffff;
             } elseif($dtype==NDArray::uint32) {
                 $mask = 0xffffffff;
-            } else {
-                $mask = null;
             }
         } elseif($dtype==NDArray::bool) {
-            $isFloat = false;
+            ;
         } else {
             throw new InvalidArgumentException('dtype must be type of integer or float: '.$dtype);
         }
@@ -1568,7 +1587,7 @@ class PhpMath
         int $out_pos,
         int $out_filter_step,
         int $out_channel_step
-        )
+        ) : void
     {
         #print('v=%d,%d,%d,%d' % (vin_y,vin_x,vin_h,vin_w))
         $filter_w_pos = $images_pos;
@@ -1625,7 +1644,7 @@ class PhpMath
         Buffer $cols,
         int $cols_offset,
         int $cols_size
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->im2col1d(
@@ -1752,7 +1771,7 @@ class PhpMath
         int $out_pos,
         int $out_filter_step,
         int $out_channel_step
-        )
+        ) : void
     {
         #print('v=%d,%d,%d,%d' % (vin_y,vin_x,vin_h,vin_w))
         $filter_h_pos = $images_pos;
@@ -1823,7 +1842,7 @@ class PhpMath
         Buffer $cols,
         int $cols_offset,
         int $cols_size
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->im2col2d(
@@ -1985,7 +2004,7 @@ class PhpMath
         int $out_pos,
         int $out_filter_step,
         int $out_channel_step
-        )
+        ) : void
     {
         #print('v=%d,%d,%d,%d' % (vin_y,vin_x,vin_h,vin_w))
         $filter_d_pos = $images_pos;
@@ -2062,7 +2081,7 @@ class PhpMath
         Buffer $cols,
         int $cols_offset,
         int $cols_size
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->im2col3d(
@@ -2221,10 +2240,10 @@ class PhpMath
     public function randomUniform(
         int $n,
         Buffer $X, int $offsetX, int $incX,
-        $low,
-        $high,
+        int|float $low,
+        int|float $high,
         int $seed
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->randomUniform(
@@ -2275,7 +2294,7 @@ class PhpMath
         float $mean,
         float $scale,
         int $seed
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->randomNormal(
@@ -2303,7 +2322,7 @@ class PhpMath
         int $size,
         Buffer $X, int $offsetX, int $incX,
         int $seed
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->randomSequence(
@@ -2347,7 +2366,7 @@ class PhpMath
         int $sizeAxis1,
         int $startAxis2,
         int $sizeAxis2
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->slice(
@@ -2425,7 +2444,7 @@ class PhpMath
         int $n,
         float $alpha,
         Buffer $A, int $offsetA, int $ldA,
-        Buffer $B, int $offsetB, int $ldB)
+        Buffer $B, int $offsetB, int $ldB) : void
     {
         //if($this->math) {
         //    $this->math->matrixcopy(
@@ -2455,7 +2474,7 @@ class PhpMath
     public function fill(
         int $n,
         Buffer $V, int $offsetV,
-        Buffer $X, int $offsetX, int $incX)
+        Buffer $X, int $offsetX, int $incX) : void
     {
         //if($this->math) {
         //    $this->math->fill(
@@ -2530,7 +2549,7 @@ class PhpMath
         bool $verticalFlip,
         bool $horizontalFlip,
         bool $rgbFlip
-        )
+        ) : void
     {
         //if($this->math) {
         //    $this->math->imagecopy(
@@ -2663,7 +2682,11 @@ class PhpMath
             $ndim,$sourceShape,$strides,$targetStrides
         );
     }
-    protected function transBuff2array($buffer)
+
+    /**
+     * @return array<int> $targetStrides
+     */
+    protected function transBuff2array(Buffer $buffer) : array
     {
         $size = count($buffer);
         $array = [];
@@ -2673,16 +2696,25 @@ class PhpMath
         return $array;
     }
 
-    ///////
-    // matrixlib simulation version
-    ///////
+    /**
+     * matrixlib simulation version
+     * 
+     * @param array<int> $sourceShape
+     * @param array<int> $strides
+     * @param array<int> $targetStrides
+     */
     protected function transCopy(
-        $A,$offsetA,$B,$offsetB,
-        $ndim,$sourceShape,$strides,$targetStrides)
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        int $ndim, array $sourceShape,
+        array $strides, array $targetStrides) : void
     {
         $repeat = array_shift($sourceShape);
         $stride = array_shift($strides);
         $targetStride = array_shift($targetStrides);
+        if($repeat==null||$stride==null||$targetStride==null) {
+            throw new RuntimeException('invalid shape');
+        }
         if($ndim<=0) {
             $this->math_copy($repeat,$A,$offsetA,$stride,$B,$offsetB,$targetStride);
             return;
@@ -2695,12 +2727,18 @@ class PhpMath
         }
     }
 
-    ///////
-    // opencl simulation version
-    ///////
+    /**
+     * opencl simulation version
+     * 
+     * @param array<int> $sourceShape
+     * @param array<int> $strides
+     * @param array<int> $targetStrides
+     */
     protected function transCopy2(
-        $A,$offsetA,$B,$offsetB,
-        $ndim,$sourceShape,$strides,$targetStrides)
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        int $ndim, array $sourceShape,
+        array $strides, array $targetStrides) : void
     {
         $n = $sourceShape[0];
         $stackPos = new PhpBuffer(count($sourceShape),NDArray::int32);
@@ -2722,19 +2760,26 @@ class PhpMath
         //    $ndim,$sourceShape,$strides,$targetStrides);
     }
 
-    protected function debug($debug,$message)
+    protected function debug(bool $debug, string $message) : void
     {
         if($debug) {
             echo $message;
         }
     }
 
+    /**
+     * @param array<int> $sourceShape
+     * @param array<int> $strides
+     * @param array<int> $targetStrides
+     */
     protected function transCopy2_kernel(
-        $surface,
-        $gid,
-        $A,$offsetA,$B,$offsetB,
-        $stackPos,$stackOfsA,$stackOfsB,
-        $ndim,$sourceShape,$strides,$targetStrides)
+        int $surface,
+        int $gid,
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        Buffer $stackPos, Buffer $stackOfsA, Buffer $stackOfsB,
+        int $ndim, array $sourceShape,
+        array $strides,array $targetStrides) : void
     {
         $debug = false;
         $bed = 2; // 1: copy each value, 2: use math_copy

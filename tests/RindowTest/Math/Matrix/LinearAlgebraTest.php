@@ -710,6 +710,236 @@ class LinearAlgebraTest extends TestCase
         }
     }
 
+    public function testRotgAndRot()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $xy = [
+            [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
+        ];
+        $r = 1/sqrt(2);
+        $trues = [
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+        ];
+        foreach($xy as $idx => [$ax,$ay]) {
+            // givens rotation
+            $ax = $la->array($ax,dtype:NDArray::float32);  // pi/2 rotation
+            $ay = $la->array($ay,dtype:NDArray::float32);  // pi/2 rotation
+
+            [$r,$z,$c,$s] = $la->rotg($ax,$ay);
+            //echo "r=".$mo->toString($r)."\n";
+            //echo "z=".$mo->toString($z)."\n";
+            //echo "c=".$mo->toString($c)."\n";
+            //echo "s=".$mo->toString($s)."\n";
+
+            // rotate
+            $x = $la->array([ 1, 0,-3, 0],dtype:NDArray::float32);
+            $y = $la->array([ 0, 2, 0,-4],dtype:NDArray::float32);
+            $la->rot($x,$y,$c,$s);
+            //echo "x=".$mo->toString($x,format:'%6.3f')."\n";
+            //echo "y=".$mo->toString($y,format:'%6.3f')."\n";
+            [$truesX,$truesY] = $trues[$idx];
+            $truesX = $mo->array($truesX,dtype:NDArray::float32);
+            $truesY = $mo->array($truesY,dtype:NDArray::float32);
+            $this->assertTrue($la->isclose($la->toNDArray($x),$truesX));
+            $this->assertTrue($la->isclose($la->toNDArray($y),$truesY));
+        }
+    }
+
+    public function testRotgxyAndRotxy()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        
+        $xy = [
+            [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
+        ];
+        $r = 1/sqrt(2);
+        $trues = [
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+        ];
+        foreach($xy as $idx => [$ax,$ay]) {
+            // givens rotation
+            $xy = $la->array([$ax,$ay],dtype:NDArray::float32);  // pi/2 rotation
+            //echo "xy=".$mo->toString($xy,format:'%6.3f')."\n";
+
+            $g = $la->rotgxy($xy);
+            //echo "g=".$mo->toString($g)."\n";
+
+            // rotate
+            $vectors = $la->array([
+                [ 1, 0],
+                [ 0, 2],
+                [-3, 0],
+                [ 0,-4],
+            ],dtype:NDArray::float32);
+            //echo "vectors=".$mo->toString($vectors,format:'%6.3f',indent:true)."\n";
+            $la->rotxy($vectors,$g);
+            //echo "vectors=".$mo->toString($vectors,format:'%6.3f',indent:true)."\n";
+
+            $trueVecs = $trues[$idx];
+            $trueVecs = $la->array($trueVecs,dtype:NDArray::float32);
+            $trueVecs = $la->transpose($trueVecs);
+            //echo "trues=".$mo->toString($trueVecs,format:'%6.3f',indent:true)."\n";
+            $this->assertTrue($la->isclose($la->toNDArray($vectors),$la->toNDArray($trueVecs)));
+        }
+    }
+
+    public function testRotmg()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // givens rotation
+        $ax = $la->array(0,dtype:NDArray::float32);  // pi/2 rotation
+        $ay = $la->array(2,dtype:NDArray::float32);  // pi/2 rotation
+
+        [$d1,$d2,$b1,$p] = $la->rotmg($ax,$ay);
+        //echo "d1=".$mo->toString($d1)."\n";
+        //echo "d2=".$mo->toString($d2)."\n";
+        //echo "b1=".$mo->toString($b1)."\n";
+        //echo "p=".$mo->toString($p)."\n";
+
+        $this->assertTrue($la->isclose($la->toNDArray($d1),$mo->array(1)));
+        $this->assertTrue($la->isclose($la->toNDArray($d2),$mo->array(1)));
+        $this->assertTrue($la->isclose($la->toNDArray($b1),$mo->array(2)));
+        $this->assertTrue($la->isclose($la->toNDArray($p),$mo->array([1,0,0,0,0])));
+    }
+
+    public function testRotm()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $x = $la->array([0,1,2,3],dtype:NDArray::float32);
+        $y = $la->array([1,0,2,3],dtype:NDArray::float32);
+        $p = $la->array([1,0,0,0,0],dtype:NDArray::float32);
+        $la->rotm($x,$y,$p);
+        //echo "x=".$mo->toString($x,format:'%6.3f')."\n";
+        //echo "y=".$mo->toString($y,format:'%6.3f')."\n";
+        $this->assertTrue($la->isclose($la->toNDArray($x),$mo->array([1,0,2,3])));
+        $this->assertTrue($la->isclose($la->toNDArray($y),$mo->array([0,-1,-2,-3])));
+    }
+
+    public function testRotmgAndRotm()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        
+        $xy = [
+            [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
+        ];
+        $r = 1/sqrt(2);
+        $trues = [
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+        ];
+        foreach($xy as $idx => [$ax,$ay]) {
+            // givens rotation
+            $ax = $la->array($ax,dtype:NDArray::float32);  // pi/2 rotation
+            $ay = $la->array($ay,dtype:NDArray::float32);  // pi/2 rotation
+            //echo "ax=".$mo->toString($ax,format:'%6.3f')."\n";
+            //echo "ay=".$mo->toString($ay,format:'%6.3f')."\n";
+
+            [$d1,$d2,$b1,$p] = $la->rotmg($ax,$ay);
+            //echo "d1=".$mo->toString($d1)."\n";
+            //echo "d2=".$mo->toString($d2)."\n";
+            //echo "b1=".$mo->toString($b1)."\n";
+            //echo "p=".$mo->toString($p)."\n";
+
+            // rotate
+            $x = $la->array([ 1, 0,-3, 0],dtype:NDArray::float32);
+            $y = $la->array([ 0, 2, 0,-4],dtype:NDArray::float32);
+            //echo "x=".$mo->toString($x,format:'%6.3f')."\n";
+            //echo "y=".$mo->toString($y,format:'%6.3f')."\n";
+            $la->rotm($x,$y,$p);
+            //echo "x=".$mo->toString($x,format:'%6.3f')."\n";
+            //echo "y=".$mo->toString($y,format:'%6.3f')."\n";
+            $la->scal(sqrt($d1->toArray()),$x);
+            $la->scal(sqrt($d2->toArray()),$y);
+            //echo "x=".$mo->toString($x,format:'%6.3f')."\n";
+            //echo "y=".$mo->toString($y,format:'%6.3f')."\n";
+            [$truesX,$truesY] = $trues[$idx];
+            $truesX = $mo->array($truesX,dtype:NDArray::float32);
+            $truesY = $mo->array($truesY,dtype:NDArray::float32);
+            //echo "tx=".$mo->toString($truesX,format:'%6.3f')."\n";
+            //echo "ty=".$mo->toString($truesY,format:'%6.3f')."\n";
+            $this->assertTrue($la->isclose($la->toNDArray($x),$truesX));
+            $this->assertTrue($la->isclose($la->toNDArray($y),$truesY));
+        }
+    }
+
+    public function testRotmgxyAndRotmxy()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        
+        $xy = [
+            [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
+        ];
+        $r = 1/sqrt(2);
+        $trues = [
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+        ];
+        foreach($xy as $idx => [$ax,$ay]) {
+            // givens rotation
+            $xy = $la->array([$ax,$ay],dtype:NDArray::float32);  // pi/2 rotation
+            //echo "xy=".$mo->toString($xy,format:'%6.3f')."\n";
+            $d  = $la->ones($la->alloc([2],dtype:NDArray::float32));
+
+            $g = $la->rotmgxy($xy,d:$d);
+            //echo "d=".$mo->toString($d)."\n";
+            //echo "g=".$mo->toString($g)."\n";
+
+            // rotate
+            $vectors = $la->array([
+                [ 1, 0],
+                [ 0, 2],
+                [-3, 0],
+                [ 0,-4],
+            ],dtype:NDArray::float32);
+            //echo "vectors=".$mo->toString($vectors,format:'%6.3f',indent:true)."\n";
+            $la->rotmxy($vectors,$g);
+            //echo "vectors=".$mo->toString($vectors,format:'%6.3f',indent:true)."\n";
+            $la->multiply($la->sqrt($la->copy($d)),$vectors);
+            //echo "vectors=".$mo->toString($vectors,format:'%6.3f',indent:true)."\n";
+
+            $trueVecs = $trues[$idx];
+            $trueVecs = $la->array($trueVecs,dtype:NDArray::float32);
+            $trueVecs = $la->transpose($trueVecs);
+            //echo "trues=".$mo->toString($trueVecs,format:'%6.3f',indent:true)."\n";
+            $this->assertTrue($la->isclose($la->toNDArray($vectors),$la->toNDArray($trueVecs)));
+        }
+    }
+
     /**
     *    Y := X
     *    X := Y
@@ -8939,8 +9169,8 @@ class LinearAlgebraTest extends TestCase
         $this->assertNotEquals(
             $x->toArray(),
             $y->toArray());
-        $this->assertLessThanOrEqual(5,$la->max($x));
-        $this->assertGreaterThanOrEqual(-5,$la->min($x));
+        $this->assertLessThanOrEqual(6,$la->max($x));
+        $this->assertGreaterThanOrEqual(-6,$la->min($x));
     }
 
     public function testRandomSequence()

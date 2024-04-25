@@ -7,9 +7,14 @@ use Rindow\Math\Matrix\Drivers\MatlibCL\OpenCLMath;
 use Rindow\Math\Matrix\Drivers\MatlibCL\OpenCLMathFixDiv5Bug;
 
 use InvalidArgumentException;
+use LogicException;
 
 abstract class AbstractMatlibService implements Service
 {
+    // abstract properties
+    protected string $name = 'unknown';
+
+    /** @var array<int,string> $levelString */
     protected array $levelString = [
         Service::LV_BASIC => 'Basic',
         Service::LV_ADVANCED => 'Advanced',
@@ -41,9 +46,8 @@ abstract class AbstractMatlibService implements Service
         protected ?object $blasCLFactory=null,
         protected ?object $mathCLFactory=null,
         protected ?object $bufferCLFactory=null,
-    )
-    {
-        $this->phpBLASFactory = new PhpBLASFactory($this);
+    ) {
+        $this->phpBLASFactory = new PhpBLASFactory();
         $this->phpblas = $this->phpBLASFactory->Blas();
         $this->phplapack = $this->phpBLASFactory->Lapack();
         $this->phpmath = $this->phpBLASFactory->Math();
@@ -51,10 +55,10 @@ abstract class AbstractMatlibService implements Service
 
         $level = $this->serviceLevel();
         if($level>=Service::LV_ADVANCED) {
-            $this->blas = $this->openblasFactory->Blas();
-            $this->lapack = $this->openblasFactory->Lapack();
-            $this->math = $this->mathFactory->Math();
-            $this->buffer = $this->bufferFactory;
+            $this->blas = $this->openblasFactory()->Blas();
+            $this->lapack = $this->openblasFactory()->Lapack();
+            $this->math = $this->mathFactory()->Math();
+            $this->buffer = $this->bufferFactory();
         } else {
             $this->blas = $this->phpblas;
             $this->lapack = $this->phplapack;
@@ -63,10 +67,74 @@ abstract class AbstractMatlibService implements Service
         }
     }
 
+    protected function bufferFactory() : object
+    {
+        if($this->bufferFactory==null) {
+            throw new LogicException('bufferFactory is empty');
+        }
+        return $this->bufferFactory;
+    }
+
+    protected function openblasFactory() : object
+    {
+        if($this->openblasFactory==null) {
+            throw new LogicException('openblasFactory is empty');
+        }
+        return $this->openblasFactory;
+    }
+
+    protected function mathFactory() : object
+    {
+        if($this->mathFactory==null) {
+            throw new LogicException('mathFactory is empty');
+        }
+        return $this->mathFactory;
+    }
+
+    protected function openclFactory() : object
+    {
+        if($this->openclFactory==null) {
+            throw new LogicException('openclFactory is empty');
+        }
+        return $this->openclFactory;
+    }
+
+    protected function clblastFactory() : object
+    {
+        if($this->clblastFactory==null) {
+            throw new LogicException('clblastFactory is empty');
+        }
+        return $this->clblastFactory;
+    }
+
+    protected function bufferCLFactory() : object
+    {
+        if($this->bufferCLFactory==null) {
+            throw new LogicException('bufferCLFactory is empty');
+        }
+        return $this->bufferCLFactory;
+    }
+
+    protected function blasCLFactory() : object
+    {
+        if($this->blasCLFactory==null) {
+            throw new LogicException('blasCLFactory is empty');
+        }
+        return $this->blasCLFactory;
+    }
+
+    protected function mathCLFactory() : object
+    {
+        if($this->mathCLFactory==null) {
+            throw new LogicException('mathCLFactory is empty');
+        }
+        return $this->mathCLFactory;
+    }
+
     public function serviceLevel() : int
     {
         if($this->serviceLevel!==null) {
-            $this->serviceLevel;
+            return $this->serviceLevel;
         }
 
         $level = Service::LV_BASIC;
@@ -76,9 +144,9 @@ abstract class AbstractMatlibService implements Service
                 $this->mathFactory===null) {
                 break;
             }
-            if(!$this->bufferFactory->isAvailable()||
-                !$this->openblasFactory->isAvailable()||
-                !$this->mathFactory->isAvailable()) {
+            if(!$this->bufferFactory()->isAvailable()||
+                !$this->openblasFactory()->isAvailable()||
+                !$this->mathFactory()->isAvailable()) {
                 break;
             }
             $level = Service::LV_ADVANCED;
@@ -87,8 +155,8 @@ abstract class AbstractMatlibService implements Service
                 $this->clblastFactory==null) {
                 break;
             }
-            if(!$this->openclFactory->isAvailable()||
-                !$this->clblastFactory->isAvailable()) {
+            if(!$this->openclFactory()->isAvailable()||
+                !$this->clblastFactory()->isAvailable()) {
                 break;
             }
             $level = Service::LV_ACCELERATED;
@@ -101,14 +169,21 @@ abstract class AbstractMatlibService implements Service
 
     public function info() : string
     {
+        $modes = [
+            'SEQUENTIAL',
+            'THREAD',
+            'OPENMP',
+        ];
+        $blasMode = $modes[$this->blas()->getParallel()];
+        $mathMode = $modes[$this->math()->getParallel()];
         $info =  "Service Level   : ".$this->levelString[$this->serviceLevel]."\n";
         $info .= "Buffer Factory  : ".get_class($this->buffer)."\n";
-        $info .= "BLAS Driver     : ".get_class($this->blas)."\n";
+        $info .= "BLAS Driver     : ".get_class($this->blas)."($blasMode)\n";
         $info .= "LAPACK Driver   : ".get_class($this->lapack)."\n";
-        $info .= "Math Driver     : ".get_class($this->math)."\n";
+        $info .= "Math Driver     : ".get_class($this->math)."($mathMode)\n";
         if($this->serviceLevel()>=Service::LV_ACCELERATED) {
-            $info .= "OpenCL Factory  : ".get_class($this->openclFactory)."\n";
-            $info .= "CLBlast Factory : ".get_class($this->clblastFactory)."\n";
+            $info .= "OpenCL Factory  : ".get_class($this->openclFactory())."\n";
+            $info .= "CLBlast Factory : ".get_class($this->clblastFactory())."\n";
         }
         return $info;
     }
@@ -131,8 +206,6 @@ abstract class AbstractMatlibService implements Service
             default: {
                 throw new InvalidArgumentException('Unknown service level.');
             }
-        }
-        if($level===Service::LV_BASIC) {
         }
     }
 
@@ -179,7 +252,7 @@ abstract class AbstractMatlibService implements Service
                 return $this->buffer;
             }
             case Service::LV_ACCELERATED: {
-                return $this->bufferCLFactory;
+                return $this->bufferCLFactory();
             }
             default: {
                 throw new InvalidArgumentException('Unknown service level.');
@@ -189,22 +262,22 @@ abstract class AbstractMatlibService implements Service
 
     public function opencl() : object
     {
-        return $this->openclFactory;
+        return $this->openclFactory();
     }
 
     public function blasCL(object $queue) : object
     {
-        return $this->blasCLFactory->Blas($queue,service:$this);
+        return $this->blasCLFactory()->Blas($queue, service:$this);
     }
 
     public function mathCL(object $queue) : object
     {
-        return $this->mathCLFactory->Math($queue,service:$this);
+        return $this->mathCLFactory()->Math($queue, service:$this);
     }
 
     public function mathCLBlast(object $queue) : object
     {
-        return $this->clblastFactory->Math($queue,service:$this);
+        return $this->clblastFactory()->Math($queue, service:$this);
     }
 
     public function createQueue(array $options=null) : object
@@ -219,14 +292,14 @@ abstract class AbstractMatlibService implements Service
         } else {
             $device = OpenCL::CL_DEVICE_TYPE_DEFAULT;
         }
-        $context = $this->openclFactory->Context($device);
-        $queue = $this->openclFactory->CommandQueue($context);
+        $context = $this->openclFactory()->Context($device);
+        $queue = $this->openclFactory()->CommandQueue($context);
         return $queue;
     }
 
-    protected function getDevice($devOption) : object
+    protected function getDevice(string $devOption) : object
     {
-        $devOption = explode(',',$devOption);
+        $devOption = explode(',', $devOption);
         if(count($devOption)!=2) {
             throw new InvalidArgumentException('Device option must be two numeric with comma, etc."0,1"');
         }
@@ -236,25 +309,25 @@ abstract class AbstractMatlibService implements Service
         }
         $platformId = intval($platformId);
         $deviceId = intval($deviceId);
-        $platform = $this->openclFactory->PlatformList();
+        $platform = $this->openclFactory()->PlatformList();
         $platform = $platform->getOne($platformId);
-        $device = $this->openclFactory->DeviceList($platform);
+        $device = $this->openclFactory()->DeviceList($platform);
         $device = $device->getOne($deviceId);
         return $device;
     }
 
-    protected function searchDevice($deviceType) : object
+    protected function searchDevice(int $deviceType) : object
     {
-        $platformList = $this->openclFactory->PlatformList();
+        $platformList = $this->openclFactory()->PlatformList();
         $platformCount = $platformList->count();
         for($p=0;$p<$platformCount;$p++) {
-            $deviceList = $this->openclFactory->DeviceList($platformList->getOne($p));
+            $deviceList = $this->openclFactory()->DeviceList($platformList->getOne($p));
             $deviceCount = $deviceList->count();
             for($d=0;$d<$deviceCount;$d++) {
                 if($deviceType==OpenCL::CL_DEVICE_TYPE_DEFAULT) {
                     return $deviceList->getOne($d);
                 }
-                if($deviceList->getInfo($d,OpenCL::CL_DEVICE_TYPE)===$deviceType) {
+                if($deviceList->getInfo($d, OpenCL::CL_DEVICE_TYPE)===$deviceType) {
                     return $deviceList->getOne($d);
                 }
             }

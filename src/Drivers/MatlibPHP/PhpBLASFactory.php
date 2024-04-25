@@ -7,8 +7,6 @@ use Rindow\Math\Matrix\Drivers\Service;
 
 class PhpBLASFactory implements Driver
 {
-    protected Service $service;
-
     public function isAvailable() : bool
     {
         return true;
@@ -19,17 +17,17 @@ class PhpBLASFactory implements Driver
         return 'phpblas';
     }
 
-    public function Blas($blas=null,$forceBlas=null) : object
+    public function Blas(object $blas=null,bool $forceBlas=null) : object
     {
         return new PhpBlas($blas=null,$forceBlas=null);
     }
 
-    public function Lapack($blas=null,$forceBlas=null) : object
+    public function Lapack(object $blas=null,bool $forceBlas=null) : object
     {
         return new PhpLapack($blas=null,$forceBlas=null);
     }
 
-    public function Math($blas=null,$forceBlas=null) : object
+    public function Math(object $blas=null,bool $forceBlas=null) : object
     {
         return new PhpMath($blas=null,$forceBlas=null);
     }

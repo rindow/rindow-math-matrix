@@ -3,23 +3,29 @@ namespace Rindow\Math\Matrix\Drivers\MatlibPHP;
 
 use LogicException;
 use InvalidArgumentException;
+use RuntimeException;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\Buffer;
 use Rindow\Math\Matrix\ComplexUtils;
 
-class PhpBlas //implements BLASLevel1
+class PhpBlas
 {
     use Utils;
     use ComplexUtils;
 
-    protected $blas;
-    protected $forceBlas;
+    const GAM = 4096;
+    const GAMSQ = 16777216;
+    const RGAMSQ = 5.9604645e-8;
+
+    protected ?object $blas;
+    protected ?bool $forceBlas;
+    /** @var array<int> $floatTypes */
     protected $floatTypes= [
         NDArray::float16,NDArray::float32,NDArray::float64,
     ];
 
-    public function __construct($blas=null,$forceBlas=null)
+    public function __construct(object $blas=null,bool $forceBlas=null)
     {
         //$this->blas = $blas;
         //$this->forceBlas = $forceBlas;
@@ -61,11 +67,16 @@ class PhpBlas //implements BLASLevel1
         return $this->blas->getConfig();
     }
 
-    public function getCorename()
+    public function getCorename() : string
     {
         if($this->blas===null)
             return 'PHP';
         return $this->blas->getCorename();
+    }
+
+    public function getParallel() : int
+    {
+        return 0; // parallel mode = 0 : serial 
     }
 
     protected function sign(float $x,float $y) : float
@@ -78,7 +89,7 @@ class PhpBlas //implements BLASLevel1
 
     /**
      * @param  int $trans BLAS::NoTrans, BLAS::Trans, BLAS::ConjTrans, BLAS::ConjNoTrans
-     * @return array [bool $trans, bool $conj]
+     * @return array<bool> [bool $trans, bool $conj]
      */
     protected function codeToTrans(int $trans) : array
     {
@@ -101,6 +112,22 @@ class PhpBlas //implements BLASLevel1
         }
     }
 
+    protected function cleanComplexNumber(mixed $value,string $name) : object
+    {
+        if(!$this->cisobject($value)) {
+            throw new RuntimeException("$name is not complex");
+        }
+        return $value;
+    }
+
+    protected function cleanFloatNumber(mixed $value,string $name) : float
+    {
+        if(!is_numeric($value)) {
+            throw new RuntimeException("$name is not float");
+        }
+        return (float)$value;
+    }
+
     public function scal(
         int $n,
         float|object $alpha,
@@ -111,10 +138,12 @@ class PhpBlas //implements BLASLevel1
 
         $idx = $offsetX;
         if($this->cistype($X->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
             for ($i=0; $i<$n; $i++,$idx+=$incX) {
                 $X[$idx] = $this->cmul($X[$idx],$alpha);
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
             for ($i=0; $i<$n; $i++,$idx+=$incX) {
                 $X[$idx] = $X[$idx] * $alpha;
             }
@@ -136,10 +165,12 @@ class PhpBlas //implements BLASLevel1
         $idxX = $offsetX;
         $idxY = $offsetY;
         if($this->cistype($X->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
             for ($i=0; $i<$n; $i++,$idxX+=$incX,$idxY+=$incY) {
                 $Y[$idxY] = $this->cadd($this->cmul($alpha,$X[$idxX]),$Y[$idxY]);
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
             if($alpha==1.0) {   // Y := X + Y
                 for ($i=0; $i<$n; $i++,$idxX+=$incX,$idxY+=$incY) {
                     $Y[$idxY] = $X[$idxX] + $Y[$idxY];
@@ -350,7 +381,7 @@ class PhpBlas //implements BLASLevel1
         }
         return $Y;
     }
-
+/*
     public function rotg(
         Buffer $A, int $offsetA,
         Buffer $B, int $offsetB,
@@ -400,6 +431,219 @@ class PhpBlas //implements BLASLevel1
         $C[$offsetC] = $c;
         $S[$offsetS] = $s;
     }
+*/
+    public function rotg(
+        Buffer $A, int $offsetA,
+        Buffer $B, int $offsetB,
+        Buffer $C, int $offsetC,
+        Buffer $S, int $offsetS
+        ) : void
+    {
+        if($this->cistype($A->dtype())) {
+            throw new InvalidArgumentException('Unsuppored data type.');
+        }
+        $a = $A[$offsetA];
+        $b = $B[$offsetB];
+        $absa = abs($a);
+        $absb = abs($b);
+
+        if($absb == 0.0) {
+            $c = 1.0;
+            $s = 0.0;
+            $r = $a;
+            $z =  0.0;
+        } elseif($absa == 0.0) {
+            $c = 0.0;
+            $s = 1.0;
+            $r = $b;
+            $z = 1.0;
+        } else {
+            $safmin = 1.0e-37;
+            $safmax = 1/$safmin;
+            $scale = min( max($safmin,max($absa,$absb)), $safmax);
+            if ($absa > $absb) {
+                $sigma = ($a>=0.0)? 1.0:-1.0;
+            } else {
+                $sigma = ($b>=0.0)? 1.0:-1.0;
+            }
+            $dascal = $a / $scale;
+            $dbscal = $b / $scale;
+            $r = $sigma * ($scale * sqrt($dascal * $dascal + $dbscal * $dbscal));
+            $c = $a / $r;
+            $s = $b / $r;
+            $z = 1.0;
+            if($absa > $absb) {
+                $z = $s;
+            }
+            if(($absa <= $absb) && ($c != 0.0)) {
+                $z = 1.0 / $c;
+            }
+        }
+
+        $A[$offsetA] = $r;
+        $B[$offsetB] = $z;
+        $C[$offsetC] = $c;
+        $S[$offsetS] = $s;
+    }
+
+    public function rotmg(
+        Buffer $D1, int $offsetD1,
+        Buffer $D2, int $offsetD2,
+        Buffer $B1, int $offsetB1,
+        Buffer $B2, int $offsetB2,
+        Buffer $P,  int $offsetP,
+    ) : void
+    {
+        $dd1 = $D1[$offsetD1];
+        $dd2 = $D2[$offsetD2];
+        $dx1 = $B1[$offsetB1];
+        $dy1 = $B2[$offsetB2];
+        $dh11 = 0.0;
+        $dh21 = 0.0;
+        $dh12 = 0.0;
+        $dh22 = 0.0;
+        $dflag = -1;
+        
+        if($dd2 == 0.0 || $dy1 == 0.0)
+        {
+            $dflag = -2.0;
+            $P[$offsetP+0] = $dflag;
+            return;
+        }
+    
+        if($dd1 < 0.0)
+        {
+            $dflag = -1.0;
+            $dh11  = 0.0;
+            $dh12  = 0.0;
+            $dh21  = 0.0;
+            $dh22  = 0.0;
+    
+            $dd1  = 0.0;
+            $dd2  = 0.0;
+            $dx1  = 0.0;
+        }
+        else if (($dd1 == 0.0 || $dx1 == 0.0) && $dd2 > 0.0)
+        {
+            $dflag = 1.0;
+            $dh12 = 1;
+            $dh21 = -1;
+            $dx1 = $dy1;
+            $dtemp = $dd1;
+            $dd1 = $dd2;
+            $dd2 = $dtemp;
+        } 
+        else
+        {
+            $dp2 = $dd2 * $dy1;
+            $dp1 = $dd1 * $dx1;
+            $dq2 =  $dp2 * $dy1;
+            $dq1 =  $dp1 * $dx1;
+            if(abs($dq1) > abs($dq2))
+            {
+                $dh11  =  1.0;
+                $dh22  =  1.0;
+                $dh21 = -  $dy1 / $dx1;
+                $dh12 =    $dp2 /  $dp1;
+    
+                $du   = 1.0 - $dh12 * $dh21;
+                $dflag = 0.0;
+                $dd1  = $dd1 / $du;
+                $dd2  = $dd2 / $du;
+                $dx1  = $dx1 * $du;
+                
+            }
+            else
+            {
+                if($dq2 < 0.0)
+                {
+                    $dflag = -1.0;
+    
+                    $dh11  = 0.0;
+                    $dh12  = 0.0;
+                    $dh21  = 0.0;
+                    $dh22  = 0.0;
+    
+                    $dd1  = 0.0;
+                    $dd2  = 0.0;
+                    $dx1  = 0.0;
+                }
+                else
+                {
+                    $dflag =  1.0;
+                    $dh21  = -1.0;
+                    $dh12  =  1.0;
+    
+                    $dh11  =  $dp1 /  $dp2;
+                    $dh22  = $dx1 /  $dy1;
+                    $du    =  1.0 + $dh11 * $dh22;
+                    $dtemp = $dd2 / $du;
+    
+                    $dd2  = $dd1 / $du;
+                    $dd1  = $dtemp;
+                    $dx1  = $dy1 * $du;
+                }
+            }
+    
+    
+            while ( $dd1 <= self::RGAMSQ && $dd1 != 0.0)
+            {
+                $dflag = -1.0;
+                $dd1  = $dd1 * (self::GAM * self::GAM);
+                $dx1  = $dx1 / self::GAM;
+                $dh11  = $dh11 / self::GAM;
+                $dh12  = $dh12 / self::GAM;
+            }
+            while (abs($dd1) > self::GAMSQ) {
+                $dflag = -1.0;
+                $dd1  = $dd1 / (self::GAM * self::GAM);
+                $dx1  = $dx1 * self::GAM;
+                $dh11  = $dh11 * self::GAM;
+                $dh12  = $dh12 * self::GAM;
+            }
+    
+            while (abs($dd2) <= self::RGAMSQ && $dd2 != 0.0) {
+                $dflag = -1.0;
+                $dd2  = $dd2 * (self::GAM * self::GAM);
+                $dh21  = $dh21 / self::GAM;
+                $dh22  = $dh22 / self::GAM;
+            }
+            while (abs($dd2) > self::GAMSQ) {
+                $dflag = -1.0;
+                $dd2  = $dd2 / (self::GAM * self::GAM);
+                $dh21  = $dh21 * self::GAM;
+                $dh22  = $dh22 * self::GAM;
+            }
+    
+        }
+    
+        if($dflag < 0.0)
+        {
+            $P[$offsetP+1] = $dh11;
+            $P[$offsetP+2] = $dh21;
+            $P[$offsetP+3] = $dh12;
+            $P[$offsetP+4] = $dh22;
+        }
+        else
+        {
+            if($dflag == 0.0)
+            {
+                $P[$offsetP+2] = $dh21;
+                $P[$offsetP+3] = $dh12;
+            }
+            else
+            {
+                $P[$offsetP+1] = $dh11;
+                $P[$offsetP+4] = $dh22;
+            }
+        }
+    
+        $P[$offsetP+0] = $dflag;
+
+        $D1[$offsetD1] = $dd1;
+        $D2[$offsetD2] = $dd2;
+        $B1[$offsetB1] = $dx1;
+    }
 
     public function rot(
         int $n,
@@ -421,6 +665,69 @@ class PhpBlas //implements BLASLevel1
             $yy = $Y[$idY];
             $X[$idX] =  $cc * $xx + $ss * $yy;
             $Y[$idY] = -$ss * $xx + $cc * $yy;
+        }
+    }
+
+    public function rotm(
+        int $n,
+        Buffer $X, int $offsetX, int $incX,
+        Buffer $Y, int $offsetY, int $incY,
+        Buffer $P,  int $offsetP,
+    ) : void
+    {
+        $dflag = $P[$offsetP+0];
+        if ($n <= 0 || $dflag == - 2.0) {
+            // flag -2
+            return;
+        }
+    
+        $kx = $offsetX;
+        $ky = $offsetY;
+        if ($incX < 0) {
+            $kx = (1 - $n) * $incX + $offsetX;
+        }
+        if ($incY < 0) {
+            $ky = (1 - $n) * $incY + $offsetY;
+        }
+    
+        if ($dflag < 0) {
+            // flag = -1
+            $dh11 = $P[$offsetP+1];
+            $dh12 = $P[$offsetP+3];
+            $dh21 = $P[$offsetP+2];
+            $dh22 = $P[$offsetP+4];
+            for ($i=0; $i<$n; ++$i) {
+                $w = $X[$kx];
+                $z = $Y[$ky];
+                $X[$kx] = $w * $dh11 + $z * $dh12;
+                $Y[$ky] = $w * $dh21 + $z * $dh22;
+                $kx += $incX;
+                $ky += $incY;
+            }
+        } elseif($dflag == 0) {
+            // flag = 0
+            $dh12 = $P[$offsetP+3];
+            $dh21 = $P[$offsetP+2];
+            for ($i=0; $i<$n; ++$i) {
+                $w = $X[$kx];
+                $z = $Y[$ky];
+                $X[$kx] = $w + $z * $dh12;
+                $Y[$ky] = $w * $dh21 + $z;
+                $kx += $incX;
+                $ky += $incY;
+            }
+        } else {
+            // flag = 1
+            $dh11 = $P[$offsetP+1];
+            $dh22 = $P[$offsetP+4];
+            for ($i=0; $i<$n; ++$i) {
+                $w = $X[$kx];
+                $z = $Y[$ky];
+                $X[$kx] = $w * $dh11 + $z;
+                $Y[$ky] = -$w + $dh22 * $z;
+                $kx += $incX;
+                $ky += $incY;
+            }
         }
     }
 
@@ -475,6 +782,8 @@ class PhpBlas //implements BLASLevel1
         $idA_i = $offsetA;
         $idY = $offsetY;
         if($this->cistype($X->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
+            $beta = $this->cleanComplexNumber($beta,'beta');
             $hasAlpha = !$this->cisone($alpha);
             $hasBeta = !$this->ciszero($beta);
             $betaIsNotOne = !$this->cisone($beta);
@@ -505,6 +814,8 @@ class PhpBlas //implements BLASLevel1
                 $Y[$idY] = $acc;
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
+            $beta = $this->cleanFloatNumber($beta,'beta');
             $hasBeta  = $beta!=0.0;
             for ($i=0; $i<$rows; $i++,$idA_i+=$ldA_i,$idY+=$incY) {
                 $idA = $idA_i;
@@ -564,6 +875,8 @@ class PhpBlas //implements BLASLevel1
         $idA_m = $offsetA;
         $idC_m = $offsetC;
         if($this->cistype($A->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
+            $beta = $this->cleanComplexNumber($beta,'beta');
             $hasAlpha = !$this->cisone($alpha);
             $hasBeta = !$this->ciszero($beta);
             $betaIsNotOne = !$this->cisone($beta);
@@ -599,6 +912,8 @@ class PhpBlas //implements BLASLevel1
                 }
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
+            $beta = $this->cleanFloatNumber($beta,'beta');
             for ($im=0; $im<$m; $im++,$idA_m+=$ldA_m,$idC_m+=$ldC) {
                 $idB_n = $offsetB;
                 $idC = $idC_m;
@@ -657,6 +972,8 @@ class PhpBlas //implements BLASLevel1
         $idA_m = $offsetA;
         $idC_m = $offsetC;
         if($this->cistype($A->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
+            $beta = $this->cleanComplexNumber($beta,'beta');
             $hasAlpha = !$this->cisone($alpha);
             $hasBeta = !$this->ciszero($beta);
             $betaIsNotOne = !$this->cisone($beta);
@@ -688,6 +1005,8 @@ class PhpBlas //implements BLASLevel1
                 }
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
+            $beta = $this->cleanFloatNumber($beta,'beta');
             for ($im=0; $im<$m; $im++,$idC_m+=$ldC_m) {
                 $idB_n = $offsetB;
                 $idC = $idC_m;
@@ -745,6 +1064,8 @@ class PhpBlas //implements BLASLevel1
         $idA_m = $offsetA;
         $idC_m = $offsetC;
         if($this->cistype($A->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
+            $beta = $this->cleanComplexNumber($beta,'beta');
             $hasAlpha = !$this->cisone($alpha);
             $hasBeta = !$this->ciszero($beta);
             $betaIsNotOne = !$this->cisone($beta);
@@ -786,6 +1107,8 @@ class PhpBlas //implements BLASLevel1
                 }
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
+            $beta = $this->cleanFloatNumber($beta,'beta');
             for ($im=0; $im<$n; $im++,$idA_m+=$ldA_m,$idC_m+=$ldC) {
                 $idAT_n = $offsetA;
                 $idC = $idC_m;
@@ -855,6 +1178,8 @@ class PhpBlas //implements BLASLevel1
         $idA_m = $offsetA;
         $idC_m = $offsetC;
         if($this->cistype($A->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
+            $beta = $this->cleanComplexNumber($beta,'beta');
             $hasAlpha = !$this->cisone($alpha);
             $hasBeta = !$this->ciszero($beta);
             $betaIsNotOne = !$this->cisone($beta);
@@ -899,6 +1224,8 @@ class PhpBlas //implements BLASLevel1
                 }
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
+            $beta = $this->cleanFloatNumber($beta,'beta');
             for ($im=0; $im<$n; $im++,$idA_m+=$ldA_m,$idC_m+=$ldC) {
                 $idAT_n = $offsetA;
                 $idC = $idC_m;
@@ -998,6 +1325,7 @@ class PhpBlas //implements BLASLevel1
         $startm = $lower?($sizeA-1):0;
         $stepm =  $lower?(-1):1;
         if($this->cistype($A->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
             $hasAlpha = !$this->cisone($alpha);
             for($cm=0,$im=$startm;$cm<$sizeA;$cm++,$im+=$stepm) {
                 for($in=0;$in<$sizeB;$in++) {
@@ -1024,6 +1352,7 @@ class PhpBlas //implements BLASLevel1
                 }
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
             for($cm=0,$im=$startm;$cm<$sizeA;$cm++,$im+=$stepm) {
                 for($in=0;$in<$sizeB;$in++) {
                     if($unit) {
@@ -1106,6 +1435,7 @@ class PhpBlas //implements BLASLevel1
         $startm = $lower?0:($sizeA-1);
         $stepm =  $lower?1:(-1);
         if($this->cistype($A->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
             $hasAlpha = !$this->cisone($alpha);
             // loop(i)
             for($cm=0,$im=$startm;$cm<$sizeA;$cm++,$im+=$stepm) {
@@ -1174,6 +1504,7 @@ class PhpBlas //implements BLASLevel1
                 //echo "endfor(j)\n";
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
             // loop(i)
             for($cm=0,$im=$startm;$cm<$sizeA;$cm++,$im+=$stepm) {
                 // A[i,i]
@@ -1239,6 +1570,7 @@ class PhpBlas //implements BLASLevel1
         $idB_i = $offsetB;
 
         if($this->cistype($A->dtype())) {
+            $alpha = $this->cleanComplexNumber($alpha,'alpha');
             $hasAlpha = !$this->cisone($alpha);
             for($i=0; $i<$rows; $i++,$idA_i+=$ldA_i,$idB_i+=$ldB) {
                 $idA = $idA_i;
@@ -1255,6 +1587,7 @@ class PhpBlas //implements BLASLevel1
                 }
             }
         } else {
+            $alpha = $this->cleanFloatNumber($alpha,'alpha');
             for($i=0; $i<$rows; $i++,$idA_i+=$ldA_i,$idB_i+=$ldB) {
                 $idA = $idA_i;
                 $idB = $idB_i;

@@ -279,6 +279,54 @@ class PhpBlasTest extends TestCase
         ];
     }
 
+    public function translate_rotmg(
+        NDArray $X,
+        NDArray $Y,
+        NDArray $D1=null,
+        NDArray $D2=null,
+        NDArray $B1=null,
+        NDArray $P=null,
+        ) : array
+    {
+        if($X->size()!=1||$Y->size()!=1) {
+            $shapeError = '('.implode(',',$X->shape()).'),('.implode(',',$Y->shape()).')';
+            throw new InvalidArgumentException("Unmatch shape of dimension: ".$shapeError);
+        }
+        if($D1==null) {
+            $D1 = $this->ones([],dtype:$X->dtype());
+        }
+        if($D2==null) {
+            $D2 = $this->ones([],dtype:$X->dtype());
+        }
+        if($B1==null) {
+            $B1 = $this->zeros([],dtype:$X->dtype());
+        }
+        if($P==null) {
+            $P = $this->zeros([5],dtype:$X->dtype());
+        }
+        $this->copy($X->reshape([1]),$B1->reshape([1]));
+
+        $DD1 = $D1->buffer();
+        $offD1 = $D1->offset();
+        $DD2 = $D2->buffer();
+        $offD2 = $D2->offset();
+        $BB1 = $B1->buffer();
+        $offB1 = $B1->offset();
+        $BB1 = $B1->buffer();
+        $offB1 = $B1->offset();
+        $BB2 = $Y->buffer();
+        $offB2 = $Y->offset();
+        $PP = $P->buffer();
+        $offP = $P->offset();
+        return [
+            $DD1,$offD1,
+            $DD2,$offD2,
+            $BB1,$offB1,
+            $BB2,$offB2,
+            $PP,$offP,
+        ];
+    }
+
     public function translate_gemm(
         NDArray $A,
         NDArray $B,
@@ -1130,6 +1178,134 @@ class PhpBlasTest extends TestCase
         for($i=0;$i<5;$i++) {
             $this->assertLessThan(1e-6,abs(($i+1)-$x->buffer()[$i]));
             $this->assertLessThan(1e-6,abs((-$i-1)-$y->buffer()[$i]));
+        }
+    }
+
+    public function testRotmgNormal()
+    {
+        $dtype = NDArray::float32;
+        //echo "\n===========testRotmgNormal==============\n";
+        $blas = $this->getBlas();
+
+        $inputs = [
+            [1,0],  [1,1],  [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
+        ];
+        $r = 1/sqrt(2);
+        $trues = [
+            [1,0],[$r,-$r],[0,-1],[-$r,-$r],[1,0], [$r,-$r],[0,-1],[-$r,-$r],
+        ];
+        $filter = [
+            -1 => [ [1,1,1,1], [0,0, 0,0] ],
+             0 => [ [0,1,1,0], [1,0, 0,1] ],
+             1 => [ [1,0,0,1], [0,1,-1,0] ],
+            -2 => [ [1,1,1,1], [1,0, 0,1] ],
+        ];
+        foreach($inputs as $idx => [$xx,$yy]) {
+            $X = $this->array($xx,dtype:$dtype);
+            $Y = $this->array($yy,dtype:$dtype);
+            [$DD1,$offD1,$DD2,$offD2,$BB1,$offB1,$BB2,$offB2,$PP,$offP] =
+                $this->translate_rotmg($X,$Y);
+           
+            $blas->rotmg($DD1,$offD1,$DD2,$offD2,$BB1,$offB1,$BB2,$offB2,$PP,$offP);
+
+            $d1 = $DD1[0];
+            $d2 = $DD2[0];
+            $b1 = $BB1[0];
+            $flag = $PP[0];
+            $h = [$PP[1],$PP[2],$PP[3],$PP[4]];
+            //echo "===========================\n";
+            //echo "(x,y)=(".$xx.", ".$yy.")\n";
+            //echo "(d1,d2)=(".$d1.", ".$d2.")\n";
+            //echo "b1=".$b1."\n";
+            //echo "flag=".$flag."\n";
+            //echo "h=(".implode(',',$h).")\n";
+            [$a,$b] = $filter[intval($flag)];
+            for($i=0;$i<4;$i++) {
+                $h[$i] = $h[$i]*$a[$i] + $b[$i];
+            };
+            //echo "hh=(".implode(',',$h).")\n";
+            $h = $this->array($h,dtype:$dtype);
+            $xy = $this->array([1,0],dtype:$dtype);
+            $prd = $this->zeros([2],dtype:$dtype);
+            $blas->gemv(
+                BLAS::RowMajor,BLAS::NoTrans,
+                2,2, // m,n
+                1.0, // alpha
+                $h->buffer(),$h->offset(),2,   // A
+                $xy->buffer(),$xy->offset(),1, // x
+                0.0,  // b
+                $prd->buffer(),$prd->offset(),1, // c
+            );
+            $blas->scal(1,sqrt($d1),$prd->buffer(),0,1);
+            $blas->scal(1,sqrt($d2),$prd->buffer(),1,1);
+            //echo "prd=(".implode(',',$prd->toArray()).")\n";
+            $trueVec = $this->array($trues[$idx],dtype:$dtype);
+            //echo "trues=(".implode(',',$trueVec->toArray()).")\n";
+            $blas->axpy(2,-1,$trueVec->buffer(),0,1,$prd->buffer(),0,1);
+            $diff = $blas->asum(2,$prd->buffer(),0,1);
+            //echo "diff=".$diff."\n";
+            $this->assertLessThan(1e-7,$diff);
+        }
+    }
+
+    public function testRotmNormal()
+    {
+        $dtype = NDArray::float32;
+        //echo "\n===========testRotmgNormal==============\n";
+        $blas = $this->getBlas();
+
+        $inputs = [
+            [1,0],  [1,1],  [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
+        ];
+        $r = 1/sqrt(2);
+        $trues = [
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+            [[  1, 0   ,-3   , 0   ],[  0, 2   , 0   ,-4   ]],
+            [[ $r, 2*$r,-3*$r,-4*$r],[-$r, 2*$r, 3*$r,-4*$r]],
+            [[  0, 2   , 0   ,-4   ],[ -1, 0   , 3   , 0   ]],
+            [[-$r, 2*$r, 3*$r,-4*$r],[-$r,-2*$r, 3*$r, 4*$r]],
+        ];
+        foreach($inputs as $idx => [$xx,$yy]) {
+            $X = $this->array($xx,dtype:$dtype);
+            $Y = $this->array($yy,dtype:$dtype);
+            [$DD1,$offD1,$DD2,$offD2,$BB1,$offB1,$BB2,$offB2,$PP,$offP] =
+                $this->translate_rotmg($X,$Y);
+           
+            $blas->rotmg($DD1,$offD1,$DD2,$offD2,$BB1,$offB1,$BB2,$offB2,$PP,$offP);
+
+            $d1 = $DD1[0];
+            $d2 = $DD2[0];
+            $b1 = $BB1[0];
+            //echo "===========================\n";
+            //echo "(x,y)=(".$xx.", ".$yy.")\n";
+            //echo "(d1,d2)=(".$d1.", ".$d2.")\n";
+            //echo "b1=".$b1."\n";
+            //echo "flag=".$flag."\n";
+
+            $x = $this->array([ 1, 0,-3, 0],dtype:$dtype);
+            $y = $this->array([ 0, 2, 0,-4],dtype:$dtype);
+
+            $prd = $this->zeros([2],dtype:$dtype);
+
+            $blas->rotm(4,$x->buffer(),0,1,$y->buffer(),0,1,$PP,$offP);
+
+            $blas->scal(4,sqrt($d1),$x->buffer(),0,1);
+            $blas->scal(4,sqrt($d2),$y->buffer(),0,1);
+            [$truesX,$truesY] = $trues[$idx];
+            $truesX = $this->array($truesX,dtype:$dtype);
+            $truesY = $this->array($truesY,dtype:$dtype);
+            //echo "trues=(".implode(',',$trueX->toArray()).")\n";
+            $blas->axpy(4,-1,$truesX->buffer(),0,1,$x->buffer(),0,1);
+            $blas->axpy(4,-1,$truesY->buffer(),0,1,$y->buffer(),0,1);
+            $diffX = $blas->asum(4,$x->buffer(),0,1);
+            //echo "diffX=".$diffX."\n";
+            $this->assertLessThan(1e-7,$diffX);
+            $diffY = $blas->asum(4,$y->buffer(),0,1);
+            //echo "diffX=".$diffX."\n";
+            $this->assertLessThan(1e-7,$diffY);
         }
     }
 

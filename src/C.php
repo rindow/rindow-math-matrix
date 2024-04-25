@@ -6,10 +6,8 @@ use Interop\Polite\Math\Matrix\NDArray;
 function C(
     float $r=null,
     float $i=null,
-) : Complex
-{
+) : Complex {
     $r = $r ?? 0.0;
     $i = $i ?? 0.0;
-    return new Complex($r,$i);
+    return new Complex($r, $i);
 }
-

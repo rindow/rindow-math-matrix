@@ -177,8 +177,8 @@ class NDArrayPhpTest extends TestCase
     {
         $array = [[1,2,3],[4,5,6]];
         $nd = new NDArrayPhp($array,service:$this->service);
-        $this->expectException(OutOfRangeException::class);
-        $this->expectExceptionMessage('Dimension must be integer');
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Array offsets must be integers or ranges.');
         $b = $nd->offsetExists(0.5);
     }
 

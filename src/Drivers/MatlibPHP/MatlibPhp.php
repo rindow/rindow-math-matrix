@@ -5,7 +5,7 @@ use Rindow\Math\Matrix\Drivers\AbstractMatlibService;
 
 class MatlibPhp extends AbstractMatlibService
 {
-    protected $name = 'matlib_php';
+    protected string $name = 'matlib_php';
 
     public function __construct(
         object $bufferFactory=null,
@@ -32,7 +32,7 @@ class MatlibPhp extends AbstractMatlibService
 //
         //$mathCLFactory = $mathCLFactory ?? new MatlibCLFactory();
 
-        parent::__construct();
+        parent::__construct(
         //    bufferFactory:$bufferFactory,
         //    openblasFactory:$openblasFactory,
         //    mathFactory:$mathFactory,
@@ -41,6 +41,6 @@ class MatlibPhp extends AbstractMatlibService
         //    blasCLFactory:$blasCLFactory,
         //    mathCLFactory:$mathCLFactory,
         //    bufferCLFactory:$bufferCLFactory,
-        //);
+        );
     }
 }

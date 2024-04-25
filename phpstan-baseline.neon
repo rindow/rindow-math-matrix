@@ -1,0 +1,126 @@
+parameters:
+	ignoreErrors:
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$blasCLFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$bufferCLFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$bufferFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$clblastFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$mathCLFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$mathFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$openblasFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$openclFactory\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/MatlibPhp.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpBlas has an unused parameter \\$blas\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpBlas.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpBlas has an unused parameter \\$forceBlas\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpBlas.php
+
+		-
+			message: "#^Class SplFixedArray specifies template type TKey of interface ArrayAccess as int but it's already specified as mixed\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpBuffer.php
+
+		-
+			message: "#^Comparison operation \"\\>\\=\" between int\\<0, max\\> and 0 is always true\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpLapack.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpLapack has an unused parameter \\$forceLapack\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpLapack.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpLapack has an unused parameter \\$lapack\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpLapack.php
+
+		-
+			message: "#^Comparison operation \"\\>\" between 2 and 1 is always true\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpMath.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpMath has an unused parameter \\$forceMath\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpMath.php
+
+		-
+			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpMath has an unused parameter \\$math\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpMath.php
+
+		-
+			message: "#^Else branch is unreachable because previous condition is always true\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpMath.php
+
+		-
+			message: "#^If condition is always false\\.$#"
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpMath.php
+
+		-
+			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\Buffer\\:\\:copy\\(\\)\\.$#"
+			count: 2
+			path: src/LinearAlgebraCL.php
+
+		-
+			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\Buffer\\:\\:fill\\(\\)\\.$#"
+			count: 1
+			path: src/LinearAlgebraCL.php
+
+		-
+			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:getEvents\\(\\)\\.$#"
+			count: 1
+			path: src/LinearAlgebraCL.php
+
+		-
+			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:toNDArray\\(\\)\\.$#"
+			count: 1
+			path: src/LinearAlgebraCL.php
+
+		-
+			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:valueSize\\(\\)\\.$#"
+			count: 1
+			path: src/LinearAlgebraCL.php
+
+		-
+			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:serialize\\(\\)\\.$#"
+			count: 1
+			path: src/MatrixOperator.php

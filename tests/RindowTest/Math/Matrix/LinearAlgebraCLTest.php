@@ -21,11 +21,13 @@ use Rindow\Math\Matrix\OpenCLMathTunner;
 use Rindow\Math\Matrix\Drivers\Selector;
 use Rindow\Math\Matrix\Drivers\Service;
 use Rindow\Math\Matrix\Drivers\CLBlast;
+use function Rindow\Math\Matrix\R;
+use function Rindow\Math\Matrix\C;
 
 
 class TestMatrixOperator extends MatrixOperator
 {
-    protected function createLinearAlgebraCL(array $options=null)
+    protected function createLinearAlgebraCL(array $options=null) : object
     {
         $queue = $this->service->createQueue($options);
         $la = new TestLinearAlgebraCL($queue,service:$this->service);
@@ -796,6 +798,17 @@ class LinearAlgebraCLTest extends ORGTest
         $this->assertInstanceOf(LinearAlgebraCL::class,$la);
     }
 
+    public function testdeviceTypes()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $deviceTypes = $la->deviceTypes();
+        $this->assertTrue(is_array($deviceTypes));
+        foreach($deviceTypes as $type) {
+            $this->assertTrue(in_array($type,['CPU','GPU','ACCEL','CUSTOM']));
+        }
+    }
+
     public function testRotg()
     {
         $this->markTestSkipped('Unsuppored function on clblast');
@@ -804,6 +817,126 @@ class LinearAlgebraCLTest extends ORGTest
     public function testRot()
     {
         $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testRotgAndRot()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testRotgxyAndRotxy()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testRotm()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testRotmg()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testRotmgAndRotm()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    public function testRotmgxyAndRotmxy()
+    {
+        $this->markTestSkipped('Unsuppored function on clblast');
+    }
+
+    /**
+    *    ret := max |X(i)|
+    */
+    public function testamaxNoScalarNoBlocking()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $la->blocking(false);
+        $la->scalarNumeric(false);
+
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],dtype:NDArray::float32);
+        $ret = $la->amax($x);
+        $la->finish();
+        $this->assertEquals(6,$ret->toArray());
+
+        $x = $la->array([[C(-1),C(2),C(-3)],[C(-4),C(5),C(-6)]],dtype:NDArray::complex64);
+        $ret = $la->amax($x);
+        $la->finish();
+        $this->assertEquals(C(6),$ret->toArray());
+
+        // INFINITY & NaN
+        // *** CAUTION ****
+        // This function is not compatible with numpy
+        // and is compatible with argmax in tensorflow 2.6.
+        $x = $la->array([0,INF,-INF],dtype:NDArray::float32);
+        $ret = $la->amax($x);
+        $la->finish();
+        //$this->assertTrue(INF==$ret->toArray());
+        // -INF or INF
+        $this->assertTrue($ret->toArray()!=0);
+
+        $x = $la->array([0,INF,-INF,NAN],dtype:NDArray::float32);
+        $ret = $la->amax($x);
+        $la->finish();
+        //$this->assertTrue($ret->toArray()==INF);
+        // -INF or INF
+        $this->assertTrue($ret->toArray()!=0);
+        $this->assertTrue(!is_nan($ret->toArray()));
+
+        $x = $la->array([0,1,-1,NAN],dtype:NDArray::float32);
+        $ret = $la->amax($x);
+        $la->finish();
+        // -1 or 1
+        $this->assertTrue($ret->toArray()!=0);
+        $this->assertTrue(!is_nan($ret->toArray()));
+    }
+
+    /**
+    *    ret := min |X(i)|
+    */
+    public function testaminNoScalarNoBlocking()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $la->blocking(false);
+        $la->scalarNumeric(false);
+
+        $x = $la->array([[-1,2,-3],[-4,5,-6]],dtype:NDArray::float32);
+        $ret = $la->amin($x);
+        $la->finish();
+        $this->assertEquals(1,$ret->toArray());
+
+        $x = $la->array([[C(-1),C(2),C(-3)],[C(-4),C(5),C(-6)]],dtype:NDArray::complex64);
+        $ret = $la->amin($x);
+        $la->finish();
+        $this->assertEquals(C(1),$ret->toArray());
+
+        // INFINITY & NaN
+        // *** CAUTION ****
+        // This function is not compatible with numpy
+        // and is compatible with argmax in tensorflow 2.6.
+        $x = $la->array([0,INF,-INF],dtype:NDArray::float32);
+        $ret = $la->amin($x);
+        $la->finish();
+        $this->assertTrue(0==$ret->toArray());
+
+        $x = $la->array([0,INF,-INF,NAN],dtype:NDArray::float32);
+        $ret = $la->amin($x);
+        // *** CAUTION ***
+        // Platform dependent
+        // $this->assertTrue($ret==0);
+
+        $x = $la->array([0,1,-1,NAN],dtype:NDArray::float32);
+        $ret = $la->amin($x);
+        $la->finish();
+        // *** CAUTION ***
+        // Platform dependent
+        // $this->assertEquals(0,$ret);
     }
 
     //public function testHardware()

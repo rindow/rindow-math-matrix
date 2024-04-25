@@ -5,11 +5,14 @@ require_once __DIR__.'/R.php';
 
 use ArrayObject;
 use InvalidArgumentException;
+use RuntimeException;
 use LogicException;
+use RangeException;
 use Iterator;
 use Traversable;
 use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\Math\Matrix\Buffer;
 use Rindow\Math\Matrix\Drivers\Service;
 use Rindow\Math\Matrix\Drivers\Selector;
 
@@ -21,22 +24,19 @@ class MatrixOperator
     const SERIALIZE_NDARRAY_KEYWORD = 'NDArray:';
     const SERIALIZE_OLDSTYLE_KEYWORD = 'O:29:"Rindow\Math\Matrix\NDArrayPhp"';
 
-    protected $service;
-    protected $blas;
-    protected $openblas;
-    protected $lapack;
-    protected $openblaslapack;
-    protected $math;
-    protected $openblasmath;
-    protected $random;
-    protected $la;
-    protected $laPhp;
-    protected $laRawMode;
-    protected $clblastLA;
-    protected $broadCastOperators;
-    protected $updateOperators;
-    protected $operatorFunctions;
-    protected $intTypes= [
+    protected Service $service;
+    protected ?object $random=null;
+    protected ?object $la=null;
+    protected ?object $laPhp=null;
+    protected ?object $clblastLA=null;
+    /** @var array<string,array{null|int,string}> $broadCastOperators */
+    protected array $broadCastOperators;
+    /** @var array<string,array{null,string}> $updateOperators */
+    protected array $updateOperators;
+    /** @var object $operatorFunctions */
+    protected object $operatorFunctions;
+    /** @var array<int,bool> $intTypes */
+    protected array $intTypes= [
         NDArray::int8 => true,
         NDArray::int16 => true,
         NDArray::int32 => true,
@@ -46,12 +46,14 @@ class MatrixOperator
         NDArray::uint32 => true,
         NDArray::uint64 => true,
     ];
-    protected $floatTypes= [
+    /** @var array<int> $floatTypes */
+    protected array $floatTypes= [
         NDArray::float16,NDArray::float32,NDArray::float64,
     ];
-    protected $defaultIntType = NDArray::int32;
-    protected $defaultFloatType = NDArray::float32;
-    protected $dtypeToString = [
+    protected int $defaultIntType = NDArray::int32;
+    protected int $defaultFloatType = NDArray::float32;
+    /** @var array<int,string> $dtypeToString */
+    protected array $dtypeToString = [
         NDArray::bool=>'bool',
         NDArray::int8=>'int8',   NDArray::uint8=>'uint8',
         NDArray::int16=>'int16', NDArray::uint16=>'uint16',
@@ -61,7 +63,9 @@ class MatrixOperator
         NDArray::float32=>'float32', NDArray::float64=>'float64',
         NDArray::complex64=>'complex64', NDArray::complex128=>'complex128',
     ];
-    protected $dtypePrecision = [
+    
+    /** @var array<int,int> $dtypePrecision */
+    protected array $dtypePrecision = [
         NDArray::bool=>1,
         NDArray::int8=>2,  NDArray::uint8=>3,
         NDArray::int16=>4, NDArray::uint16=>5,
@@ -71,6 +75,9 @@ class MatrixOperator
         NDArray::float32=>11, NDArray::float64=>12,
     ];
 
+    /**
+     * @param array<mixed> $catalog
+     */
     public function __construct(
         Service $service=null,
         array $catalog=null,
@@ -95,18 +102,18 @@ class MatrixOperator
            '>=' => [NDArray::bool, 'greater_or_equal'], // function($x,$y) { return $x >= $y; }],
            '<' =>  [NDArray::bool, 'smaller'],      // function($x,$y) { return $x < $y; }],
            '<=' => [NDArray::bool, 'smaller_or_equal'], // function($x,$y) { return $x <= $y; }],
-       ];
+        ];
 
-       $this->updateOperators = [
-          '='  =>  [null, 'assign'], // function($x,$y) { return $y; }],
-          '+=' =>  [null, 'assign_add'], // function($x,$y) { return $x + $y; }],
-          '-=' =>  [null, 'assign_sub'], // function($x,$y) { return ($x - $y); }],
-          '*=' =>  [null, 'assign_mul'], // function($x,$y) { return $x * $y; }],
-          '/=' =>  [null, 'assign_div'], // function($x,$y) { return $x / $y; }],
-          '%=' =>  [null, 'assign_mod'], // function($x,$y) { return $x % $y; }],
-          '**=' => [null, 'assign_pow'], // function($x,$y) { return $x ** $y; }],
-      ];
-      $this->operatorFunctions = $this->createMatrixOpelatorFunctions();
+        $this->updateOperators = [
+           '='  =>  [null, 'assign'], // function($x,$y) { return $y; }],
+           '+=' =>  [null, 'assign_add'], // function($x,$y) { return $x + $y; }],
+           '-=' =>  [null, 'assign_sub'], // function($x,$y) { return ($x - $y); }],
+           '*=' =>  [null, 'assign_mul'], // function($x,$y) { return $x * $y; }],
+           '/=' =>  [null, 'assign_div'], // function($x,$y) { return $x / $y; }],
+           '%=' =>  [null, 'assign_mod'], // function($x,$y) { return $x % $y; }],
+           '**=' => [null, 'assign_pow'], // function($x,$y) { return $x ** $y; }],
+        ];
+        $this->operatorFunctions = $this->createMatrixOpelatorFunctions();
     }
 
     protected function createMatrixOpelatorFunctions() : object
@@ -133,18 +140,18 @@ class MatrixOperator
             //     '<' =>  [NDArray::bool,function($x,$y) { return $x < $y; }],
             //     '<=' => [NDArray::bool,function($x,$y) { return $x <= $y; }],
         
-            public function add($x,$y) { return $x + $y; } // '+'
-            public function sub($x,$y) { return $x - $y; } // '-'
-            public function mul($x,$y) { return $x * $y; } // '*'
-            public function div($x,$y) { return $x / $y; } // '/'
-            public function mod($x,$y) { return $x % $y; } // '%'
-            public function pow($x,$y) { return $x ** $y; } // '**'
-            public function is_equal($x,$y) { return ($x == $y); } // '=='
-            public function is_not_equal($x,$y) { return $x != $y; } // '!='
-            public function greater($x,$y) { return $x > $y; } // '>'
-            public function greater_or_equal($x,$y) { return $x >= $y; } // '>='
-            public function smaller($x,$y) { return $x < $y; } // '<'
-            public function smaller_or_equal($x,$y) { return $x <= $y; } // '<='
+            public function add(int|float $x,int|float $y) : int|float { return $x + $y; } // '+'
+            public function sub(int|float $x,int|float $y) : int|float { return $x - $y; } // '-'
+            public function mul(int|float $x,int|float $y) : int|float { return $x * $y; } // '*'
+            public function div(int|float $x,int|float $y) : int|float { return $x / $y; } // '/'
+            public function mod(int|float $x,int|float $y) : int|float { return $x % $y; } // '%'
+            public function pow(int|float $x,int|float $y) : int|float { return $x ** $y; } // '**'
+            public function is_equal(int|float $x,int|float $y) : bool { return ($x == $y); } // '=='
+            public function is_not_equal(int|float $x,int|float $y) : bool { return $x != $y; } // '!='
+            public function greater(int|float $x,int|float $y) : bool { return $x > $y; } // '>'
+            public function greater_or_equal(int|float $x,int|float $y) : bool { return $x >= $y; } // '>='
+            public function smaller(int|float $x,int|float $y) : bool { return $x < $y; } // '<'
+            public function smaller_or_equal(int|float $x,int|float $y) : bool { return $x <= $y; } // '<='
         
             // updateOperators
             //     '='  =>  [null,  function($x,$y) { return $y; }],
@@ -155,13 +162,13 @@ class MatrixOperator
             //     '%=' =>  [null,  function($x,$y) { return $x % $y; }],
             //     '**=' => [null,  function($x,$y) { return $x ** $y; }],
         
-            public function assign($x,$y) { return $y; } // '='
-            public function assign_add($x,$y) { return $x + $y; } // '+='
-            public function assign_sub($x,$y) { return ($x - $y); } // '-='
-            public function assign_mul($x,$y) { return $x * $y; } // '*='
-            public function assign_div($x,$y) { return $x / $y; } // '/='
-            public function assign_mod($x,$y) { return $x % $y; } // '%='
-            public function assign_pow($x,$y) { return $x ** $y; } // '**='
+            public function assign(int|float $x,int|float $y) : int|float { return $y; } // '='
+            public function assign_add(int|float $x, int|float $y) : int|float { return $x + $y; } // '+='
+            public function assign_sub(int|float $x, int|float $y) : int|float { return ($x - $y); } // '-='
+            public function assign_mul(int|float $x, int|float $y) : int|float { return $x * $y; } // '*='
+            public function assign_div(int|float $x, int|float $y) : int|float { return $x / $y; } // '/='
+            public function assign_mod(int|float $x, int|float $y) : int|float { return $x % $y; } // '%='
+            public function assign_pow(int|float $x, int|float $y) : int|float { return $x ** $y; } // '**='
         
         };
     }
@@ -172,7 +179,10 @@ class MatrixOperator
     //    $this->updateOperators = null;
     //}
 
-    protected function alloc($array,$dtype=null,$shape=null)
+    /**
+     * @param array<int> $shape
+     */
+    protected function alloc(mixed $array,int $dtype=null,array $shape=null) : NDArray
     {
         if($dtype===null) {
             //$dtype = $this->resolveDtype($array);
@@ -196,12 +206,14 @@ class MatrixOperator
     //    return null;
     //}
 
-    protected function maximumPrecision($dtypeX,$dtypeY)
+    protected function maximumPrecision(int $dtypeX, int $dtypeY) : int
     {
-        if(!isset($this->dtypePrecision[$dtypeX]))
+        if(!isset($this->dtypePrecision[$dtypeX])) {
             throw new RuntimeException("Illegal dtype: ".$dtypeX);
-        if(!isset($this->dtypePrecision[$dtypeY]))
+        }
+        if(!isset($this->dtypePrecision[$dtypeY])) {
             throw new RuntimeException("Illegal dtype: ".$dtypeY);
+        }
 
         if($this->dtypePrecision[$dtypeX]>$this->dtypePrecision[$dtypeY])
             return $dtypeX;
@@ -233,12 +245,12 @@ class MatrixOperator
         return $this->la();
     }
 
-    public function setDefaultIntType($dtype) : void
+    public function setDefaultIntType(int $dtype) : void
     {
         $this->defaultIntType = $dtype;
     }
 
-    public function setDefaultFloatType($dtype) : void
+    public function setDefaultFloatType(int $dtype) : void
     {
         $this->defaultFloatType = $dtype;
     }
@@ -259,7 +271,7 @@ class MatrixOperator
         }
 
         if(is_numeric($array)) {
-            return C($array,i:0);
+            return C((float)$array,i:0);
         } elseif(is_object($array) && 
                 property_exists($array,'real') &&
                 property_exists($array,'imag')) {
@@ -274,7 +286,7 @@ class MatrixOperator
         }
     }
 
-    public function array($array,$dtype=null) : NDArray
+    public function array(mixed $array, int $dtype=null) : NDArray
     {
         if($dtype==null) {
             $dtype=$this->defaultFloatType;
@@ -299,7 +311,10 @@ class MatrixOperator
         }
     }
 
-    public function zeros(array $shape, $dtype=null) : NDArray
+    /**
+     * @param array<int> $shape
+     */
+    public function zeros(array $shape, int $dtype=null) : NDArray
     {
         if($this->isComplexDtype($dtype)) {
             $value = $this->cbuild(0,0);
@@ -309,7 +324,10 @@ class MatrixOperator
         return $this->full($shape,$value,$dtype);
     }
 
-    public function ones(array $shape, $dtype=null) : NDArray
+    /**
+     * @param array<int> $shape
+     */
+    public function ones(array $shape, int $dtype=null) : NDArray
     {
         if($this->isComplexDtype($dtype)) {
             $value = $this->cbuild(1,0);
@@ -319,7 +337,10 @@ class MatrixOperator
         return $this->full($shape,$value,$dtype);
     }
 
-    public function full(array $shape, $value, $dtype=null) : NDArray
+    /**
+     * @param array<int> $shape
+     */
+    public function full(array $shape, mixed $value, int $dtype=null) : NDArray
     {
         if($dtype===null) {
             //$dtype=$this->resolveDtype($value);
@@ -345,17 +366,17 @@ class MatrixOperator
         return $array;
     }
 
-    public function zerosLike(NDArray $array)
+    public function zerosLike(NDArray $array) : NDArray
     {
         return $this->zeros($array->shape(),$array->dtype());
     }
 
-    public function fullLike(NDArray $array,$value)
+    public function fullLike(NDArray $array, int $value) : NDArray
     {
         return $this->full($array->shape(),$value,$array->dtype());
     }
 
-    public function astype(NDArray $array, $dtype) : NDArray
+    public function astype(NDArray $array, int $dtype) : NDArray
     {
         return $this->la()->astype($array,$dtype);
     }
@@ -370,7 +391,12 @@ class MatrixOperator
         return array_key_exists($dtype, $this->floatTypes);
     }
 
-    public function arange(int $count ,$start=null, $step=null, $dtype=null) : NDArray
+    public function arange(
+        int $count,
+        int|float $start=null,
+        int|float $step=null,
+        int $dtype=null
+        ) : NDArray
     {
         if($start===null)
             $start = 0;
@@ -481,12 +507,12 @@ class MatrixOperator
     }
 
     public function gemm3(
-        $M,$N,$K,$L,
-        $alpha,
-        $A,$offA,
-        $B,$offB,
-        $beta,
-        $C,$offC)
+        int $M, int $N, int $K, int $L,
+        float $alpha,
+        Buffer $A,int $offA,
+        Buffer $B,int $offB,
+        float $beta,
+        Buffer $C,int $offC) : void
     {
         for ($m=0; $m<$M; $m++) {
             for($l=0; $l<$L; $l++) {
@@ -501,7 +527,7 @@ class MatrixOperator
         }
     }
 
-    protected function vectorTransform(NDArray $A, NDArray $B)
+    protected function vectorTransform(NDArray $A, NDArray $B) : NDArray
     {
         ################# numpy compatible ############################
 
@@ -554,6 +580,9 @@ class MatrixOperator
         return $C;
     }
 
+    /**
+     * @param array<int>|NDArray $perm
+     */
     public function transpose(
         NDArray $X,
         array|NDArray $perm=null,
@@ -589,7 +618,7 @@ class MatrixOperator
     //    }
     //}
 
-    public function dot(NDArray $A, NDArray $B)
+    public function dot(NDArray $A, NDArray $B) : mixed
     {
         if($A->shape() != $B->shape()) {
             throw new InvalidArgumentException("unmatch shape of dimension");
@@ -617,7 +646,7 @@ class MatrixOperator
         return $this->getLa($X->dtype())->axpy($X,$C);
     }
 
-    public function scale($a, NDArray $X) : NDArray
+    public function scale(mixed $a, NDArray $X) : NDArray
     {
         if(!is_numeric($a))
             throw new InvalidArgumentException("the scalar must be a numeric");
@@ -631,8 +660,10 @@ class MatrixOperator
         return $C;
     }
 
-    /*
+    /**
      *  DISCONTINUE
+     * @param array<int> $shape
+     * @return array<int>
      */
     public function pos2index(int $pos,array $shape) : array
     {
@@ -651,8 +682,9 @@ class MatrixOperator
         return $index;
     }
 
-    /*
+    /**
      *  DISCONTINUE
+     * @param array<mixed> $idx
      */
     public function projection(NDArray $X,array $idx) : NDArray
     {
@@ -678,6 +710,7 @@ class MatrixOperator
         $w = 1;
         $p = 1;
         $pos =0;
+        $K = 1;
         for($i=$rank-1;$i>=0;$i--) {
             if($axis!=$i) {
                 $pos += $idx[$i]*$w;
@@ -695,27 +728,42 @@ class MatrixOperator
         return $Y;
     }
 
-    protected function createMatrixBufferIterator(array $shape, array $skipDims) : object
+    /**
+     * @param array<int> $shape
+     * @param array<int> $skipDims
+     * @return array<int>
+     */
+    protected function createMatrixBufferIterator(array $shape, array $skipDims) : iterable
     {
         return new class($shape,$skipDims) implements Iterator
         {
-            protected $shape;
-            protected $skipDims;
-            protected $current;
-            protected $endOfItem = false;
+            /** @var array<int> $shape */
+            protected array $shape;
+            /** @var array<int> $skipDims */
+            protected array $skipDims;
+            /** @var array<int> $current */
+            protected array $current;
+            protected bool $endOfItem = false;
         
+            /**
+             * @param array<int> $shape
+             * @param array<int> $skipDims
+             */
             public function __construct(array $shape, array $skipDims)
             {
                 $this->shape = $shape;
                 $this->skipDims = $skipDims;
                 $this->current = array_fill(0,count($shape),0);
             }
-        
-            public function getCurrentIndex()
+
+            /**
+             * @return array<int>
+             */
+            public function getCurrentIndex() : array
             {
                 return $this->current;
             }
-        
+
             public function current() : mixed
             {
                 if($this->endOfItem) {
@@ -768,7 +816,12 @@ class MatrixOperator
         };
     }
 
-    protected function walkAxis(callable $funcLinear, callable $funcAxis, NDArray $X,int $axis=null, $dtype=null)
+    protected function walkAxis(
+        callable $funcLinear,
+        callable $funcAxis,
+        NDArray $X,
+        int $axis=null,
+        int $dtype=null) : mixed
     {
         $N = $X->size();
         $XX = $X->buffer();
@@ -797,7 +850,10 @@ class MatrixOperator
         return $Y;
     }
 
-    protected function calcAxisStep(array $shape,int $axis)
+    /**
+     * @param array<int> $shape
+     */
+    protected function calcAxisStep(array $shape,int $axis) : int
     {
         $w = 1;
         for($i=count($shape)-1; $axis<$i; $i--) {
@@ -806,7 +862,12 @@ class MatrixOperator
         return $w;
     }
 
-    protected function projectionShape(array $shape,array $skipDims)
+    /**
+     * @param array<int> $shape
+     * @param array<int> $skipDims
+     * @return array<int>
+     */
+    protected function projectionShape(array $shape,array $skipDims) : array
     {
         $newShape = [];
         foreach ($shape as $key => $value) {
@@ -817,7 +878,7 @@ class MatrixOperator
         return $newShape;
     }
 
-    public function sum(NDArray $X,int $axis=null)
+    public function sum(NDArray $X,int $axis=null) : mixed
     {
         if($X->dtype()==NDArray::bool) {
             $func = function($N,$XX,$offX,$bufPos,$incX) {
@@ -837,7 +898,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis);
     }
 
-    public function asum(NDArray $X,int $axis=null)
+    public function asum(NDArray $X,int $axis=null) : mixed
     {
         $blas = $this->getBlas($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
@@ -846,7 +907,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis);
     }
 
-    public function max(NDArray $X,int $axis=null)
+    public function max(NDArray $X,int $axis=null) : mixed
     {
         $math = $this->getMath($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($math) {
@@ -857,7 +918,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis);
     }
 
-    public function argMax(NDArray $X,int $axis=null)
+    public function argMax(NDArray $X,int $axis=null) : mixed
     {
         $math = $this->getMath($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($math) {
@@ -868,7 +929,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis,$this->defaultIntType);
     }
 
-    public function amax(NDArray $X,int $axis=null)
+    public function amax(NDArray $X,int $axis=null) : mixed
     {
         $blas = $this->getBlas($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
@@ -879,7 +940,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis);
     }
 
-    public function argAmax(NDArray $X,int $axis=null)
+    public function argAmax(NDArray $X,int $axis=null) : mixed
     {
         $blas = $this->getBlas($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
@@ -890,7 +951,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis,$this->defaultIntType);
     }
 
-    public function min(NDArray $X,int $axis=null)
+    public function min(NDArray $X,int $axis=null) : mixed
     {
         $math = $this->getMath($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($math) {
@@ -901,7 +962,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis);
     }
 
-    public function argMin(NDArray $X,int $axis=null)
+    public function argMin(NDArray $X,int $axis=null) : mixed
     {
         $math = $this->getMath($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($math) {
@@ -912,7 +973,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis,$this->defaultIntType);
     }
 
-    public function amin(NDArray $X,int $axis=null)
+    public function amin(NDArray $X,int $axis=null) : mixed
     {
         $blas = $this->getBlas($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
@@ -923,7 +984,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis);
     }
 
-    public function argAmin(NDArray $X,int $axis=null)
+    public function argAmin(NDArray $X, int $axis=null) : mixed
     {
         $blas = $this->getBlas($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
@@ -934,7 +995,7 @@ class MatrixOperator
         return $this->walkAxis($func,$func,$X,$axis,$this->defaultIntType);
     }
 
-    public function mean($X,$axis=null)
+    public function mean(NDArray $X, int $axis=null) : mixed
     {
         $math = $this->getMath($X->dtype());
         $func = function($N,$XX,$offX,$bufPos,$incX) use ($math) {
@@ -945,7 +1006,7 @@ class MatrixOperator
     }
 
 
-    public function f(callable $func,NDArray $X, ...$args) : NDArray
+    public function f(callable $func,NDArray $X, mixed ...$args) : NDArray
     {
         $N = $X->size();
         $XX = $X->buffer();
@@ -960,7 +1021,7 @@ class MatrixOperator
         return $Y;
     }
 
-    public function u(NDArray $X,callable $func, ...$args) : NDArray
+    public function u(NDArray $X,callable $func, mixed ...$args) : NDArray
     {
         $N = $X->size();
         $XX = $X->buffer();
@@ -972,7 +1033,7 @@ class MatrixOperator
         return $X;
     }
 
-    public function op($X, string $operator, $Y, NDArray $R=null) : NDArray
+    public function op(mixed $X, string $operator, mixed $Y, NDArray $R=null) : NDArray
     {
         if(!array_key_exists($operator,$this->broadCastOperators)) {
             throw new InvalidArgumentException('Unknown operator: "'.$operator.'""');
@@ -1073,14 +1134,10 @@ class MatrixOperator
         } else {
             $shape = $Y->shape();
             if($dtype===null) {
-                if($X instanceof NDArray) {
-                    $dtype = $this->maximumPrecision($X->dtype(),$Y->dtype());
+                if(is_float($X)) {
+                    $dtype = $this->maximumPrecision($Y->dtype(),NDArray::float32);
                 } else {
-                    if(is_float($X)) {
-                        $dtype = $this->maximumPrecision($Y->dtype(),NDArray::float32);
-                    } else {
-                        $dtype = $Y->dtype();
-                    }
+                    $dtype = $Y->dtype();
                 }
             }
         }
@@ -1181,7 +1238,7 @@ class MatrixOperator
         }
     }
 
-    public function update(NDArray $X, string $operator, $value, NDArray ...$MASKs) : NDArray
+    public function update(NDArray $X, string $operator, mixed $value, NDArray ...$MASKs) : NDArray
     {
         if(!array_key_exists($operator,$this->updateOperators)) {
             throw new InvalidArgumentException('Unknown operator: "'.$operator.'""');
@@ -1202,7 +1259,15 @@ class MatrixOperator
         return $X;
     }
 
-    protected function selectByMask(NDArray $X, array $MASKs, NDArray $R=null, string $func=null, $updateValue=null)
+    /**
+     * @param array<NDArray> $MASKs
+     */
+    protected function selectByMask(
+        NDArray $X,
+        array $MASKs,
+        NDArray $R=null,
+        string $func=null,
+        mixed $updateValue=null) : void
     {
         if(count($MASKs)!=1) {
             throw new InvalidArgumentException('The bool Matrix must be only one.');
@@ -1230,10 +1295,17 @@ class MatrixOperator
                 }
             }
         }
-
     }
 
-    protected function selectByMatrix(NDArray $X, array $MASKs, NDArray $R=null, string $func=null, $updateValue=null)
+    /**
+     * @param array<NDArray> $MASKs
+     */
+    protected function selectByMatrix(
+        NDArray $X,
+        array $MASKs,
+        NDArray $R=null,
+        string $func=null,
+        mixed $updateValue=null) : void
     {
         $N = $MASKs[0]->shape()[0];
         // nested mask
@@ -1341,7 +1413,7 @@ class MatrixOperator
         }
     }
 
-    public function dtypeToString($dtype) : string
+    public function dtypeToString(int $dtype) : string
     {
         if(!isset($this->dtypeToString[$dtype])) {
             return 'Unknown';
@@ -1352,7 +1424,7 @@ class MatrixOperator
     public function toString(
         NDArray $array,
         string $format=null,
-        $indent=null) : string
+        bool|int $indent=null) : string
     {
         $shape = $array->shape();
         if(count($shape)==0) {
@@ -1416,7 +1488,7 @@ class MatrixOperator
         return $string;
     }
 
-    public function random()
+    public function random() : object
     {
         if($this->random==null) {
             $this->random = new Random($this,$this->defaultFloatType);
@@ -1424,7 +1496,7 @@ class MatrixOperator
         return $this->random;
     }
 
-    public function la()
+    public function la() : object
     {
         if($this->la!==null) {
             return $this->la;
@@ -1435,7 +1507,7 @@ class MatrixOperator
         return $this->la;
     }
 
-    protected function laPhpMode()
+    protected function laPhpMode() : object
     {
         if($this->laPhp!==null) {
             return $this->laPhp;
@@ -1448,19 +1520,25 @@ class MatrixOperator
     }
 
     // Interface for compatibility with old method names
-    public function laRawMode()
+    public function laRawMode() : object
     {
         return $this->la();
     }
 
-    protected function createLinearAlgebraCL(array $options=null)
+    /**
+     * @param array<string,mixed> $options
+     */
+    protected function createLinearAlgebraCL(array $options=null) : object
     {
         $queue = $this->service->createQueue($options);
         $la = new LinearAlgebraCL($queue,$this->service);
         return $la;
     }
 
-    public function laAccelerated(string $name,array $options=null)
+    /**
+     * @param array<string,mixed> $options
+     */
+    public function laAccelerated(string $name,array $options=null) : object
     {
         switch($name) {
             case 'clblast': {
@@ -1470,7 +1548,7 @@ class MatrixOperator
                 return $this->clblastLA;
             }
             default: {
-                throw new LogicalException('Unknown accelerator');
+                throw new LogicException('Unknown accelerator');
             }
         }
     }
@@ -1495,6 +1573,9 @@ class MatrixOperator
         return $this->service->info();
     }
 
+    /**
+     * @param NDArray|array<mixed,mixed> $array
+     */
     public function serializeArray(NDArray|array $array) : string
     {
         if($array instanceof NDArray) {
@@ -1502,6 +1583,9 @@ class MatrixOperator
         }
         $list = [];
         foreach($array as $key => $value) {
+            if(!is_array($value)&&!($value instanceof NDArray)) {
+                throw new RuntimeException('invalid format');
+            }
             $list[$key] = $this->serializeArray($value);
         }
         return static::SERIALIZE_NDARRAYSET_KEYWORD.serialize($list);
@@ -1513,7 +1597,13 @@ class MatrixOperator
             $data = substr($data,strlen(static::SERIALIZE_NDARRAYSET_KEYWORD));
             $array = unserialize($data);
             $list = [];
+            if(!is_array($array)) {
+                throw new RuntimeException('invalid format');
+            }
             foreach($array as $key => $value) {
+                if(!is_string($value)) {
+                    throw new RuntimeException('invalid format');
+                }
                 $list[$key] = $this->unserializeArray($value);
             }
             return $list;

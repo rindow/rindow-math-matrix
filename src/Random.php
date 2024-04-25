@@ -8,10 +8,10 @@ use Interop\Polite\Math\Matrix\NDArray;
 
 class Random
 {
-    protected $mo;
-    protected $defaultFloatType;
+    protected object $mo;
+    protected int $defaultFloatType;
 
-    public function __construct($matrixOperator,$defaultFloatType)
+    public function __construct(object $matrixOperator, int $defaultFloatType)
     {
         $this->mo = $matrixOperator;
         $this->defaultFloatType = $defaultFloatType;
@@ -19,12 +19,15 @@ class Random
 
     protected function genRandNormal(float $av, float $sd) : float
     {
-        $x=random_int(1,PHP_INT_MAX-1)/PHP_INT_MAX;
-        $y=random_int(1,PHP_INT_MAX-1)/PHP_INT_MAX;
+        $x=random_int(1, PHP_INT_MAX-1)/PHP_INT_MAX;
+        $y=random_int(1, PHP_INT_MAX-1)/PHP_INT_MAX;
         return sqrt(-2*log($x))*cos(2*pi()*$y)*$sd+$av;
     }
 
-    protected function checkSize($n)
+    /**
+     * @return array<int>
+     */
+    protected function checkSize(mixed $n) : array
     {
         if(is_array($n)) {
             $shape = $n;
@@ -36,12 +39,13 @@ class Random
         return $shape;
     }
 
-    public function rand($n,$dtype=null) : NDArray
+    public function rand(mixed $n, int $dtype=null) : NDArray
     {
         $shape = $this->checkSize($n);
-        if($dtype===null)
+        if($dtype===null) {
             $dtype = $this->defaultFloatType;
-        $array = $this->mo->zeros($shape,$dtype);
+        }
+        $array = $this->mo->zeros($shape, $dtype);
         $buffer = $array->buffer();
         $size = $array->size();
         for($i=0;$i<$size;$i++) {
@@ -50,28 +54,29 @@ class Random
         return $array;
     }
 
-    public function randn($n,$dtype=null) : NDArray
+    public function randn(mixed $n, int $dtype=null) : NDArray
     {
         $shape = $this->checkSize($n);
-        if($dtype===null)
+        if($dtype===null) {
             $dtype = $this->defaultFloatType;
-        $array = $this->mo->zeros($shape,$dtype);
+        }
+        $array = $this->mo->zeros($shape, $dtype);
         $buffer = $array->buffer();
         $size = $array->size();
         $av = 0.0;
         $sd = 1.0;
         for($i=0;$i<$size;$i++) {
-            $buffer[$i] = $this->genRandNormal($av,$sd);
+            $buffer[$i] = $this->genRandNormal($av, $sd);
         }
         return $array;
     }
 
     public function randomInt(int $max) : int
     {
-        return random_int(0,$max);
+        return random_int(0, $max);
     }
 
-    public function choice($a,int $size=null, bool $replace=null)
+    public function choice(mixed $a, int $size=null, bool $replace=null) : mixed
     {
         $arangeFlg = false;
         if(is_int($a)) {
@@ -89,15 +94,16 @@ class Random
         } elseif($size<1) {
             throw new InvalidArgumentException('Size argument must be greater than or equal 1.');
         }
-        if($replace===null)
+        if($replace===null) {
             $replace = true;
+        }
 
         if($size==1) {
             $idx = $this->randomInt($a->size()-1);
             return $a[$idx];
         }
 
-        $r = $this->mo->zeros([$size],$a->dtype());
+        $r = $this->mo->zeros([$size], $a->dtype());
         $sourceSize = $a->size();
         if($replace) {
             for($n=0;$n<$size;$n++) {

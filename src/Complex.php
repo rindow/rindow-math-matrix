@@ -8,7 +8,8 @@ class Complex
     public function __construct(
         public readonly float $real,
         public readonly float $imag,
-    ) {}
+    ) {
+    }
 
     public function __toString() : string
     {

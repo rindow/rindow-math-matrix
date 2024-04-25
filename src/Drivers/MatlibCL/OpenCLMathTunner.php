@@ -8,11 +8,11 @@ use InvalidArgumentException;
 
 class OpenCLMathTunner
 {
-    protected $mo;
-    protected $la;
-    protected $maxWorkItem;
+    protected object $mo;
+    protected object $la;
+    protected int $maxWorkItem;
 
-    public function __construct($mo)
+    public function __construct(object $mo)
     {
         $la = $mo->laAccelerated('clblast');
         $la->blocking(true);
@@ -22,7 +22,7 @@ class OpenCLMathTunner
         $this->maxWorkItem = $la->getOpenCLMath()->maxWorkItem()[0];
     }
 
-    public function tunningScatterAdd($mode,$maxTime,$limitTime)
+    public function tunningScatterAdd(int $mode,int $maxTime,int $limitTime) : void
     {
         $la = $this;
         $rowMax = 1048576;
@@ -61,7 +61,7 @@ class OpenCLMathTunner
                     $startK=8;
                     fwrite(STDERR, $k);
                     if($mode==4&&$k!=8) {
-                        $times[$i][$j][$k] = $time;
+                        $times[$i][$j][$k] = 0; // $time
                         fwrite(STDERR, ",");
                         continue;
                     }
@@ -230,7 +230,8 @@ class OpenCLMathTunner
         $this->deleteParameter('TempTimesMode'.$mode.'.php');
     }
 
-    protected function timeScatterAdd($la,$try,$mode,$rows,$cols,$numClass)
+    protected function timeScatterAdd(
+        object $la,int $try,int $mode,int $rows,int $cols,int $numClass) : float
     {
         switch($mode) {
             case 0:{
@@ -269,17 +270,17 @@ class OpenCLMathTunner
         }
 
         $x = $this->la->alloc([$rows],NDArray::int32);
-        $y = $this->la->alloc([$rows,$cols],NDArray::float32);
-        $a = $this->la->alloc([$numClass,$cols],NDArray::float32);
+        $a = $this->la->alloc([$rows,$cols],NDArray::float32);
+        $b = $this->la->alloc([$numClass,$cols],NDArray::float32);
 
         $this->la->fill(1,$x);
-        $this->la->fill(1.0,$y);
-        $this->la->fill(0.0,$a);
-        $this->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+        $this->la->fill(1.0,$a);
+        $this->la->fill(0.0,$b);
+        $this->scatterAddTest($x,$a,$b,$axis=0,null,null,$mode);
         $time = 0;
         for($i=0;$i<$try;$i++) {
             $start = hrtime(true);
-            $this->scatterAddTest($x,$y,$a,$axis=0,null,null,$mode);
+            $this->scatterAddTest($x,$a,$b,$axis=0,null,null,$mode);
             $end = hrtime(true);
             $time += $end-$start;
         }
@@ -288,139 +289,139 @@ class OpenCLMathTunner
 
     public function scatterAddTest(
         NDArray $X,
-        NDArray $Y,
         NDArray $A,
+        NDArray $output,
         int $axis=null,
-        $events=null,$waitEvents=null,
+        object $events=null,object $waitEvents=null,
         int $mode = null
         ) : NDArray
     {
-        if($axis===null) {
-            $axis=0;
-        }
         if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
             $waitPrev = $waitEvents;
             $waitEvents = $this->la->newEventList();
             $X = $this->la->astype($X,NDArray::int32,null,$waitEvents,$waitPrev);
         }
-        if($axis==0) {
-            return $this->scatterAddAxis0Test(true,$X,$Y,null,$A,$events,$waitEvents,$mode);
-        } elseif($axis==1) {
-            return $this->scatterAddAxis1Test(true,$X,$Y,null,$A,$events,$waitEvents,$mode);
+        $dtype = $X->dtype();
+        if($axis===null) {
+            return $this->scatterAddAxisNullTest( // doGather()
+                $scatterAdd=true,
+                $output,
+                $X,
+                $axis,
+                $A,
+                $dtype,
+                $events, $waitEvents,
+                $mode,
+            );
+            //} elseif($axis==1) {
+        //    return $this->scatterAddAxis1Test(true,$X,$A,null,$B,$events,$waitEvents,$mode);
         } else {
             throw new InvalidArgumentException('axis must be 0 or 1');
         }
     }
 
-    protected function scatterAddAxis0Test(
-        bool $addMode,
+    protected function scatterAddAxisNullTest( // doGather()
+        bool $scatterAdd,
+        NDArray $A,
         NDArray $X,
-        NDArray $Y,
-        int $numClass=null,
-        NDArray $A=null,
-        $events=null,$waitEvents=null,
-        int $mode=null
+        int $axis=null,
+        NDArray $output=null,
+        int $dtype=null,
+        object $events=null,object $waitEvents=null,
+        int $mode=null,
         ) : NDArray
     {
-        if($X->ndim()!=1) {
-            throw new InvalidArgumentException('"X" must be 1D-NDArray.');
+        // if($axis===null) {
+            $postfixShape = $A->shape();
+            $prefixShape = $X->shape();
+            $numClass = array_shift($postfixShape);
+            $m = 1;
+            $n = array_product($prefixShape);
+            $k = array_product($postfixShape);
+            $reductionDims = false;
+            $outputShape = array_merge($prefixShape,$postfixShape);
+        // }
+//echo "outputShape=[".implode(',',$outputShape)."]\n";
+        if($dtype===null) {
+            $dtype = $A->dtype();
         }
-        $countX = $X->shape()[0];
-        $shape = $Y->shape();
-        $countY = array_shift($shape);
-        if($countX!=$countY) {
-            throw new InvalidArgumentException('Unmatch size "Y" with "X".');
-        }
-        $n = (int)array_product($shape);
-        if($A==null) {
-            $m = $numClass;
-            array_unshift($shape,$numClass);
-            $A = $this->la->alloc($shape,$Y->dtype());
-            $waitPrev = $waitEvents;
-            $waitEvents = $this->la->newEventList();
-            $this->la->zeros($A,$waitEvents,$waitPrev);
-        } else {
-            $m = $A->shape()[0];
-            array_unshift($shape,$m);
-            if($A->shape()!=$shape){
-                throw new InvalidArgumentException('Unmatch size "Y" with "A" .');
-            }
+        if($output->shape()!=$outputShape) {
+            throw new InvalidArgumentException("Unmatch output shape of dimension: ".
+                                        '['.implode(',',$outputShape).']'.'['.implode(',',$output).']');
         }
 
         $AA = $A->buffer();
         $offA = $A->offset();
-        $ldA = $n;
         $XX = $X->buffer();
         $offX = $X->offset();
-        $YY = $Y->buffer();
-        $offY = $Y->offset();
-        $ldY = $n;
+        $BB = $output->buffer();
+        $offB = $output->offset();
+
+        // if($scatterAdd) {
+            $reverse=true;
+            $addMode=true;
+        // }
 
         //fwrite(STDERR,"(m=$m,n=$n,k=$countX)");
         switch($mode) {
             case 0: {
-                $this->la->getOpenCLMath()->scatterAddAxis0_0(
-                    $m,
+                $this->la->getOpenCLMath()->scatterAdd_0(
                     $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
+                    $k,
+                    $numClass,
+                    $XX,$offX,
+                    $AA,$offA,
+                    $BB,$offB,
+                    $events, $waitEvents
+                );
                 break;
             }
             case 1: {
-                $this->la->getOpenCLMath()->scatterAddAxis0_1(
-                    $m,
+                $this->la->getOpenCLMath()->scatterAdd_1(
                     $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
+                    $k,
+                    $numClass,
+                    $XX,$offX,
+                    $AA,$offA,
+                    $BB,$offB,
+                    $events, $waitEvents
+                );
                 break;
             }
             case 2: {
-                $this->la->getOpenCLMath()->scatterAddAxis0_2(
-                    $m,
+                $this->la->getOpenCLMath()->scatterAdd_2(
                     $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
+                    $k,
+                    $numClass,
+                    $XX,$offX,
+                    $AA,$offA,
+                    $BB,$offB,
+                    $events, $waitEvents
+                );
                 break;
             }
             case 3: {
-                $this->la->getOpenCLMath()->scatterAddAxis0_3(
-                    $m,
+                $this->la->getOpenCLMath()->scatterAdd_3(
                     $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
+                    $k,
+                    $numClass,
+                    $XX,$offX,
+                    $AA,$offA,
+                    $BB,$offB,
+                    $events, $waitEvents
+                );
                 break;
             }
             case 4: {
-                $this->la->getOpenCLMath()->scatterAddAxis0_4(
-                    $m,
+                $this->la->getOpenCLMath()->scatterAdd_4(
                     $n,
-                    $countX,
-                    $AA,$offA,$ldA,
-                    $XX,$offX,1,
-                    $YY,$offY,$ldY,
-                    $addMode,
-                    $events,$waitEvents
-                    );
+                    $k,
+                    $numClass,
+                    $XX,$offX,
+                    $AA,$offA,
+                    $BB,$offB,
+                    $events, $waitEvents
+                );
                 break;
             }
             default:
@@ -431,7 +432,7 @@ class OpenCLMathTunner
         return $A;
     }
 
-    protected function timeSimulation($rows,$cols,$numClass)
+    protected function timeSimulation(int $rows,int $cols,int $numClass) : int
     {
         $a[0] = 10; $b[0] = 10;
         $a[1] = 10; $b[1] = 10;
@@ -440,7 +441,7 @@ class OpenCLMathTunner
         return ($a[0]*$rows+$b[0])*($a[1]*$cols+$b[1])*($a[2]*$numClass+$b[2])+$c;
     }
 
-    public function showGraphScatterAdd($mode=null,$details=null)
+    public function showGraphScatterAdd(int $mode=null,bool $details=null) : void
     {
         $marker = null;
         $colors = [1=>'b',2=>'g',3=>'r',4=>'m'];
@@ -492,7 +493,8 @@ class OpenCLMathTunner
         $plt->show();
     }
 
-    public function drawGraphRowsCols3($nc,$mo,$mode,$ax,$details,$marker)
+    public function drawGraphRowsCols3(
+        int $nc,object $mo,int $mode,object $ax,bool $details,string $marker) : void
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         // rows <-> cols
@@ -530,10 +532,12 @@ class OpenCLMathTunner
         }
     }
 
-    public function drawGraphColsRows3($nc,$mo,$mode,$ax,$details,$marker)
+    public function drawGraphColsRows3(
+        int $nc,object $mo,int $mode,object $ax,bool $details,stirng $marker)
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         // cols <-> rows
+        $numClass = 0;
         foreach ($times as $rows => $colsData) {
             $graph = [];
             foreach ($colsData as $cols => $numClassData) {
@@ -561,7 +565,8 @@ class OpenCLMathTunner
         }
     }
 
-    public function drawGraphNumClassRows3($co,$mo,$mode,$ax,$details,$marker)
+    public function drawGraphNumClassRows3(
+        int $co,object $mo,int $mode,object $ax,bool $details,string $marker) : void
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         // numClass <-> rows
@@ -599,7 +604,8 @@ class OpenCLMathTunner
         }
     }
 
-    public function drawGraphRowsNumClass3($co,$mo,$mode,$ax,$details,$marker)
+    public function drawGraphRowsNumClass3(
+        int $co,object $mo,int $mode,object $ax,bool $details,string $marker) : void
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         // rows <-> numClass
@@ -637,7 +643,8 @@ class OpenCLMathTunner
         }
     }
 
-    public function drawGraphNumClassCols3($ro,$mo,$mode,$ax,$details,$marker)
+    public function drawGraphNumClassCols3(
+        int $ro,object $mo,int $mode,object $ax,bool $details,string $marker) : void
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         // numClass <-> cols
@@ -675,7 +682,8 @@ class OpenCLMathTunner
         }
     }
 
-    public function drawGraphColsNumClass3($ro,$mo,$mode,$ax,$details,$marker)
+    public function drawGraphColsNumClass3(
+        int $ro,object $mo,int $mode,object $ax,bool $details,string $marker) : void
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         // cols <-> numClass
@@ -713,7 +721,7 @@ class OpenCLMathTunner
         }
     }
 
-    protected function getHomeDirectory()
+    protected function getHomeDirectory() : string
     {
         if(PHP_OS=='WINNT') {
             return getenv('USERPROFILE');
@@ -722,7 +730,7 @@ class OpenCLMathTunner
         }
     }
 
-    protected function saveParameter($filename,$value)
+    protected function saveParameter(string $filename,mixed $value) : void
     {
         $dir = $this->getHomeDirectory().'/.rindow';
         if(!file_exists($dir)) {
@@ -732,7 +740,7 @@ class OpenCLMathTunner
         file_put_contents($dir.'/'.$filename,$code);
     }
 
-    protected function loadParameter($filename,$default=null)
+    protected function loadParameter(string $filename,bool $default=null) : ?int
     {
         $filepath = __DIR__.'/params/'.$filename;
         if(!$default) {
@@ -748,7 +756,7 @@ class OpenCLMathTunner
         return $times;
     }
 
-    protected function deleteParameter($filename)
+    protected function deleteParameter(string $filename) : void
     {
         $filepath = $this->getHomeDirectory().'/.rindow/'.$filename;
         if(file_exists($filepath)) {
@@ -756,7 +764,8 @@ class OpenCLMathTunner
         }
     }
 
-    public function getScatterAddParameter($mode,$rows,$cols,$numClass)
+    public function getScatterAddParameter(
+        int $mode,int $rows,int $cols,int $numClass) : int
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         if(isset($times[$rows][$cols][$numClass])) {
@@ -766,7 +775,8 @@ class OpenCLMathTunner
         }
     }
 
-    public function setScatterAddParameter($mode,$rows,$cols,$numClass,$value,$force=null)
+    public function setScatterAddParameter(
+        int $mode,int $rows,int $cols,int $numClass,int $value,bool $force=null) : void
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         if(isset($times[$rows][$cols][$numClass])) {
@@ -782,7 +792,10 @@ class OpenCLMathTunner
         $this->saveParameter('ScatterAddTimesMode'.$mode.'.php',$times);
     }
 
-    public function editGraphScatterAdd($mode,array $data)
+    /**
+     * @param array<int,array<int,int>> $data
+     */
+    public function editGraphScatterAdd(int $mode,array $data) : void
     {
         echo "mode$mode\n";
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php',$default=true);
@@ -804,7 +817,7 @@ class OpenCLMathTunner
         $this->saveParameter('ScatterAddTimesMode'.$mode.'.php',$times);
     }
 
-    public function tunningReduceSum($mode,$maxTime,$limitTime)
+    public function tunningReduceSum(int $mode,int $maxTime,int $limitTime) : void
     {
         fwrite(STDERR,"\n");
         $la = $this;
@@ -938,7 +951,7 @@ class OpenCLMathTunner
         $this->deleteParameter('TempRedSumTimesMode'.$mode.'.php');
     }
 
-    protected function timeReduceSum($la,$try,$mode,$rows,$cols)
+    protected function timeReduceSum(object $la,int $try,int $mode,int $rows,int $cols) : int
     {
         switch($mode) {
             case 0:{
@@ -996,9 +1009,9 @@ class OpenCLMathTunner
         NDArray $A,
         int $axis=null,
         NDArray $X=null,
-        $dtypeX=null,
-        $events=null,$waitEvents=null,
-        $mode = null
+        int $dtypeX=null,
+        object $events=null,object $waitEvents=null,
+        int $mode = null
         ) : NDArray
     {
         if($axis===null)
@@ -1024,7 +1037,7 @@ class OpenCLMathTunner
             $dtypeX = $A->dtype();
         }
         if($X==null) {
-            $X = $this->alloc([$rows],$dtypeX);
+            $X = $this->la->alloc([$rows],$dtypeX);
         } else {
             if($X->shape()!=[$rows]) {
                 $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$X->shape()).')';
@@ -1095,9 +1108,9 @@ class OpenCLMathTunner
         NDArray $A,
         int $axis=null,
         NDArray $B=null,
-        $dtype=null,
-        $events=null,$waitEvents=null,
-        $mode = null
+        int $dtype=null,
+        object $events=null,object $waitEvents=null,
+        int $mode = null
         ) : NDArray
     {
         $ndim = $A->ndim();
@@ -1120,7 +1133,7 @@ class OpenCLMathTunner
             $dtype = $A->dtype();
         }
         if($B==null) {
-            $B = $this->alloc($outputShape,$dtype);
+            $B = $this->la->alloc($outputShape,$dtype);
         } else {
             if($B->shape()!=$outputShape) {
                 $shapeError = '('.implode(',',$A->shape()).'),('.implode(',',$B->shape()).')';
@@ -1187,7 +1200,7 @@ class OpenCLMathTunner
         return $B;
     }
 
-    public function showGraphReduceSum($mode=null,$details=null)
+    public function showGraphReduceSum(int $mode=null,bool $details=null) : void
     {
         $marker = null;
         $colors = [0=>'m',1=>'b',2=>'g',3=>'r'];
@@ -1199,6 +1212,8 @@ class OpenCLMathTunner
             $modes = [$mode];
         } elseif(is_array($mode)) {
             $modes = $mode;
+        } else {
+            throw new InvalidArgumentException("Invalid mode");
         }
         if($details) {
             $marker = null;
@@ -1250,7 +1265,11 @@ class OpenCLMathTunner
         $plt->show();
     }
 
-    protected function drawGraphRowsCols2($mo,$mode,$ax,$details,$marker,$legend)
+    /**
+     * @return array<object>
+     */
+    protected function drawGraphRowsCols2(
+        object $mo,int $mode,object $ax,bool $details,string $marker,bool $legend) : array
     {
         $times = $this->loadParameter('ReduceSumExTimesMode'.$mode.'.php');
         // rows <-> cols
@@ -1283,7 +1302,11 @@ class OpenCLMathTunner
         return $artists;
     }
 
-    protected function drawGraphColsRows2($mo,$mode,$ax,$details,$marker,$legend)
+    /**
+     * @return array<object>
+     */
+    protected function drawGraphColsRows2(
+        object $mo,int $mode,object $ax,bool $details,string $marker,bool $legend) : array
     {
         $times = $this->loadParameter('ReduceSumExTimesMode'.$mode.'.php');
         // cols <-> rows
@@ -1314,7 +1337,10 @@ class OpenCLMathTunner
         return $artists;
     }
 
-    public function editGraphReduceSum($mode,array $data)
+    /**
+     * @param array<int,array<int,int>> $data
+     */
+    public function editGraphReduceSum(int $mode,array $data) : void
     {
         echo "mode$mode\n";
         $times = $this->loadParameter('ReduceSumExTimesMode'.$mode.'.php',$default=true);

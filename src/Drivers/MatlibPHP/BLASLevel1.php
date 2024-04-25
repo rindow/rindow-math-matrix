@@ -1,7 +1,7 @@
 <?php
 namespace Rindow\Math\Matrix;
 
-use ArrayAccess as Buffer;
+use Interop\Polite\Math\Matrix\Buffer;
 
 /**
  *
@@ -28,8 +28,12 @@ interface BLASLevel1
     public function axpy(
         int $n,
         float $alpha,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY
     ) : void;
 
     /**
@@ -43,7 +47,9 @@ interface BLASLevel1
      */
     public function asum(
         int $n,
-        Buffer $X, int $offsetX, int $incX
+        Buffer $X,
+        int $offsetX,
+        int $incX
     ) : float;
 
     /**
@@ -60,8 +66,12 @@ interface BLASLevel1
      */
     public function copy(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY
     ) : void;
 
     /**
@@ -78,8 +88,56 @@ interface BLASLevel1
      */
     public function dot(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY
+    ) : float;
+
+    /**
+     *  Calculate the inner product value between conjugated complex vectors.
+     *    ret := X^t Y = x_1 * y_1 + ... + x_n * y_n
+     *  @param int $n           Number of elements in each vector
+     *  @param Buffer $X        Vector X buffer
+     *  @param int $offsetX     Start offset of vector X
+     *  @param int $incX        X increment width(Normally 1 should be specified)
+     *  @param Buffer $Y        Vector Y buffer
+     *  @param int $offsetY     Start offset of vector Y
+     *  @param int $incY        Y increment width(Normally 1 should be specified)
+     *  @return float
+     */
+    public function dotc(
+        int $n,
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY
+    ) : float;
+
+    /**
+     *  Calculate the inner product value between un-conjugation transposed complex vectors.
+     *    ret := X^t Y = x_1 * y_1 + ... + x_n * y_n
+     *  @param int $n           Number of elements in each vector
+     *  @param Buffer $X        Vector X buffer
+     *  @param int $offsetX     Start offset of vector X
+     *  @param int $incX        X increment width(Normally 1 should be specified)
+     *  @param Buffer $Y        Vector Y buffer
+     *  @param int $offsetY     Start offset of vector Y
+     *  @param int $incY        Y increment width(Normally 1 should be specified)
+     *  @return float
+     */
+    public function dotu(
+        int $n,
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY
     ) : float;
 
     /**
@@ -93,7 +151,9 @@ interface BLASLevel1
      */
     public function nrm2(
         int $n,
-        Buffer $X, int $offsetX, int $incX
+        Buffer $X,
+        int $offsetX,
+        int $incX
     ) : float;
 
     /**
@@ -113,8 +173,12 @@ interface BLASLevel1
      */
     public function rot(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY,
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY,
         float $c,
         float $s
     ) : void;
@@ -151,8 +215,12 @@ interface BLASLevel1
      */
     public function rotm(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY,
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY,
         float $p
     ) : void;
 
@@ -180,7 +248,9 @@ interface BLASLevel1
     public function scal(
         int $n,
         float $alpha,
-        Buffer $X, int $offsetX, int $incX
+        Buffer $X,
+        int $offsetX,
+        int $incX
     ) : void;
 
     /**
@@ -198,8 +268,12 @@ interface BLASLevel1
      */
     public function swap(
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        Buffer $Y, int $offsetY, int $incY
+        Buffer $X,
+        int $offsetX,
+        int $incX,
+        Buffer $Y,
+        int $offsetY,
+        int $incY
     ) : void;
 
     /**
@@ -214,7 +288,9 @@ interface BLASLevel1
      */
     public function iamax(
         int $n,
-        Buffer $X, int $offsetX, int $incX
+        Buffer $X,
+        int $offsetX,
+        int $incX
     ) : int;
 
     /**
@@ -229,7 +305,9 @@ interface BLASLevel1
      */
     public function iamin(
         int $n,
-        Buffer $X, int $offsetX, int $incX
+        Buffer $X,
+        int $offsetX,
+        int $incX
     ) : int;
 
     //////////////////////// BUGGY ON the OpenBLAS ////////////////////////////

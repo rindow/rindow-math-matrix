@@ -10,5 +10,6 @@ foreach($paths as $path) {
     }
 }
 use Rindow\Math\Matrix\MatrixOperator;
+
 $mo = new MatrixOperator();
 echo $mo->service()->info();
