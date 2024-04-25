@@ -40,7 +40,7 @@ How to Setup
 Set it up using composer.
 
 ```shell
-$ composer require rindow-math-matrix
+$ composer require rindow/rindow-math-matrix
 ```
 
 You can use it as is, but you will need to speed it up to process at a practical speed.
@@ -48,7 +48,7 @@ You can use it as is, but you will need to speed it up to process at a practical
 And then, Set up pre-build binaries for the required high-speed calculation libraries. Click [here](https://github.com/rindow/rindow-math-matrix-matlibffi) for details.
 
 ```shell
-$ composer require rindow-math-matrix-matlibffi
+$ composer require rindow/rindow-math-matrix-matlibffi
 ```
 
 Sample programs
