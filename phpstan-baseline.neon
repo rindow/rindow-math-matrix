@@ -1,46 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$blasCLFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$bufferCLFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$bufferFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$clblastFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$mathCLFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$mathFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$openblasFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\MatlibPhp has an unused parameter \\$openclFactory\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/MatlibPhp.php
-
-		-
 			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpBlas has an unused parameter \\$blas\\.$#"
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpBlas.php

@@ -81,11 +81,12 @@ class MatrixOperator
     public function __construct(
         Service $service=null,
         array $catalog=null,
+        int $verbose=null,
         )
     {
         if($service===null) {
             $selector = new Selector($catalog);
-            $service = $selector->select();
+            $service = $selector->select(verbose:$verbose);
         }
         $this->service = $service;
 

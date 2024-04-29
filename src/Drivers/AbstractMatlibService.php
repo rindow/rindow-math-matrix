@@ -11,6 +11,8 @@ use LogicException;
 
 abstract class AbstractMatlibService implements Service
 {
+    abstract protected function injectDefaultFactories() : void;
+
     // abstract properties
     protected string $name = 'unknown';
 
@@ -36,6 +38,7 @@ abstract class AbstractMatlibService implements Service
     protected ?object $clblastMath=null;
 
     protected ?int $serviceLevel=null;
+    protected int $logLevel = 10;
 
     public function __construct(
         protected ?object $bufferFactory=null,
@@ -46,12 +49,16 @@ abstract class AbstractMatlibService implements Service
         protected ?object $blasCLFactory=null,
         protected ?object $mathCLFactory=null,
         protected ?object $bufferCLFactory=null,
+        protected ?int $verbose=null,
     ) {
         $this->phpBLASFactory = new PhpBLASFactory();
         $this->phpblas = $this->phpBLASFactory->Blas();
         $this->phplapack = $this->phpBLASFactory->Lapack();
         $this->phpmath = $this->phpBLASFactory->Math();
         $this->phpbuffer = $this->phpBLASFactory;
+        $this->setVerbose($verbose);
+
+        $this->injectDefaultFactories();
 
         $level = $this->serviceLevel();
         if($level>=Service::LV_ADVANCED) {
@@ -65,6 +72,20 @@ abstract class AbstractMatlibService implements Service
             $this->math = $this->phpmath;
             $this->buffer = $this->phpbuffer;
         }
+    }
+
+    protected function setVerbose(int $verbose=null) : void
+    {
+        $verbose ??= 0;
+        $this->logLevel = 10 - $verbose;
+    }
+
+    protected function logging(int $level, string $message) : void
+    {
+        if($level < $this->logLevel) {
+            return;
+        }
+        echo $message."\n";
     }
 
     protected function bufferFactory() : object
@@ -138,32 +159,66 @@ abstract class AbstractMatlibService implements Service
         }
 
         $level = Service::LV_BASIC;
+        $this->logging(0, 'Current level Basic.');
         while(true) {
             if($this->bufferFactory===null ||
                 $this->openblasFactory===null ||
                 $this->mathFactory===null) {
+                if($this->bufferFactory===null) {
+                    $this->logging(0, 'bufferFactory ** not found **.');
+                }
+                if($this->openblasFactory===null) {
+                    $this->logging(0, 'openblasFactory ** not found **.');
+                }
+                if($this->mathFactory===null) {
+                    $this->logging(0, 'mathFactory ** not found **.');
+                }
                 break;
             }
             if(!$this->bufferFactory()->isAvailable()||
                 !$this->openblasFactory()->isAvailable()||
                 !$this->mathFactory()->isAvailable()) {
+                if(!$this->bufferFactory()->isAvailable()) {
+                    $this->logging(0, get_class($this->bufferFactory()).' is ** not available **.');
+                }
+                if(!$this->openblasFactory()->isAvailable()) {
+                    $this->logging(0, get_class($this->openblasFactory()).' is ** not available **.');
+                }
+                if(!$this->mathFactory()->isAvailable()) {
+                    $this->logging(0, get_class($this->mathFactory()).' is ** not available **.');
+                }
                 break;
             }
             $level = Service::LV_ADVANCED;
+            $this->logging(0, 'Update current level to Advanced.');
 
             if($this->openclFactory==null||
                 $this->clblastFactory==null) {
+                if($this->openclFactory===null) {
+                    $this->logging(0, 'openclFactory ** not found **.');
+                }
+                if($this->clblastFactory===null) {
+                    $this->logging(0, 'clblastFactory ** not found **.');
+                }
                 break;
             }
             if(!$this->openclFactory()->isAvailable()||
                 !$this->clblastFactory()->isAvailable()) {
+                if(!$this->openclFactory()->isAvailable()) {
+                    $this->logging(0, get_class($this->openclFactory()).' is ** not available **.');
+                }
+                if(!$this->clblastFactory()->isAvailable()) {
+                    $this->logging(0, get_class($this->clblastFactory()).' is ** not available **.');
+                }
                 break;
             }
             $level = Service::LV_ACCELERATED;
+            $this->logging(0, 'Update current level to Accelerated.');
             break;
         }
 
         $this->serviceLevel = $level;
+        $this->logging(0, 'The service level was diagnosed as '.$this->levelString[$this->serviceLevel].'.');
         return $level;
     }
 
