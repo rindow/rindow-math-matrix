@@ -6179,6 +6179,150 @@ class LinearAlgebraTest extends TestCase
         echo "\n".(explode(' ',$la->getConfig()))[0].'='.number_format($end-$start)."\n";
     }
 
+    public function testTopK()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $x = $la->array([
+            [1, 2, 3, 35, 46, 63, 66, 69, 36, 93, 12, 7],
+            [78, 24, 6, 64, 96, 35, 74, 36, 26, 46, 35, 72],
+            [7, 9, 8, 53, 63, 32, 63, 12, 63, 22, 53, 64],
+        ]);
+
+        $k = 3;
+        $sorted = true;
+
+        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+
+        $expectedTopValues = [
+            [93, 69, 66],
+            [96, 78, 74],
+            [64, 63, 63]
+        ];
+        $expectedTopIndices = [
+            [9, 7, 6],
+            [4, 0, 6],
+            [11, 4, 6]
+        ];
+
+        // Check the top K values
+        for ($i = 0; $i < count($expectedTopValues); $i++) {
+            for ($j = 0; $j < count($expectedTopValues[$i]); $j++) {
+                $this->assertTrue($this->equalTest($expectedTopValues[$i][$j], $topValues[$i][$j]));
+            }
+        }
+
+        // Check the top K indices
+        for ($i = 0; $i < count($expectedTopIndices); $i++) {
+            for ($j = 0; $j < count($expectedTopIndices[$i]); $j++) {
+                $this->assertTrue($this->equalTest($expectedTopIndices[$i][$j], $topIndices[$i][$j]));
+            }
+        }
+    }
+
+    public function testTopKLarge()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // Check if the LinearAlgebra implementation is accelerated
+        if (!$la->accelerated()) {
+            $this->markTestSkipped('Skip due to high load');
+            return;
+        }
+
+        // Test with a large matrix (case 1)
+        $rowsize = 64;
+        $colsize = 100000;
+        $k = 10;
+        $sorted = true;
+
+        $x = $la->ones($la->alloc([$rowsize, $colsize], dtype: NDArray::float32));
+
+        // Call the top_k function
+        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+
+        $this->assertTrue($this->equalTest([$rowsize, $k], $topValues->shape()));
+        $this->assertTrue($this->equalTest(NDArray::float32, $topValues->dtype()));
+        $this->assertTrue($this->equalTest([$rowsize, $k], $topIndices->shape()));
+        $this->assertTrue($this->equalTest(NDArray::int32, $topIndices->dtype()));
+
+
+        // Test with a large matrix (case 2)
+        $rowsize = 100000;
+        $colsize = 64;
+        $k = 5;
+        $sorted = true;
+
+        $x = $la->ones($la->alloc([$rowsize, $colsize], dtype: NDArray::float32));
+
+        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+
+        $this->assertTrue($this->equalTest([$rowsize, $k], $topValues->shape()));
+        $this->assertTrue($this->equalTest(NDArray::float32, $topValues->dtype()));
+        $this->assertTrue($this->equalTest([$rowsize, $k], $topIndices->shape()));
+        $this->assertTrue($this->equalTest(NDArray::int32, $topIndices->dtype()));
+    }
+
+    public function testTopKSpeed()
+    {
+        if (!self::$speedtest) {
+            $this->markTestSkipped('Speed measurement');
+            return;
+        }
+
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if ($la->getConfig() == 'PhpBlas') {
+            $this->assertTrue(true);
+            return;
+        }
+
+        // Large size scenario 1
+        $colsize = 100000;
+        $rowsize = 64;
+        $k = 10; // Number of top elements to find
+        $sorted = true; // Return sorted results
+
+        // Create a large matrix and fill it with ones
+        $x = $la->alloc([$rowsize, $colsize], dtype: NDArray::float32);
+        fwrite(STDERR, "fill-start\n");
+        $la->fill(1.0, $x);
+        fwrite(STDERR, "fill-end\n");
+
+        fwrite(STDERR, "pre-start\n");
+        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        fwrite(STDERR, "pre-end\n");
+
+        $start = hrtime(true);
+        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        $end = hrtime(true);
+        echo "\n" . (explode(' ', $la->getConfig()))[0] . '=' . number_format($end - $start) . "\n";
+
+        // Large size scenario 2
+        $colsize = 64;
+        $rowsize = 1000000;
+        $k = 5; // Number of top elements to find
+        $sorted = true; // Return sorted results
+
+        // Create a large matrix and fill it with ones
+        $x = $la->alloc([$rowsize, $colsize], dtype: NDArray::float32);
+        fwrite(STDERR, "fill-start\n");
+        $la->fill(1.0, $x);
+        fwrite(STDERR, "fill-end\n");
+
+        fwrite(STDERR, "pre-start\n");
+        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        fwrite(STDERR, "pre-end\n");
+
+        $start = hrtime(true);
+        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        $end = hrtime(true);
+        echo "\n" . (explode(' ', $la->getConfig()))[0] . '=' . number_format($end - $start) . "\n";
+    }
+
+
     public function testastype()
     {
         $mo = $this->newMatrixOperator();

@@ -2542,6 +2542,48 @@ class LinearAlgebra
     }
 
     /**
+     *  X := (top_values, top_indices) = top_k(X,k,sorted=true)
+     * @return NDArray[]
+     */
+    public function top_k(
+        NDArray $X,
+        int $k,
+        bool $sorted=false,
+    ) : array
+    {
+        // Check that the input array is 2-dimensional
+        if ($X->ndim() !== 2) {
+            throw new InvalidArgumentException('"X" must be 2-D dimension');
+        }
+
+
+        [$m, $n] = $X->shape();
+        $XX = $X->buffer();
+        $offX = $X->offset();
+        $ldA = $n;
+
+        $topValues = $this->alloc([$m, $k], dtype: $X->dtype());
+        $topIndices = $this->alloc([$m, $k], dtype: NDArray::int32);
+
+        $buffTV = $topValues->buffer();
+        $offTV = $topValues->offset();
+        $buffTI = $topIndices->buffer();
+        $offTI = $topIndices->offset();
+
+        // Call the underlying top_k function
+        $this->math->top_k(
+            $m, $n,
+            $XX, $offX,
+            $ldA,
+            $k, $sorted,
+            $buffTV, $offTV,
+            $buffTI, $offTI
+        );
+
+        return [$topValues, $topIndices];
+    }
+
+    /**
      *    X(m) := sum( A(m,n) )
      */
     public function reduceSum( // reduceSumEx
@@ -3840,7 +3882,7 @@ class LinearAlgebra
                     //if($perm!=[1,0]) {
                     //    throw new InvalidArgumentException('unmatch sourceshape and perm');
                     //}
-                    
+
                 }
             }
             return $this->transpose2D($A,$B);
