@@ -17,14 +17,14 @@ use Rindow\OpenCL\CommandQueue;
 
 class MatrixOperator
 {
-    const LOWEST_RINDOW_OPENBLAS_VERSION = '0.3.0';
-    const OVER_RINDOW_OPENBLAS_VERSION = '0.4.0';
+    const LOWEST_RINDOW_OPENBLAS_VERSION = '0.4.0';
+    const OVER_RINDOW_OPENBLAS_VERSION = '0.5.0';
 
-    const LOWEST_RINDOW_OPENCL_VERSION = '0.1.3';
-    const OVER_RINDOW_OPENCL_VERSION = '0.2.0';
+    const LOWEST_RINDOW_OPENCL_VERSION = '0.2.0';
+    const OVER_RINDOW_OPENCL_VERSION = '0.3.0';
     
-    const LOWEST_RINDOW_CLBLAST_VERSION = '0.1.2';
-    const OVER_RINDOW_CLBLAST_VERSION = '0.2.0';
+    const LOWEST_RINDOW_CLBLAST_VERSION = '0.2.0';
+    const OVER_RINDOW_CLBLAST_VERSION = '0.3.0';
     
     protected $blas;
     protected $openblas;

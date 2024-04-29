@@ -1,6 +1,9 @@
 name: tests
 
-on: [push]
+on: 
+  push:
+      branches:
+          - v1.1
 
 jobs:
   no_ext_tests:

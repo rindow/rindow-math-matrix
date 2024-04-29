@@ -3,3 +3,5 @@ vendor/
 composer.lock
 composer.phar
 tests/.phpunit.*
+/.vscode/
+phpstan.neon

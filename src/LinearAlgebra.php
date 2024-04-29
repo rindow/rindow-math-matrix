@@ -1529,14 +1529,18 @@ class LinearAlgebra
         float $alpha
         ) : NDArray
     {
-        $n = $X->size();
-        $XX = $X->buffer();
-        $offX = $X->offset();
-
-        $this->math->pow(
-            $n,
-            $XX,$offX,1,
-            $alpha);
+        // for rindow_openblas v0.2.0
+        $m = $X->size();
+        $n = 1;
+        $AA = $X->buffer();
+        $offA = $X->offset();
+        $trans = false;
+        $ldA = $n;
+        $alpha = new NDArrayPhp($alpha,$X->dtype());
+        $XX = $alpha->buffer();
+        $offX = 0;
+        $incX = 1;
+        $this->math->pow($trans,$m,$n,$AA,$offA,$ldA,$XX,$offX,$incX);
 
         return $X;
     }
@@ -3383,14 +3387,22 @@ class LinearAlgebra
         $YY = $Y->buffer();
         $offY = $Y->offset();
 
+        $ldA = 0;
         $this->math->searchsorted(
-            $m,
-            $AA,$offA,1,
-            $n,
+            $n,$m,
+            $AA,$offA,$ldA,
             $XX,$offX,1,
             $right,
             $YY,$offY,1
         );
+        //$this->math->searchsorted(
+        //    $m,
+        //    $AA,$offA,1,
+        //    $n,
+        //    $XX,$offX,1,
+        //    $right,
+        //    $YY,$offY,1
+        //);
 
         return $Y;
     }

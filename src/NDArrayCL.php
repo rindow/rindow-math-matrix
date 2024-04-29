@@ -278,7 +278,7 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
             if(!($buffer instanceof OpenCLBuffer))
                 throw new LogicException("Must be NDArray on OpenCL.");
             $valueSize = self::$valueSizeTable[$value->dtype()];
-            $buffer->copy($this->queue, $this->buffer, $valueSize,
+            $this->buffer->copy($this->queue, $buffer, $valueSize,
                 $value->offset()*$valueSize, ($this->offset+$offset)*$valueSize);
             return;
         }
@@ -292,7 +292,7 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         $idx=$this->offset+$offset*$size;
 
         $valueSize = self::$valueSizeTable[$value->dtype()];
-        $src->copy($this->queue, $this->buffer, $size*$valueSize,
+        $this->buffer->copy($this->queue, $src, $size*$valueSize,
             $src_idx*$valueSize ,$idx*$valueSize);
     }
 
@@ -355,7 +355,7 @@ class NDArrayCL implements NDArray,Countable,IteratorAggregate
         $newBuffer = new OpenCLBuffer($this->context,$bytes,
                 $flags,null,0,$dtype);
         $events = new \Rindow\OpenCL\EventList();
-        $this->buffer->copy($this->queue,$newBuffer,0,0,0,$events);
+        $newBuffer->copy($this->queue,$this->buffer,0,0,0,$events);
         $events->wait();
         $this->flags = $flags;
         $this->buffer = $newBuffer;

@@ -5,14 +5,14 @@
     "keywords": ["rindow","math","matrix","N-dimension","operation"],
     "license": "BSD-3-Clause",
     "require": {
-        "php": "^7.2|^7.3|^7.4|^8.0",
+        "php": "^7.2|~8.0.0",
         "interop-phpobjects/polite-math": "~1.0.4"
     },
     "suggest": {
-        "ext-rindow_openblas": "0.3.0 strongly recommended for speed",
-        "ext-rindow_opencl": "0.1.4 GPU/OpenCL support",
-        "ext-rindow_clblast": "0.1.2 BLAS on GPU/OpenCL support",
-        "rindow/math-plot": "for OpenCL tunning"
+        "ext-rindow_openblas": "0.4.1 strongly recommended for speed",
+        "ext-rindow_opencl": "0.2.1 GPU/OpenCL support",
+        "ext-rindow_clblast": "0.2.1 BLAS on GPU/OpenCL support",
+        "rindow/rindow-math-plot": "for OpenCL tuning"
     },
     "autoload": {
         "psr-4": {

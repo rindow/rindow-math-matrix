@@ -73,7 +73,7 @@ class PhpBlas //implements BLASLevel1
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for buffer.');
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
 
         $idx = $offsetX;
         for ($i=0; $i<$n; $i++,$idx+=$incX) {
@@ -90,9 +90,9 @@ class PhpBlas //implements BLASLevel1
         Buffer $Y, int $offsetY, int $incY ) : void
     {
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         if($offsetY+($n-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector Y specification too large for buffer.');
+            throw new InvalidArgumentException('Vector Y specification too large for buffer.');
         $idxX = $offsetX;
         $idxY = $offsetY;
         if($alpha==1.0) {   // Y := X + Y
@@ -116,9 +116,9 @@ class PhpBlas //implements BLASLevel1
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         if($offsetY+($n-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector Y specification too large for buffer.');
+            throw new InvalidArgumentException('Vector Y specification too large for buffer.');
         $idxX = $offsetX;
         $idxY = $offsetY;
         $acc = 0.0;
@@ -137,7 +137,7 @@ class PhpBlas //implements BLASLevel1
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         $idxX = $offsetX;
         $acc = 0.0;
         for ($i=0; $i<$n; $i++,$idxX+=$incX) {
@@ -155,7 +155,7 @@ class PhpBlas //implements BLASLevel1
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         $idxX = $offsetX+$incX;
         $acc = abs($X[$offsetX]);
         $idx = 0;
@@ -177,7 +177,7 @@ class PhpBlas //implements BLASLevel1
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         $idxX = $offsetX+$incX;
         $acc = abs($X[$offsetX]);
         $idx = 0;
@@ -201,9 +201,9 @@ class PhpBlas //implements BLASLevel1
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         if($offsetY+($n-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector Y specification too large for buffer.');
+            throw new InvalidArgumentException('Vector Y specification too large for buffer.');
 
         $idxX = $offsetX;
         $idxY = $offsetY;
@@ -221,7 +221,7 @@ class PhpBlas //implements BLASLevel1
             return $this->blas->nrm2($n,$X,$offsetX,$incX);
         }
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         $idxX = $offsetX;
         // Y := sqrt(sum(Xn ** 2))
         $sum = 0.0;
@@ -326,9 +326,9 @@ class PhpBlas //implements BLASLevel1
         }
 
         if($offsetX+($n-1)*$incX>=count($X))
-            throw new RuntimeException('Vector X specification too large for buffer.');
+            throw new InvalidArgumentException('Vector X specification too large for buffer.');
         if($offsetY+($n-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector Y specification too large for buffer.');
+            throw new InvalidArgumentException('Vector Y specification too large for buffer.');
 
         $idxX = $offsetX;
         $idxY = $offsetY;
@@ -365,11 +365,11 @@ class PhpBlas //implements BLASLevel1
         $cols = ($trans==BLAS::NoTrans) ? $n : $m;
 
         if($offsetA+($m-1)*$ldA+($n-1)*$incX>=count($A))
-            throw new RuntimeException('Matrix specification too large for bufferA.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferA.');
         if($offsetX+($cols-1)*$incX>=count($X))
-            throw new RuntimeException('Vector specification too large for bufferX.');
+            throw new InvalidArgumentException('Vector specification too large for bufferX.');
         if($offsetY+($rows-1)*$incY>=count($Y))
-            throw new RuntimeException('Vector specification too large for bufferY.');
+            throw new InvalidArgumentException('Vector specification too large for bufferY.');
 
         $ldA_i = ($trans==BLAS::NoTrans) ? $ldA : 1;
         $ldA_j = ($trans==BLAS::NoTrans) ? 1 : $ldA;
@@ -420,11 +420,11 @@ class PhpBlas //implements BLASLevel1
         $rowsB = ($transB==BLAS::NoTrans) ? $k : $n;
         $colsB = ($transB==BLAS::NoTrans) ? $n : $k;
         if($offsetA+($rowsA-1)*$ldA+($colsA-1)>=count($A))
-            throw new RuntimeException('Matrix specification too large for bufferA.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferA.');
         if($offsetB+($rowsB-1)*$ldB+($colsB-1)>=count($B))
-            throw new RuntimeException('Matrix specification too large for bufferB.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferB.');
         if($offsetC+($m-1)*$ldC+($n-1)>=count($C))
-            throw new RuntimeException('Matrix specification too large for bufferC.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferC.');
 
         $ldA_m = ($transA==BLAS::NoTrans) ? $ldA : 1;
         $ldA_k = ($transA==BLAS::NoTrans) ? 1 : $ldA;
@@ -477,11 +477,11 @@ class PhpBlas //implements BLASLevel1
         }
         $sizeA = ($side==BLAS::Left) ? $m : $n;
         if($offsetA+($sizeA-1)*$ldA+($sizeA-1)>=count($A))
-            throw new RuntimeException('Matrix specification too large for bufferA.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferA.');
         if($offsetB+($m-1)*$ldB+($n-1)>=count($B))
-            throw new RuntimeException('Matrix specification too large for bufferB.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferB.');
         if($offsetC+($m-1)*$ldC+($n-1)>=count($C))
-            throw new RuntimeException('Matrix specification too large for bufferC.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferC.');
 
         $ldA_m = ($uplo==BLAS::Upper) ? $ldA : 1;
         $ldA_k = ($uplo==BLAS::Upper) ? 1 : $ldA;
@@ -540,15 +540,15 @@ class PhpBlas //implements BLASLevel1
             throw new InvalidArgumentException('Invalid Order type');
         }
         if($n<1)
-            throw new RuntimeException('Argument n must be greater than 0.');
+            throw new InvalidArgumentException('Argument n must be greater than 0.');
         if($k<1)
-            throw new RuntimeException('Argument k must be greater than 0.');
+            throw new InvalidArgumentException('Argument k must be greater than 0.');
         $rows = ($trans==BLAS::NoTrans) ? $n : $k;
         $cols = ($trans==BLAS::NoTrans) ? $k : $n;
         if($offsetA+($rows-1)*$ldA+($cols-1)>=count($A))
-            throw new RuntimeException('Matrix specification too large for bufferA.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferA.');
         if($offsetC+($n-1)*$ldC+($n-1)>=count($C))
-            throw new RuntimeException('Matrix specification too large for bufferC.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferC.');
 
         $ldA_m  = ($trans==BLAS::NoTrans) ? $ldA : 1;
         $ldA_k  = ($trans==BLAS::NoTrans) ? 1 : $ldA;
@@ -609,11 +609,11 @@ class PhpBlas //implements BLASLevel1
         $rows = ($trans==BLAS::NoTrans) ? $n : $k;
         $cols = ($trans==BLAS::NoTrans) ? $k : $n;
         if($offsetA+($rows-1)*$ldA+($cols-1)>=count($A))
-            throw new RuntimeException('Matrix specification too large for bufferA.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferA.');
         if($offsetB+($rows-1)*$ldB+($cols-1)>=count($B))
-            throw new RuntimeException('Matrix specification too large for bufferB.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferB.');
         if($offsetC+($n-1)*$ldC+($n-1)>=count($C))
-            throw new RuntimeException('Matrix specification too large for bufferC.');
+            throw new InvalidArgumentException('Matrix specification too large for bufferC.');
 
         $ldA_m  = ($trans==BLAS::NoTrans) ? $ldA : 1;
         $ldA_k  = ($trans==BLAS::NoTrans) ? 1 : $ldA;

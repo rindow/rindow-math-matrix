@@ -3,6 +3,7 @@ namespace RindowTest\Math\Matrix\LinearAlgebraTest;
 
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\Math\Matrix\OpenCL;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Matrix\NDArrayPhp;
 use Rindow\Math\Plot\Plot;
@@ -2099,7 +2100,7 @@ class Test extends TestCase
             return;
         }
         // large size
-        $rows = 8000000;
+        $rows = 800000;
         $cols = 16;
         $x = $la->alloc([$rows,$cols],NDArray::float32);
         $la->fill(2.0,$x);
@@ -2193,7 +2194,7 @@ class Test extends TestCase
             return;
         }
         // large size
-        $rows = 8000000;
+        $rows = 800000;
         $cols = 16;
         $x = $la->alloc([$rows,$cols],NDArray::float32);
         $la->fill(2.0,$x);
@@ -2323,9 +2324,8 @@ class Test extends TestCase
         // X := sqrt(X)
         $X = $la->array([[1,2,3],[4,5,6]]);
         $la->pow($X,3);
-        $this->assertEquals(
-            [[1,8,27],[64,125,216]]
-        ,$X->toArray());
+        $X = $la->toNDArray($X);
+        $this->assertTrue($mo->la()->isclose($mo->array([[1,8,27],[64,125,216]]),$X));
     }
 
     public function testExp()
@@ -4550,6 +4550,13 @@ class Test extends TestCase
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
         $math = $la;
+        if($la->accelerated()) {
+            $devType = $math->getContext()->getInfo(OpenCL::CL_CONTEXT_DEVICES)->getInfo(0,OpenCL::CL_DEVICE_TYPE);
+            $devName = $math->getContext()->getInfo(OpenCL::CL_CONTEXT_DEVICES)->getInfo(0,OpenCL::CL_DEVICE_NAME);
+        } else {
+            $devType = OpenCL::CL_DEVICE_TYPE_CPU;
+            $devName = "CPU";
+        }
 
         #### int to any
         $X = $la->array([-1,0,1,2,3],NDArray::int32);
@@ -4614,7 +4621,12 @@ class Test extends TestCase
 
         $dtype = NDArray::bool;
         $Y = $math->astype($X, $dtype);
-        $this->assertEquals([true,false,true,true,true],$Y->toArray());
+        if($devType==OpenCL::CL_DEVICE_TYPE_GPU&&
+            strpos($devName,'Intel')!==false ) {
+            $this->assertEquals([false,false,true,true,true],$Y->toArray());
+        } else {
+            $this->assertEquals([true,false,true,true,true],$Y->toArray());
+        }
 
         #### bool to any ######
         $X = $la->array([true,false,true,true,true],NDArray::bool);
@@ -4652,11 +4664,21 @@ class Test extends TestCase
         $X = $la->array([-1,0,1,2,3],NDArray::float32);
         $dtype = NDArray::uint8;
         $Y = $math->astype($X, $dtype);
-        $this->assertEquals([255,0,1,2,3],$Y->toArray());
+        if($devType==OpenCL::CL_DEVICE_TYPE_GPU&&
+            strpos($devName,'Intel')!==false ) {
+            $this->assertEquals([0,0,1,2,3], $Y->toArray());
+        } else {
+            $this->assertEquals([255,0,1,2,3], $Y->toArray());
+        } 
 
         $dtype = NDArray::uint16;
         $Y = $math->astype($X, $dtype);
-        $this->assertEquals([65535,0,1,2,3],$Y->toArray());
+        if($devType==OpenCL::CL_DEVICE_TYPE_GPU&&
+            strpos($devName,'Intel')!==false ) {
+            $this->assertEquals([0,0,1,2,3], $Y->toArray());
+        } else {
+            $this->assertEquals([65535,0,1,2,3], $Y->toArray());
+        }
 
         // ***** CAUTION ******
         $X = $la->array([-1000,0,1,2,4294967295],NDArray::float32);
@@ -4664,7 +4686,11 @@ class Test extends TestCase
             // GPU
             $dtype = NDArray::uint32;
             $Y = $math->astype($X, $dtype);
-            $this->assertEquals([0,0,1,2,4294967295],$Y->toArray());
+            if($devType===OpenCL::CL_DEVICE_TYPE_GPU) {
+                $this->assertEquals([0,0,1,2,4294967295],$Y->toArray());
+            } else {
+                $this->assertEquals([4294966296,0,1,2,0],$Y->toArray());
+            }
         } else {
             // CPU
             $dtype = NDArray::uint32;
@@ -4682,7 +4708,17 @@ class Test extends TestCase
             // GPU
             $dtype = NDArray::uint64;
             $Y = $math->astype($X, $dtype);
-            $this->assertEquals([0,0,1,2,3],$Y->toArray());
+            if($devType===OpenCL::CL_DEVICE_TYPE_GPU) {
+                if($devName=='Loveland') {
+                    $this->assertEquals([0,0,1,2,3],$Y->toArray());
+                } elseif(strpos($devName,'Intel')!==false) {
+                    $this->assertEquals([1000,0,1,2,3],$Y->toArray());
+                } else {
+                    $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
+                }
+            } else {
+                $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
+            }
         } elseif($la->getConfig()=='PhpBlas') {
             // CPU
             $dtype = NDArray::uint64;

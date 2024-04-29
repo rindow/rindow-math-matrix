@@ -22,7 +22,12 @@ class Test extends TestCase
 {
     public function getContext()
     {
-        return new Context(OpenCL::CL_DEVICE_TYPE_DEFAULT);
+        try {
+            $context = new Context(OpenCL::CL_DEVICE_TYPE_GPU);
+        } catch(\Exception $e) {
+            $context = new Context(OpenCL::CL_DEVICE_TYPE_DEFAULT);
+        }
+        return $context;
     }
 
     public function getQueue($context)

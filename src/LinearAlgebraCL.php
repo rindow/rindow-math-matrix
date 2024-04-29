@@ -1094,6 +1094,10 @@ class LinearAlgebraCL
             }
         } else {
             $Y = $this->alloc([$rows],$X->dtype(),OpenCL::CL_MEM_READ_WRITE);
+            // ** CAUTION ** it must fill it with zeros because NAN can't reset by beta.
+            $zerosEvents = $this->newEventList();
+            $this->zeros($Y,$zerosEvents);
+            $zerosEvents->wait();
             $beta = 0.0;
         }
         $YY = $Y->buffer();
@@ -1169,7 +1173,11 @@ class LinearAlgebraCL
                 throw new InvalidArgumentException('"A" and "C" must have the same number of rows."B" and "C" must have the same number of columns');
             }
         } else {
-            $C = $this->alloc([$M,$N]);
+            $C = $this->alloc([$M,$N],$A->dtype(),OpenCL::CL_MEM_READ_WRITE);
+            // ** CAUTION ** it must fill it with zeros because NAN can't reset by beta.
+            $zerosEvents = $this->newEventList();
+            $this->zeros($C,$zerosEvents);
+            $zerosEvents->wait();
             $beta = 0.0;
         }
         $CC = $C->buffer();
@@ -1281,8 +1289,11 @@ class LinearAlgebraCL
                     implode(',',$A->shape()).'] , ['.implode(',',$B->shape()).'] => ['.implode(',',$C->shape()).']');
             }
         } else {
-            $C = $this->alloc($orgShapeC,$A->dtype());
-            $this->zeros($C);
+            $C = $this->alloc($orgShapeC,$A->dtype(),OpenCL::CL_MEM_READ_WRITE);
+            // ** CAUTION ** it must fill it with zeros because NAN can't reset by beta.
+            $zerosEvents = $this->newEventList();
+            $this->zeros($C,$zerosEvents);
+            $zerosEvents->wait();
         }
         $flatC = $C->reshape(array_merge([$broadcastDest],$shapeEC));
         $CC = $C->buffer();
@@ -1374,7 +1385,11 @@ class LinearAlgebraCL
                 throw new InvalidArgumentException('Matrix "B" and "C" must be same shape');
             }
         } else {
-            $C = $this->zeros($this->alloc([$M,$N],$A->dtype()));
+            $C = $this->alloc([$M,$N],$A->dtype(),OpenCL::CL_MEM_READ_WRITE);
+            // ** CAUTION ** it must fill it with zeros because NAN can't reset by beta.
+            $zerosEvents = $this->newEventList();
+            $this->zeros($C,$zerosEvents);
+            $zerosEvents->wait();
         }
         $CC = $C->buffer();
         $offC = $C->offset();
@@ -1444,7 +1459,11 @@ class LinearAlgebraCL
                 throw new InvalidArgumentException('"C" rows and cols must have the same number of "A" cols');
             }
         } else {
-            $C = $this->zeros($this->alloc([$N,$N],$A->dtype()));
+            $C = $this->alloc([$N,$N],$A->dtype(),OpenCL::CL_MEM_READ_WRITE);
+            // ** CAUTION ** it must fill it with zeros because NAN can't reset by beta.
+            $zerosEvents = $this->newEventList();
+            $this->zeros($C,$zerosEvents);
+            $zerosEvents->wait();
         }
         $CC = $C->buffer();
         $offC = $C->offset();
@@ -1520,7 +1539,11 @@ class LinearAlgebraCL
                 throw new InvalidArgumentException('"C" rows and cols must have the same number of "A" cols');
             }
         } else {
-            $C = $this->zeros($this->alloc([$N,$N],$A->dtype()));
+            $C = $this->alloc([$N,$N],$A->dtype(),OpenCL::CL_MEM_READ_WRITE);
+            // ** CAUTION ** it must fill it with zeros because NAN can't reset by beta.
+            $zerosEvents = $this->newEventList();
+            $this->zeros($C,$zerosEvents);
+            $zerosEvents->wait();
         }
         $CC = $C->buffer();
         $offC = $C->offset();
@@ -1619,8 +1642,8 @@ class LinearAlgebraCL
     }
 
     /**
-    *    C := alpha A^-1 B  (right=false)
-    *    C := alpha B A^-1  (right=true)
+    *    B := alpha A^-1 B  (right=false)
+    *    B := alpha B A^-1  (right=true)
     */
     public function trsm(
         NDArray $A,
@@ -4733,7 +4756,7 @@ class LinearAlgebraCL
         $offA = $A->offset();
         $BB = $B->buffer();
         $offB = $B->offset();
-        $this->math->omatcopy(
+        $this->blas->omatcopy(
             BLAS::RowMajor,
             BLAS::Trans,
             $m,

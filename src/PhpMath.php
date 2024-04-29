@@ -647,19 +647,42 @@ class PhpMath
     }
 
     /**
-     *     X := X ^ a
+     * A(m,n) := A(m,n) ** X(n)
+     * 
+     * for openblas v0.2.0
      */
     public function pow(
+        bool $trans,
+        int $m,
         int $n,
-        Buffer $X, int $offsetX, int $incX,
-        float $alpha
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $X, int $offsetX, int $incX
         ) : void
     {
         if($this->useMath($X)) {
-            $this->math->pow($n,$X,$offsetX,$incX,$alpha);
+            $this->math->pow($trans,$m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX);
             return;
         }
+        if($trans!=false) {
+            throw new RuntimeException('trans must be false.');
+        }
+        if($n!=1) {
+            throw new RuntimeException('n size must be 1.');
+        }
+        if($ldA!=1) {
+            throw new RuntimeException('ldA must be 1.');
+        }
+        if($X->count()!=1) {
+            throw new RuntimeException('X size must be 1.');
+        }
+        // translate from rindow_openblas v0.2.0 to v0.1.x
+        $n = $m;
+        $alpha = $X[$offsetX];
+        $X = $A;
+        $offsetX = $offsetA;
+        $incX = 1;
 
+        // perform v0.1.x mode
         if($offsetX+($n-1)*$incX>=count($X))
             throw new RuntimeException('Vector specification too large for buffer.');
 
@@ -1346,18 +1369,26 @@ class PhpMath
 
     public function searchsorted(
         int $m,
-        Buffer $A, int $offsetA, int $incA, // float
         int $n,
+        Buffer $A, int $offsetA, int $ldA,  // float
         Buffer $X, int $offsetX, int $incX, // float
         bool $right,
         Buffer $Y, int $offsetY, int $incY // int
         ) : void
     {
         if($this->math) {
-            $this->math->searchsorted($m,$A,$offsetA,$incA,$n,$X,$offsetX,$incX,$right,$Y,$offsetY,$incY);
+            // for v0.2.0
+            $this->math->searchsorted($m,$n,$A,$offsetA,$ldA,$X,$offsetX,$incX,$right,$Y,$offsetY,$incY);
             return;
         }
+        // translate from rindow_openblas v0.2.0 to v0.1.x
+        if($ldA!=0) {
+            throw new RuntimeException('ldA must be 0.');
+        }
+        $incA = 1;
+        [$n,$m] = [$m,$n];
 
+        // perform v0.1.x mode
         $idx = $offsetX;
         $idy = $offsetY;
         for($i=0;$i<$n;$i++) {

@@ -1,2 +1,8 @@
 cache/
 data/
+/.vscode/
+*.log
+composer.lock
+composer.phar
+tests/.phpunit.*
+phpstan.neon

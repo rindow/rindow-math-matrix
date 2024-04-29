@@ -42,7 +42,11 @@ class TestMatrixOperator extends MatrixOperator
             } else {
                 $deviceType = OpenCL::CL_DEVICE_TYPE_DEFAULT;
             }
-            $context = new Context($deviceType);
+            try {
+                $context = new Context($deviceType);
+            } catch(\Exception $e) {
+                $context = new Context(OpenCL::CL_DEVICE_TYPE_DEFAULT);
+            }
             $queue = new CommandQueue($context);
             $clblastblas = new CLBlastBlas();
             $openclmath = new OpenCLMath($context,$queue);
@@ -756,7 +760,7 @@ class Test extends ORGTest
 
     public function newLA($mo)
     {
-        $la = $mo->laAccelerated('clblast');
+        $la = $mo->laAccelerated('clblast',['deviceType'=>OpenCL::CL_DEVICE_TYPE_GPU]);
         $la->blocking(true);
         $la->scalarNumeric(true);
         return $la;
