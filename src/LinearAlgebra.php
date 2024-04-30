@@ -2548,7 +2548,6 @@ class LinearAlgebra
     public function top_k(
         NDArray $X,
         int $k,
-        bool $sorted=false,
     ) : array
     {
         // Check that the input array is 2-dimensional
@@ -2574,8 +2573,7 @@ class LinearAlgebra
         $this->math->top_k(
             $m, $n,
             $XX, $offX,
-            $ldA,
-            $k, $sorted,
+            $ldA, $k,
             $buffTV, $offTV,
             $buffTI, $offTI
         );

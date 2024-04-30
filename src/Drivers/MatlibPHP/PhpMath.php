@@ -1423,7 +1423,6 @@ class PhpMath
         int $n,
         Buffer $A, int $offsetA, int $ldA,
         int $k,
-        bool $sorted,
         Buffer $topValues, int $offsetTopValues,
         Buffer $topIndices, int $offsetTopIndices
     ): void {
@@ -1442,10 +1441,6 @@ class PhpMath
             usort($valueIndexPairs, fn($a, $b) => $b['value'] <=> $a['value']);
 
             $topKPairs = array_slice($valueIndexPairs, 0, $k);
-
-            if ($sorted) {
-                usort($topKPairs, fn($a, $b) => $b['value'] <=> $a['value']);
-            }
 
             for ($j = 0; $j < $k; $j++) {
                 $topValues[$offsetTopValues + $i * $k + $j] = $topKPairs[$j]['value'];

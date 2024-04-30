@@ -6191,9 +6191,8 @@ class LinearAlgebraTest extends TestCase
         ]);
 
         $k = 3;
-        $sorted = true;
 
-        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        [$topValues, $topIndices] = $la->top_k($x, $k);
 
         $expectedTopValues = [
             [93, 69, 66],
@@ -6236,12 +6235,11 @@ class LinearAlgebraTest extends TestCase
         $rowsize = 64;
         $colsize = 100000;
         $k = 10;
-        $sorted = true;
 
         $x = $la->ones($la->alloc([$rowsize, $colsize], dtype: NDArray::float32));
 
         // Call the top_k function
-        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        [$topValues, $topIndices] = $la->top_k($x, $k);
 
         $this->assertTrue($this->equalTest([$rowsize, $k], $topValues->shape()));
         $this->assertTrue($this->equalTest(NDArray::float32, $topValues->dtype()));
@@ -6253,11 +6251,10 @@ class LinearAlgebraTest extends TestCase
         $rowsize = 100000;
         $colsize = 64;
         $k = 5;
-        $sorted = true;
 
         $x = $la->ones($la->alloc([$rowsize, $colsize], dtype: NDArray::float32));
 
-        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        [$topValues, $topIndices] = $la->top_k($x, $k);
 
         $this->assertTrue($this->equalTest([$rowsize, $k], $topValues->shape()));
         $this->assertTrue($this->equalTest(NDArray::float32, $topValues->dtype()));
@@ -6282,42 +6279,38 @@ class LinearAlgebraTest extends TestCase
         // Large size scenario 1
         $colsize = 100000;
         $rowsize = 64;
-        $k = 10; // Number of top elements to find
-        $sorted = true; // Return sorted results
+        $k = 10;
 
-        // Create a large matrix and fill it with ones
         $x = $la->alloc([$rowsize, $colsize], dtype: NDArray::float32);
         fwrite(STDERR, "fill-start\n");
         $la->fill(1.0, $x);
         fwrite(STDERR, "fill-end\n");
 
         fwrite(STDERR, "pre-start\n");
-        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        [$topValues, $topIndices] = $la->top_k($x, $k);
         fwrite(STDERR, "pre-end\n");
 
         $start = hrtime(true);
-        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        [$topValues, $topIndices] = $la->top_k($x, $k);
         $end = hrtime(true);
         echo "\n" . (explode(' ', $la->getConfig()))[0] . '=' . number_format($end - $start) . "\n";
 
         // Large size scenario 2
         $colsize = 64;
         $rowsize = 1000000;
-        $k = 5; // Number of top elements to find
-        $sorted = true; // Return sorted results
+        $k = 5;
 
-        // Create a large matrix and fill it with ones
         $x = $la->alloc([$rowsize, $colsize], dtype: NDArray::float32);
         fwrite(STDERR, "fill-start\n");
         $la->fill(1.0, $x);
         fwrite(STDERR, "fill-end\n");
 
         fwrite(STDERR, "pre-start\n");
-        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        [$topValues, $topIndices] = $la->top_k($x, $k);
         fwrite(STDERR, "pre-end\n");
 
         $start = hrtime(true);
-        [$topValues, $topIndices] = $la->top_k($x, $k, $sorted);
+        [$topValues, $topIndices] = $la->top_k($x, $k);
         $end = hrtime(true);
         echo "\n" . (explode(' ', $la->getConfig()))[0] . '=' . number_format($end - $start) . "\n";
     }
