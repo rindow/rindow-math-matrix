@@ -39,7 +39,7 @@ class Random
         return $shape;
     }
 
-    public function rand(mixed $n, int $dtype=null) : NDArray
+    public function rand(mixed $n, ?int $dtype=null) : NDArray
     {
         $shape = $this->checkSize($n);
         if($dtype===null) {
@@ -54,7 +54,7 @@ class Random
         return $array;
     }
 
-    public function randn(mixed $n, int $dtype=null) : NDArray
+    public function randn(mixed $n, ?int $dtype=null) : NDArray
     {
         $shape = $this->checkSize($n);
         if($dtype===null) {
@@ -76,7 +76,7 @@ class Random
         return random_int(0, $max);
     }
 
-    public function choice(mixed $a, int $size=null, bool $replace=null) : mixed
+    public function choice(mixed $a, ?int $size=null, ?bool $replace=null) : mixed
     {
         $arangeFlg = false;
         if(is_int($a)) {

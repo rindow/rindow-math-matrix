@@ -10,7 +10,7 @@
     },
     "suggest": {
         "rindow/math-plot": "for OpenCL tunning",
-        "rindow/rindow-math-matrix-matlibffi": "~1.0.0"
+        "rindow/rindow-math-matrix-matlibffi": "~1.0.3"
     },
     "autoload": {
         "psr-4": {

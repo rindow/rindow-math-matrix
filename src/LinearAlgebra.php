@@ -5,6 +5,7 @@ use Interop\Polite\Math\Matrix\BLAS;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\Buffer;
 use InvalidArgumentException;
+use LogicException;
 use Rindow\Math\Matrix\Drivers\Service;
 use function Rindow\Math\Matrix\R;
 
@@ -21,6 +22,11 @@ class LinearAlgebra
     protected object $lapack;
     protected object $math;
     protected int $defaultFloatType = NDArray::float32;
+    /** @var array<array{array{array<int>,array<int>,array<int>}}> $einsumEquationCache */
+    protected array $einsumEquationCache = [];
+    /** @var array<array{array{array<int>,array<int>,array<int>}}> $einsum4p1EquationCache */
+    protected array $einsum4p1EquationCache = [];
+    
     /** @var array<int> $intTypes */
     protected array $intTypes= [
         NDArray::int8,NDArray::int16,NDArray::int32,NDArray::int64,
@@ -41,8 +47,8 @@ class LinearAlgebra
 
     public function __construct(
         Service $service,
-        int $defaultFloatType=null,
-        int $serviceLevel=null)
+        ?int $defaultFloatType=null,
+        ?int $serviceLevel=null)
     {
         $this->service = $service;
         $this->blas = $service->blas($serviceLevel);
@@ -155,7 +161,7 @@ class LinearAlgebra
         return $dtype==NDarray::float32||$dtype==NDarray::float64;
     }
 
-    public function array(mixed $array,int $dtype=null) : NDArray
+    public function array(mixed $array, ?int $dtype=null) : NDArray
     {
         if($array instanceof NDArray) {
             return $array;
@@ -208,7 +214,7 @@ class LinearAlgebra
         return $x->reshape($newShape);
     }
 
-    public function squeeze(NDArray $x, int $axis=null) : NDArray
+    public function squeeze(NDArray $x, ?int $axis=null) : NDArray
     {
         $shape = $x->shape();
         if($axis===null) {
@@ -246,7 +252,7 @@ class LinearAlgebra
     /**
      * @param array<int> $shape
      */
-    public function alloc(array $shape,int $dtype=null) : NDArray
+    public function alloc(array $shape,?int $dtype=null) : NDArray
     {
         if($dtype===null)
             $dtype = $this->defaultFloatType;
@@ -266,7 +272,11 @@ class LinearAlgebra
     public function ones(
         NDArray $X) : NDArray
     {
-        $value = $this->buildValByType(1.0,$X->dtype());
+        if($X->dtype()==NDArray::bool) {
+            $value = true;
+        } else {
+            $value = $this->buildValByType(1,$X->dtype());
+        }
         $this->fill($value,$X);
         return $X;
     }
@@ -301,7 +311,7 @@ class LinearAlgebra
     */
     public function copy(
         NDArray $X,
-        NDArray $Y=null ) : NDArray
+        ?NDArray $Y=null ) : NDArray
     {
         if($Y===null) {
             $Y = $this->alloc($X->shape(),dtype:$X->dtype());
@@ -340,7 +350,7 @@ class LinearAlgebra
     public function axpy(
         NDArray $X,
         NDArray $Y,
-        float|object $alpha=null) : NDArray
+        float|object|null $alpha=null) : NDArray
     {
         if($X->shape()!=$Y->shape()) {
             $shapeError = '('.implode(',',$X->shape()).'),('.implode(',',$Y->shape()).')';
@@ -364,7 +374,7 @@ class LinearAlgebra
     public function dot(
         NDArray $X,
         NDArray $Y,
-        bool $conj=null
+        ?bool $conj=null
         ) : float|object
     {
         if($X->shape()!=$Y->shape()) {
@@ -510,10 +520,10 @@ class LinearAlgebra
     public function rotg(
         NDArray $X,
         NDArray $Y,
-        NDArray $R=null,
-        NDArray $Z=null,
-        NDArray $C=null,
-        NDArray $S=null) : array
+        ?NDArray $R=null,
+        ?NDArray $Z=null,
+        ?NDArray $C=null,
+        ?NDArray $S=null) : array
     {
         if($X->shape()!=$Y->shape()) {
             $shapeError = '('.implode(',',$X->shape()).'),('.implode(',',$Y->shape()).')';
@@ -577,7 +587,7 @@ class LinearAlgebra
      */
     public function rotgxy(
         NDArray $vector,
-        NDArray $g=null,
+        ?NDArray $g=null,
         ) : NDArray
     {
         if($vector->shape()!=[2]) {
@@ -656,10 +666,10 @@ class LinearAlgebra
     public function rotmg(
         NDArray $X,
         NDArray $Y,
-        NDArray $D1=null,
-        NDArray $D2=null,
-        NDArray $B1=null,
-        NDArray $P=null,
+        ?NDArray $D1=null,
+        ?NDArray $D2=null,
+        ?NDArray $B1=null,
+        ?NDArray $P=null,
         ) : array
     {
         if($X->size()!=1||$Y->size()!=1) {
@@ -733,8 +743,8 @@ class LinearAlgebra
      */
     public function rotmgxy(
         NDArray $vector,
-        NDArray $d=null,
-        NDArray $g=null,
+        ?NDArray $d=null,
+        ?NDArray $g=null,
         ) : NDArray
     {
         if($vector->shape()!=[2]) {
@@ -839,11 +849,11 @@ class LinearAlgebra
     public function gemv(
         NDArray $A,
         NDArray $X,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $Y=null,
-        bool $trans=null,
-        bool $conj=null
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $Y=null,
+        ?bool $trans=null,
+        ?bool $conj=null
         ) : NDArray
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());
@@ -903,13 +913,13 @@ class LinearAlgebra
     public function gemm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $transA=null,
-        bool $transB=null,
-        bool $conjA=null,
-        bool $conjB=null,
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $transA=null,
+        ?bool $transB=null,
+        ?bool $conjA=null,
+        ?bool $conjB=null,
         ) : NDArray
     {
         [$transA,$conjA] = $this->complementTrans($transA,$conjA,$A->dtype());
@@ -978,13 +988,13 @@ class LinearAlgebra
     public function matmul(
         NDArray $A,
         NDArray $B,
-        bool $transA=null,
-        bool $transB=null,
-        NDArray $C=null,
-        float|object $alpha=null,
-        float|object $beta=null,
-        bool $conjA=null,
-        bool $conjB=null,
+        ?bool $transA=null,
+        ?bool $transB=null,
+        ?NDArray $C=null,
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?bool $conjA=null,
+        ?bool $conjB=null,
         ) : NDArray
     {
         [$transA,$conjA] = $this->complementTrans($transA,$conjA,$A->dtype());
@@ -1095,11 +1105,11 @@ class LinearAlgebra
     public function symm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $right=null,
-        bool $lower=null
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $right=null,
+        ?bool $lower=null
         ) : NDArray
     {
         if($A->ndim()!=2 || $B->ndim()!=2) {
@@ -1163,12 +1173,12 @@ class LinearAlgebra
     */
     public function syrk(
         NDArray $A,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null,
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
         ) : NDArray
     {
         $trans = $trans ?? false;
@@ -1227,12 +1237,12 @@ class LinearAlgebra
     public function syr2k(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null,
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
         ) : NDArray
     {
         $trans = $trans ?? false;
@@ -1299,12 +1309,12 @@ class LinearAlgebra
     public function trmm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        bool $right=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null,
-        bool $unit=null,
+        float|object|null $alpha=null,
+        ?bool $right=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
+        ?bool $unit=null,
         ) : NDArray
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());
@@ -1362,12 +1372,12 @@ class LinearAlgebra
     public function trsm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        bool $right=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null,
-        bool $unit=null
+        float|object|null $alpha=null,
+        ?bool $right=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
+        ?bool $unit=null
         ) : NDArray
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());
@@ -1420,10 +1430,10 @@ class LinearAlgebra
      */
     public function omatcopy(
         NDArray $A,
-        bool $trans=null,
-        bool $conj=null,
-        float|object $alpha=null,
-        NDArray $B=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
+        float|object|null $alpha=null,
+        ?NDArray $B=null,
         ) : NDArray
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());
@@ -1468,7 +1478,6 @@ class LinearAlgebra
 
         return $B;
     }
-
 
     /**
     *    ret := x_1 + ... + x_n
@@ -1537,8 +1546,8 @@ class LinearAlgebra
     */
     public function increment(
         NDArray $X,
-        float $beta=null,
-        float $alpha=null) : NDArray
+        ?float $beta=null,
+        ?float $alpha=null) : NDArray
     {
         $n = $X->size();
         $XX = $X->buffer();
@@ -1565,8 +1574,8 @@ class LinearAlgebra
     */
     public function reciprocal(
         NDArray $X,
-        float $beta=null,
-        float $alpha=null) : NDArray
+        ?float $beta=null,
+        ?float $alpha=null) : NDArray
     {
         $n = $X->size();
         $XX = $X->buffer();
@@ -1795,7 +1804,7 @@ class LinearAlgebra
      public function multiply(
         NDArray $X,
         NDArray $A,
-        bool $trans=null
+        ?bool $trans=null
         ) : NDArray
     {
         if($trans===null) {
@@ -1842,8 +1851,8 @@ class LinearAlgebra
      public function add(
         NDArray $X,
         NDArray $A,
-        float $alpha=null,
-        bool $trans=null
+        ?float $alpha=null,
+        ?bool $trans=null
         ) : NDArray
     {
         if($trans===null)
@@ -1853,16 +1862,19 @@ class LinearAlgebra
         }
         $shapeX = $X->shape();
         $shapeA = $A->shape();
-        if($trans)
+        if($trans) {
             $shapeA = array_reverse($shapeA);
+        }
         while(true) {
             $xd = array_pop($shapeX);
-            if($xd===null)
+            if($xd===null) {
                 break;
+            }
             $ad = array_pop($shapeA);
-            if($xd!==$ad)
+            if($xd!==$ad) {
                 throw new InvalidArgumentException('Unmatch dimension size for broadcast.: '.
                     '['.implode(',',$X->shape()).'] => ['.implode(',',$A->shape()).']');
+            }
         }
         $n = $X->size();
         $XX = $X->buffer();
@@ -1880,7 +1892,8 @@ class LinearAlgebra
             $n,
             $alpha,
             $XX,$offX,1,
-            $AA,$offA,$n);
+            $AA,$offA,$n
+        );
 
         return $A;
     }
@@ -1926,8 +1939,8 @@ class LinearAlgebra
      */
     public function rsqrt(
         NDArray $X,
-        float $beta=null,
-        float $alpha=null) : NDArray
+        ?float $beta=null,
+        ?float $alpha=null) : NDArray
     {
         $n = $X->size();
         $XX = $X->buffer();
@@ -1955,7 +1968,7 @@ class LinearAlgebra
     public function pow(
         NDArray $A,
         float|NDArray $alpha,
-        bool $trans=null,
+        ?bool $trans=null,
         ) : NDArray
     {
         if($trans===null) {
@@ -2180,9 +2193,9 @@ class LinearAlgebra
      */
     public function duplicate(
         NDArray $input,
-        int $repeats=null,
-        bool $trans=null,
-        NDArray $output=null) : NDArray
+        ?int $repeats=null,
+        ?bool $trans=null,
+        ?NDArray $output=null) : NDArray
     {
         if($trans===null)
             $trans = false;
@@ -2231,6 +2244,79 @@ class LinearAlgebra
     }
 
     /**
+     * values, indices := topK(input,k,sorted=true)
+     * 
+     * @return array{NDArray,NDArray}
+     */
+    public function topK(
+        NDArray $input,
+        ?int $k=null,
+        ?bool $sorted=null,
+        ?NDArray $values=null,
+        ?NDArray $indices=null,
+    ) : array
+    {
+        $k ??= 1;
+        $sorted ??= true;
+
+        $shapeInput = $input->shape();
+        $shape = $shapeInput;
+        $n = array_pop($shape);
+        $m = (int)array_product($shape);
+        array_push($shape,$k);
+        if($k > $n) {
+            throw new InvalidArgumentException('k must be less than or equal to the entity.');
+        }
+
+        if($values==null) {
+            $values = $this->alloc($shape, dtype:$input->dtype());
+        } else {
+            if($values->shape()!=$shape) {
+                $error = '['.implode(',',$values->shape()).']';
+                throw new InvalidArgumentException('Unmatch shape of "values" with "input" and "k": '.$error);
+            }
+            if($values->dtype()!=$input->dtype()) {
+                throw new InvalidArgumentException('Unmatch dtype of "values" with input');
+            }
+        }
+
+        if($indices==null) {
+            $indices = $this->alloc($shape, dtype:NDArray::int32);
+        } else {
+            if($indices->ndim()!=2) {
+                throw new InvalidArgumentException('"indices" must be 2-D dimension');
+            }
+            if($indices->shape()!=$shape) {
+                $error = '['.implode(',',$indices->shape()).']';
+                throw new InvalidArgumentException('Unmatch shape of "indices" with "input" and "k": '.$error);
+            }
+            if($indices->dtype()!=NDArray::int32) {
+                throw new InvalidArgumentException('Unmatch dtype of "indices" with input');
+            }
+        }
+
+        $AA = $input->buffer();
+        $offA = $input->offset();
+        $BB = $values->buffer();
+        $offB = $values->offset();
+        $XX = $indices->buffer();
+        $offX = $indices->offset();
+
+        // Call the underlying top_k function
+        $this->math->topK(
+            $m,
+            $n,
+            $AA, $offA,
+            $k,
+            $sorted,
+            $BB, $offB,
+            $XX, $offX,
+        );
+
+        return [$values, $indices];
+    }
+
+    /**
      *      input:  A,X
      *      output: B
      *      B(m,n,k) := A(m,X(m,n),k)
@@ -2239,9 +2325,9 @@ class LinearAlgebra
         bool $scatterAdd,
         NDArray $A,
         NDArray $X,
-        int $axis=null,
-        NDArray $output=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?NDArray $output=null,
+        ?int $dtype=null) : NDArray
     {
 //echo "shapeX=[".implode(',',$X->shape())."],shapeA=[".implode(',',$A->shape())."]\n";
         if($axis===null) {
@@ -2264,8 +2350,8 @@ class LinearAlgebra
             for($i=0;$i<$axis;$i++) {
                 $prefixShape[] = array_shift($postfixShape);
             }
-            $numClass = array_shift($postfixShape);
             $m = array_product($prefixShape);
+            $numClass = array_shift($postfixShape);
             $n = array_product($postfixShape);
             $k = 1;
             $reductionDims = true;
@@ -2328,16 +2414,19 @@ class LinearAlgebra
     }
 
     /**
-     *      input:  A,X
-     *      output: B
-     *      B(m,n,k) := A(m,X(m,n),k)
+     *  input:  A,X
+     *  output: B
+     *  axis: null
+     *      B(m,n,k) := A(X(m,n),k)
+     *  axis: !=null
+     *      B(m,n,k) := A(m,X(n,k),n,k)
      */
     public function gather(
         NDArray $A,
         NDArray $X,
-        int $axis=null,
-        NDArray $output=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?NDArray $output=null,
+        ?int $dtype=null) : NDArray
     {
         return $this->doGather(
             $scatterAdd=false,
@@ -2357,8 +2446,8 @@ class LinearAlgebra
         NDArray $X,
         NDArray $A,
         NDArray $output,
-        int $axis=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?int $dtype=null) : NDArray
     {
         $this->doGather(
             $scatterAdd=true,
@@ -2379,9 +2468,9 @@ class LinearAlgebra
         NDArray $X,
         NDArray $A,
         int $numClass,
-        int $axis=null,
-        NDArray $output=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?NDArray $output=null,
+        ?int $dtype=null) : NDArray
     {
 //echo "shapeX=[".implode(',',$X->shape())."],shapeA=[".implode(',',$A->shape())."]\n";
 //echo "axis=$axis,numClass=$numClass\n";
@@ -2476,13 +2565,421 @@ class LinearAlgebra
     }
 
     /**
+     * params:  (batches, m, numClass, k, len)
+     * indices: (batches, n, k)
+     * outputs: (batches, m, n, k, len)
+     * outputs(batches, m, n, k, len) := A(batches, m, X(batches, n, k), k, len)
+     */
+    public function doGatherb(
+        bool $reverse,
+        bool $addMode,
+        NDArray $A,
+        NDarray $X,
+        ?int $axis=null,
+        ?int $batchDims=null,
+        ?int $detailDepth=null,
+        ?int $indexDepth=null,
+        ?NDArray $B=null,
+    ) : NDArray
+    {
+        $batchDims ??= 0;
+        if($batchDims<0) {
+            $batchDims += $A->ndim();
+        }
+        if($batchDims>=$A->ndim()) {
+            throw new InvalidArgumentException(
+                "batchDims ($batchDims) must be less than to ndims of params (".$A->ndim().")"
+            );
+        }
+        $axis ??= $batchDims;
+        if($axis<0) {
+            $axis += $A->ndim();
+        }
+        if($axis>=$A->ndim()) {
+            throw new InvalidArgumentException(
+                "axis ($axis) must be less than to ndims of params (".$A->ndim().")"
+            );
+        }
+        $detailDepth ??= $axis+1;
+        $indexDepth ??= $X->ndim();
+        if($batchDims>$axis) {
+            if($axis==0) {
+                $batchDims = 0;
+            } else {
+                throw new InvalidArgumentException("batchDims ($batchDims) must be less than or equal to axis ($axis)");
+            }
+        }
+
+        //echo "params  sh: ".$this->printableShapes($A->shape())."\n";
+        //echo "indices sh: ".$this->printableShapes($X->shape())."\n";
+        //echo "batchDims: ".$batchDims."\n";
+        // A
+        $batchShape = $A->shape();
+        $outerShape = array_splice($batchShape, $batchDims);
+        $innerShape = array_splice($outerShape, $axis-$batchDims);
+        $numClass = array_shift($innerShape);
+        $detailShape = array_splice($innerShape, $detailDepth-1-$axis);
+        // X
+        $batchShapeX = $X->shape();
+        $indexShape = array_splice($batchShapeX, $batchDims);
+        $innerShapeX = array_splice($indexShape, $indexDepth-$batchDims);
+
+        //echo "==========\n";
+        //echo "params:     ".$this->printableShapes($A->shape())."\n";
+        //echo "indices:    ".$this->printableShapes($X->shape())."\n";
+        //echo "batchDims:  $batchDims\n";
+        //echo "axis:       $axis\n";
+        //echo "detailDepth:$detailDepth\n";
+        //echo "indexDepth: $indexDepth\n";
+        //echo "==params==\n";
+        //echo "batchShape: ".$this->printableShapes($batchShape)."\n";
+        //echo "outerShape: ".$this->printableShapes($outerShape)."\n";
+        //echo "numClass:   ".$numClass."\n";
+        //echo "innerShape: ".$this->printableShapes($innerShape)."\n";
+        //echo "detailShape: ".$this->printableShapes($detailShape)."\n";
+        //echo "==indices==\n";
+        //echo "batchShape: ".$this->printableShapes($batchShapeX)."\n";
+        //echo "indexShape: ".$this->printableShapes($indexShape)."\n";
+        //echo "innerShape: ".$this->printableShapes($innerShapeX)."\n";
+        if($batchShape!=$batchShapeX) {
+            throw new InvalidArgumentException(
+                "Unmatch batch shape of params and indices: ".
+                $this->printableShapes($batchShape).",".
+                $this->printableShapes($batchShapeX).","
+            );
+        }
+        if($innerShape!=$innerShapeX) {
+            throw new InvalidArgumentException(
+                "Unmatch inner shape of params and indices: ".
+                "param's inner shape is ".$this->printableShapes($innerShape).",".
+                "index's inner shape is ".$this->printableShapes($innerShapeX).","
+            );
+        }
+
+        $batches = array_product($batchShape);
+        $m = array_product($outerShape);
+        $n = array_product($indexShape);
+        $k = array_product($innerShape);
+        $len = array_product($detailShape);
+        $outputShape = array_merge($batchShape, $outerShape, $indexShape, $innerShape, $detailShape);
+        //echo "==outputs==\n";
+        //echo "outputShape: ".$this->printableShapes($outputShape)."\n";
+        //echo "batches=$batches,m=$m,n=$n,k=$k,len=$len,numClass=$numClass\n";
+        if($B==null) {
+            $B = $this->zeros($this->alloc($outputShape, dtype:$A->dtype()));
+        } else {
+            if($B->shape()!=$outputShape) {
+                $expects = $this->printableShapes($outputShape);
+                $gives = $this->printableShapes($B->shape());
+                if($reverse) {
+                    $msg = "Unmatch updates shape: expects {$expects}, but gives {$gives}";
+                } else {
+                    $msg = "Unmatch output shape: expects {$expects}, but gives {$gives}";
+                }
+                throw new InvalidArgumentException($msg);
+            }
+        }
+        $AA = $A->buffer();
+        $offsetA = $A->offset();
+        $XX = $X->buffer();
+        $offsetX = $X->offset();
+        $BB = $B->buffer();
+        $offsetB = $B->offset();
+        $this->math->gatherb(
+            $reverse,
+            $addMode,
+            $batches,
+            $m,
+            $n,
+            $k,
+            $len,
+            $numClass,
+            $AA,
+            $offsetA,
+            $XX,
+            $offsetX,
+            $BB,
+            $offsetB,
+        );
+        return $B;
+    }
+
+    /**
+     * params: (batches, m, numClass, k, len)
+     * indices: (batches, n, k)
+     * outputs: (batches, m, n, k, len)
+     * outputs(batches, m, n, k, len) := A(batches, m, X(batches, n, k), k, len)
+     */
+    public function gatherb(
+        NDArray $params,
+        NDarray $indices,
+        ?int $axis=null,
+        ?int $batchDims=null,
+        ?int $detailDepth=null,
+        ?int $indexDepth=null,
+        ?NDArray $outputs=null,
+    ) : NDArray
+    {
+        return $this->doGatherb(
+            $reverse=false,
+            $addMode=false,
+            $params,
+            $indices,
+            $axis,
+            $batchDims,
+            $detailDepth,
+            $indexDepth,
+            $outputs,
+        );
+    }
+
+    /**
+     * indices: (batches, n, k)
+     * updates: (batches, m, n, k, len)
+     * outputs: (batches, m, numClass, k, len)
+     * outputs(batches, m, n, k, len) := A(batches, m, X(batches, n, k), k, len)
+     * @param array<int> $shape
+    */
+    public function scatterb(
+        NDarray $indices,
+        NDArray $updates,
+        array $shape,
+        ?int $axis=null,
+        ?int $batchDims=null,
+        ?int $detailDepth=null,
+        ?int $indexDepth=null,
+        ?NDArray $outputs=null,
+    ): NDArray
+    {
+        if($outputs==null) {
+            $outputs = $this->zeros($this->alloc($shape,$updates->dtype()));
+        }
+        $this->doGatherb(
+            $reverse=true,
+            $addMode=false,
+            $outputs,
+            $indices,
+            $axis,
+            $batchDims,
+            $detailDepth,
+            $indexDepth,
+            $updates,
+        );
+        return $outputs;
+    }
+
+    /**
+     * indices: (batches, n, k)
+     * updates: (batches, m, n, k, len)
+     * outputs: (batches, m, numClass, k, len)
+     * outputs(batches, m, n, k, len) := A(batches, m, X(batches, n, k), k, len)
+     * @param array<int> $shape
+    */
+    public function scatterbAdd(
+        NDarray $indices,
+        NDArray $updates,
+        array $shape,
+        ?int $axis=null,
+        ?int $batchDims=null,
+        ?int $detailDepth=null,
+        ?int $indexDepth=null,
+        ?NDArray $outputs=null,
+    ): NDArray
+    {
+        if($outputs==null) {
+            $outputs = $this->zeros($this->alloc($shape,$updates->dtype()));
+        }
+        $this->doGatherb(
+            $reverse=true,
+            $addMode=true,
+            $outputs,
+            $indices,
+            $axis,
+            $batchDims,
+            $detailDepth,
+            $indexDepth,
+            $updates,
+        );
+        return $outputs;
+    }
+
+    /**
+     * params:  (m, (indices(m,n)), k)
+     * indices: (m, n, index_depth)
+     * outputs: (m, n, k)
+     */
+    public function doGatherND(
+        bool $reverse,
+        bool $addMode,
+        NDArray $A, 
+        NDarray $X,
+        ?int $batchDims=null,
+        ?NDArray $B=null,
+    ) : NDArray
+    {
+        $batchDims ??= 0;
+        //echo "params  sh: ".$this->printableShapes($A->shape())."\n";
+        //echo "indices sh: ".$this->printableShapes($X->shape())."\n";
+        //echo "batchDims: ".$batchDims."\n";
+        $batchShape = $X->shape();
+        $indexDepth = array_pop($batchShape);
+        $outerShape = array_splice($batchShape,$batchDims);
+
+        $innerShape = $A->shape();
+        $paramsBatchShape = array_splice($innerShape,0,$batchDims);
+        if($paramsBatchShape!=$batchShape) {
+            throw new InvalidArgumentException("Unmatch batch shape of params and indices: ".
+                $this->printableShapes([$paramsBatchShape,$batchShape]));
+        }
+        if($indexDepth > $A->ndim()-$batchDims) {
+            throw new InvalidArgumentException(
+                "ndim of params must greater than index depth or equal: ".
+                "ndim of params gives ".$A->ndim()." , index depth gives ".$indexDepth);
+        }
+        $paramShape = array_splice($innerShape,0,$indexDepth);
+        $outputShape = array_merge($batchShape,$outerShape,$innerShape);
+        $m = array_product($batchShape);
+        $n = array_product($outerShape);
+        $k = array_product($innerShape);
+        //echo "batchShape: ".$this->printableShapes($batchShape)."\n";
+        //echo "outerShape: ".$this->printableShapes($outerShape)."\n";
+        //echo "innerShape: ".$this->printableShapes($innerShape)."\n";
+        //echo "indexDepth: ".$indexDepth."\n";
+        //echo "outputShape: ".$this->printableShapes($outputShape)."\n";
+        if($B==null) {
+            $B = $this->zeros($this->alloc($outputShape,dtype:$A->dtype()));
+        } else {
+            if($B->shape()!=$outputShape) {
+                $expects = $this->printableShapes($outputShape);
+                $gives = $this->printableShapes($B->shape());
+                if($reverse) {
+                    $msg = "Unmatch updates shape: expects {$expects}, but gives {$gives}";
+                } else {
+                    $msg = "Unmatch output shape: expects {$expects}, but gives {$gives}";
+                }
+                throw new InvalidArgumentException($msg);
+            }
+        }
+        $paramShape = $this->array($paramShape,dtype:NDArray::int32);
+        $paramShape = $paramShape->buffer();
+        $AA = $A->buffer();
+        $offsetA = $A->offset();
+        $XX = $X->buffer();
+        $offsetX = $X->offset();
+        $BB = $B->buffer();
+        $offsetB = $B->offset();
+        $this->math->gathernd(
+            $reverse,
+            $addMode,
+            $m,
+            $n,
+            $k,
+            $indexDepth,
+            $paramShape, // paramShape[indexDepth]
+            $AA, $offsetA,
+            $XX, $offsetX,
+            $BB, $offsetB,
+        );
+        return $B;
+    }
+
+    /**
+     * This function is unofficial.
+     * It may be removed or changed without notice.
+     * 
+     * params:  (m, (indices(m,n)), k)
+     * indices: (m, n, index_depth)
+     * outputs: (m, n, k)
+     */
+    public function gatherND(
+        NDArray $params, 
+        NDarray $indices,
+        ?int $batchDims=null,
+        ?NDArray $outputs=null,
+    ) : NDArray
+    {
+        return $this->doGatherND(
+            $reverse=false,
+            $addMode=false,
+            $params,
+            $indices,
+            $batchDims,
+            $outputs,
+        );
+    }
+
+    /**
+     * This function is unofficial.
+     * It may be removed or changed without notice.
+     * 
+     * params:  (m, n, k)
+     * indices: (m, n, index_depth)
+     * outputs: (m, (indices(m,n)), k)
+     * @param array<int> $shape
+     */
+    public function scatterND(
+        NDarray $indices,
+        NDArray $updates,
+        array $shape,
+        ?int $batchDims=null,
+        ?NDArray $outputs=null,
+    ) : NDArray
+    {
+        if($outputs==null) {
+            $outputs = $this->zeros($this->alloc($shape,$updates->dtype()));
+        }
+        
+        $this->doGatherND(
+            $reverse=true,
+            $addMode=false,
+            $outputs,
+            $indices,
+            $batchDims,
+            $updates,
+        );
+        return $outputs;
+    }
+
+    /**
+     * This function is unofficial.
+     * It may be removed or changed without notice.
+     * 
+     * params:  (m, n, k)
+     * indices: (m, n, index_depth)
+     * outputs: (m, (indices(m,n)), k)
+     * @param array<int> $shape
+     */
+    public function scatterNDAdd(
+        NDarray $indices,
+        NDArray $updates,
+        array $shape,
+        ?int $batchDims=null,
+        ?NDArray $outputs=null,
+    ) : NDArray
+    {
+        if($outputs==null) {
+            $outputs = $this->zeros($this->alloc($shape,$updates->dtype()));
+        }
+        
+        $this->doGatherND(
+            $reverse=true,
+            $addMode=true,
+            $outputs,
+            $indices,
+            $batchDims,
+            $updates,
+        );
+        return $outputs;
+    }
+
+    /**
      * output += a * onehot(X)
      */
     public function onehot(
         NDArray $X,
         int $numClass,
-        float $alpha=null,
-        NDArray $output=null) : NDArray
+        ?float $alpha=null,
+        ?NDArray $output=null) : NDArray
     {
         if($X->ndim()!=1) {
             throw new InvalidArgumentException('"X" must be 1D-NDArray.');
@@ -2546,10 +3043,10 @@ class LinearAlgebra
      */
     public function reduceSum( // reduceSumEx
         NDArray $input,
-        int $axis=null,
-        bool $keepdims=null,
-        NDArray $output=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?bool $keepdims=null,
+        ?NDArray $output=null,
+        ?int $dtype=null) : NDArray
     {
         $ndim = $input->ndim();
         $origAxis = $axis;
@@ -2605,10 +3102,10 @@ class LinearAlgebra
 
     public function reduceMax( // reduceMaxEx
         NDArray $input,
-        int $axis=null,
-        bool $keepdims=null,
-        NDArray $output=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?bool $keepdims=null,
+        ?NDArray $output=null,
+        ?int $dtype=null) : NDArray
     {
         $ndim = $input->ndim();
         $origAxis = $axis;
@@ -2664,10 +3161,10 @@ class LinearAlgebra
 
     public function reduceArgMax( // reduceMaxArgEx
         NDArray $input,
-        int $axis=null,
-        bool $keepdims=null,
-        NDArray $output=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?bool $keepdims=null,
+        ?NDArray $output=null,
+        ?int $dtype=null) : NDArray
     {
         $ndim = $input->ndim();
         $origAxis = $axis;
@@ -2695,7 +3192,7 @@ class LinearAlgebra
             $outputShape = array_merge($prefixShape,$postfixShape);
         }
         if($dtype===null) {
-            $dtype = NDArray::uint32;
+            $dtype = NDArray::int32;
         }
         if($output==null) {
             $output = $this->alloc($outputShape,dtype:$dtype);
@@ -2723,10 +3220,10 @@ class LinearAlgebra
 
     public function reduceMean(
         NDArray $input,
-        int $axis=null,
-        bool $keepdims=null,
-        NDArray $output=null,
-        int $dtype=null) : NDArray
+        ?int $axis=null,
+        ?bool $keepdims=null,
+        ?NDArray $output=null,
+        ?int $dtype=null) : NDArray
     {
         if($axis===null) {
             $axis = 0;
@@ -2754,13 +3251,13 @@ class LinearAlgebra
      */
     public function im2col(
         NDArray $images,
-        array $filterSize=null,
-        array $strides=null,
-        bool $padding=null,
-        bool $channels_first=null,
-        array $dilation_rate=null,
-        bool $cols_channels_first=null,
-        NDArray $cols=null
+        ?array $filterSize=null,
+        ?array $strides=null,
+        ?bool $padding=null,
+        ?bool $channels_first=null,
+        ?array $dilation_rate=null,
+        ?bool $cols_channels_first=null,
+        ?NDArray $cols=null
         ) : NDArray
     {
         $ndim = $images->ndim();
@@ -2823,12 +3320,12 @@ class LinearAlgebra
     public function col2im(
         NDArray $cols,
         NDArray $images,
-        array $filterSize=null,
-        array $strides=null,
-        bool $padding=null,
-        bool $channels_first=null,
-        array $dilation_rate=null,
-        bool $cols_channels_first=null
+        ?array $filterSize=null,
+        ?array $strides=null,
+        ?bool $padding=null,
+        ?bool $channels_first=null,
+        ?array $dilation_rate=null,
+        ?bool $cols_channels_first=null
         ) : NDArray
     {
         $ndim = $images->ndim();
@@ -2882,13 +3379,13 @@ class LinearAlgebra
     public function im2col1d(
         bool $reverse,
         NDArray $images,
-        array $filterSize=null,
-        array $strides=null,
-        bool $padding=null,
-        bool $channels_first=null,
-        array $dilation_rate=null,
-        bool $cols_channels_first=null,
-        NDArray $cols=null
+        ?array $filterSize=null,
+        ?array $strides=null,
+        ?bool $padding=null,
+        ?bool $channels_first=null,
+        ?array $dilation_rate=null,
+        ?bool $cols_channels_first=null,
+        ?NDArray $cols=null
         ) : NDArray
     {
         $ndim = $images->ndim();
@@ -2983,13 +3480,13 @@ class LinearAlgebra
     public function im2col2d(
         bool $reverse,
         NDArray $images,
-        array $filterSize=null,
-        array $strides=null,
-        bool $padding=null,
-        bool $channels_first=null,
-        array $dilation_rate=null,
-        bool $cols_channels_first=null,
-        NDArray $cols=null
+        ?array $filterSize=null,
+        ?array $strides=null,
+        ?bool $padding=null,
+        ?bool $channels_first=null,
+        ?array $dilation_rate=null,
+        ?bool $cols_channels_first=null,
+        ?NDArray $cols=null
         ) : NDArray
     {
         $ndim = $images->ndim();
@@ -3094,13 +3591,13 @@ class LinearAlgebra
     public function im2col3d(
         bool $reverse,
         NDArray $images,
-        array $filterSize=null,
-        array $strides=null,
-        bool $padding=null,
-        bool $channels_first=null,
-        array $dilation_rate=null,
-        bool $cols_channels_first=null,
-        NDArray $cols=null
+        ?array $filterSize=null,
+        ?array $strides=null,
+        ?bool $padding=null,
+        ?bool $channels_first=null,
+        ?array $dilation_rate=null,
+        ?bool $cols_channels_first=null,
+        ?NDArray $cols=null
         ) : NDArray
     {
         $ndim = $images->ndim();
@@ -3209,9 +3706,9 @@ class LinearAlgebra
         array $shape,
         int|float $low,
         int|float $high,
-        int $dtype=null,
-        int $seed=null,
-        NDArray $X=null) : NDArray
+        ?int $dtype=null,
+        ?int $seed=null,
+        ?NDArray $X=null) : NDArray
     {
         if($dtype!==null&&$X!==null) {
             if ($X->dtype()!=$dtype) {
@@ -3250,9 +3747,9 @@ class LinearAlgebra
         array $shape,
         float $mean,
         float $scale,
-        int $dtype=null,
-        int $seed=null,
-        NDArray $X=null) : NDArray
+        ?int $dtype=null,
+        ?int $seed=null,
+        ?NDArray $X=null) : NDArray
     {
         if($dtype!==null&&$X!==null) {
             if ($X->dtype()!=$dtype) {
@@ -3286,10 +3783,10 @@ class LinearAlgebra
 
     public function randomSequence(
         int $base,
-        int $size=null,
-        int $seed=null,
-        int $dtype=null,
-        NDArray $output=null,
+        ?int $size=null,
+        ?int $seed=null,
+        ?int $dtype=null,
+        ?NDArray $output=null,
         ) : NDArray
     {
         $X = $output;
@@ -3331,7 +3828,7 @@ class LinearAlgebra
         NDArray $input,
         array $begin,
         array $size,
-        NDArray $output=null
+        ?NDArray $output=null
         ) : NDArray
     {
         return $this->doSlice(
@@ -3368,7 +3865,7 @@ class LinearAlgebra
      */
     public function stack(
         array $values,
-        int $axis=null
+        ?int $axis=null
     ) : NDArray
     {
         if($axis==null){
@@ -3460,7 +3957,7 @@ class LinearAlgebra
      */
     public function concat(
         array $values,
-        int $axis=null
+        ?int $axis=null
     ) : NDArray
     {
         if($axis===null) {
@@ -3517,7 +4014,7 @@ class LinearAlgebra
      * @return array<NDArray>
      */
     public function split(
-        NDArray $input, array $sizeSplits, int $axis=null
+        NDArray $input, array $sizeSplits, ?int $axis=null
         ) : array
     {
         if($axis===null) {
@@ -3555,7 +4052,7 @@ class LinearAlgebra
         NDArray $input,
         array $begin,
         array $size,
-        NDArray $output=null
+        ?NDArray $output=null
         ) : NDArray
     {
         if(!$reverse){
@@ -3694,8 +4191,8 @@ class LinearAlgebra
     public function repeat(
         NDArray $A,
         int $repeats,
-        int $axis=null,
-        bool $keepdims=null
+        ?int $axis=null,
+        ?bool $keepdims=null
         ) : NDArray
     {
         if($repeats<1) {
@@ -3754,7 +4251,7 @@ class LinearAlgebra
      */
     public function svd(
         NDArray $matrix,
-        bool $fullMatrices=null) : array
+        ?bool $fullMatrices=null) : array
     {
         if($matrix->ndim()!=2) {
             throw new InvalidArgumentException("input array must be 2D array");
@@ -3820,8 +4317,8 @@ class LinearAlgebra
      */
     public function transpose(
         NDArray $A,
-        array|NDArray $perm=null,
-        NDArray $B=null,
+        array|NDArray|null $perm=null,
+        ?NDArray $B=null,
         ) : NDArray
     {
         if($A->ndim()<1) {
@@ -3853,8 +4350,8 @@ class LinearAlgebra
      */
     protected function transposeND(
         NDArray $A,
-        array|NDArray $perm=null,
-        NDArray $B=null,
+        array|NDArray|null $perm=null,
+        ?NDArray $B=null,
         ) : NDArray
     {
         if($perm===null) {
@@ -3902,7 +4399,7 @@ class LinearAlgebra
 
     protected function transpose2D(
         NDArray $A,
-        NDArray $B=null,
+        ?NDArray $B=null,
         ) : NDArray
     {
         $shape = $A->shape();
@@ -3972,13 +4469,13 @@ class LinearAlgebra
 
     public function imagecopy(
         NDArray $A,
-        NDArray $B=null,
-        bool $channels_first=null,
-        int $heightShift=null,
-        int $widthShift=null,
-        bool $verticalFlip=null,
-        bool $horizontalFlip=null,
-        bool $rgbFlip=null
+        ?NDArray $B=null,
+        ?bool $channels_first=null,
+        ?int $heightShift=null,
+        ?int $widthShift=null,
+        ?bool $verticalFlip=null,
+        ?bool $horizontalFlip=null,
+        ?bool $rgbFlip=null
         ) : NDArray
     {
         if($A->ndim()!=3) {
@@ -4083,9 +4580,9 @@ class LinearAlgebra
     public function searchsorted(
         NDArray $A,
         NDArray $X,
-        bool $right=null,
-        int $dtype=null,
-        NDArray $Y=null
+        ?bool $right=null,
+        ?int $dtype=null,
+        ?NDArray $Y=null
         ) : NDArray
     {
         if($A->ndim()==1) {
@@ -4099,7 +4596,7 @@ class LinearAlgebra
             $right = false;
         }
         if($dtype===null) {
-            $dtype = NDArray::uint32;
+            $dtype = NDArray::int32;
         }
         if($Y===null) {
             $Y = $this->alloc($X->shape(),dtype:$dtype);
@@ -4145,40 +4642,53 @@ class LinearAlgebra
     }
 
     public function cumsum(
-        NDArray $X,
-        bool $exclusive=null,
-        bool $reverse=null,
-        NDArray $Y=null
+        NDArray $inputs,
+        ?int $axis=null,
+        ?bool $exclusive=null,
+        ?bool $reverse=null,
+        ?NDArray $outputs=null
         ) : NDArray
     {
-        if($exclusive===null) {
-            $exclusive = false;
+        $ndim = $inputs->ndim();
+        $origAxis = $axis;
+        $axis ??= 0;
+        if($axis<0) {
+            $axis = $ndim+$axis;
         }
-        if($reverse===null) {
-            $reverse = false;
+        if($axis<0 || $axis>$ndim-1) {
+            $origAxis = $origAxis ?? 'null';
+            throw new InvalidArgumentException("Invalid axis: ".$origAxis);
         }
-        if($Y===null) {
-            $Y = $this->alloc($X->shape(),dtype:$X->dtype());
+        $exclusive ??= false;
+        $reverse ??= false;
+        $postfixShape = $inputs->shape();
+        $prefixShape = array_splice($postfixShape, 0, $axis);
+        $m = array_product($prefixShape);
+        $n = array_shift($postfixShape);
+        $k = array_product($postfixShape);
+        if($outputs===null) {
+            $outputs = $this->alloc($inputs->shape(),dtype:$inputs->dtype());
         }
-        if($X->shape()!=$Y->shape()) {
-            $shapeError = '('.implode(',',$X->shape()).'),('.implode(',',$Y->shape()).')';
+        if($inputs->shape()!=$outputs->shape()) {
+            $shapeError = '('.implode(',',$inputs->shape()).'),('.implode(',',$outputs->shape()).')';
             throw new InvalidArgumentException("Unmatch shape of dimension: ".$shapeError);
         }
-        $n = $X->size();
-        $XX = $X->buffer();
-        $offX = $X->offset();
-        $YY = $Y->buffer();
-        $offY = $Y->offset();
+        $AA = $inputs->buffer();
+        $offA = $inputs->offset();
+        $BB = $outputs->buffer();
+        $offB = $outputs->offset();
 
-        $this->math->cumsum(
+        $this->math->cumsumb(
+            $m,
             $n,
-            $XX,$offX,1,
+            $k,
+            $AA,$offA,
             $exclusive,
             $reverse,
-            $YY,$offY,1
+            $BB,$offB,
         );
 
-        return $Y;
+        return $outputs;
     }
 
     /**
@@ -4186,7 +4696,7 @@ class LinearAlgebra
      */
     public function nan2num(
         NDArray $X,
-        float $alpha=null
+        ?float $alpha=null
         ) : NDArray
     {
         $n = $X->size();
@@ -4226,7 +4736,7 @@ class LinearAlgebra
         float $start,
         float $stop,
         int $num,
-        int $dtype=null
+        ?int $dtype=null
         ) : NDArray
     {
         if($num<=0) {
@@ -4241,12 +4751,41 @@ class LinearAlgebra
         return $array;
     }
 
+    public function range(
+        int|float $limit,
+        int|float|null $start=null,
+        int|float|null $delta=null,
+        ?int $dtype=null
+        ) : NDArray
+    {
+        $start ??= 0;
+        $delta ??= ($limit>=$start)? 1 : -1;
+
+        if($delta==0.0) {
+            throw new InvalidArgumentException('infinite times');
+        }
+        $count = (int)floor(($limit-$start)/$delta);
+
+        $array = $this->alloc([$count],dtype:$dtype);
+        $value = $start;
+        for($i=0;$i<$count;$i++) {
+            $value = $start+$delta*$i;
+            if($delta>0) {
+                $value = min($value,$limit);
+            } else {
+                $value = max($value,$limit);
+            }
+            $array[$i] = $value;
+        }
+        return $array;
+    }
+
     /**
      * @return array<NDArray>
      */
     public function numericalGradient(
-        float $h=null,
-        callable $f=null,
+        ?float $h=null,
+        ?callable $f=null,
         NDArray ...$variables) : array
     {
         if($h===null)
@@ -4320,7 +4859,465 @@ class LinearAlgebra
         return $abs;
     }
 
-    public function isclose(NDArray $a, NDArray $b, float|object $rtol=null, float $atol=null) : bool
+    /**
+     * @return array{array<int>,array<array<int>>,array<int>}
+     */
+    public function parseEinsum(
+        string $equation,
+        NDArray ...$arrays,
+    ) : array
+    {
+        [$a,$b] = $arrays;
+        $equation = str_replace(' ','',$equation);
+        if(!preg_match(
+            "/([a-zA-Z]+),([a-zA-Z]+)->([a-zA-Z]+)/",
+            $equation,
+            $split_string
+        )) {
+            throw new InvalidArgumentException("Not recognized as an equation: '{$equation}'");
+        }
+        $labelA = $split_string[1];
+        $labelB = $split_string[2];
+        $labelC = $split_string[3];
+        if($a->ndim()!=strlen($labelA)) {
+            $msg = "(".implode(',',$a->shape()).")";
+            throw new InvalidArgumentException("The rank of array A does not match the equation: '{$equation}', but {$msg} given.");
+        }
+        if($b->ndim()!=strlen($labelB)) {
+            $msg = "(".implode(',',$b->shape()).")";
+            throw new InvalidArgumentException("The rank of array B does not match the equation: '{$equation}', but {$msg} given.");
+        }
+
+        $allIndices = [];
+        $labels = [$labelA,$labelB];
+        $shapes = [$a->shape(),$b->shape()];
+        foreach($labels as $idx => $label) {
+            foreach(str_split($label) as $axis => $chr) {
+                if(array_key_exists($chr,$allIndices)) {
+                    if($allIndices[$chr]!=$shapes[$idx][$axis]) {
+                        $shapeError = '('.implode(',',$a->shape()).'),('.implode(',',$b->shape()).')';
+                        throw new InvalidArgumentException("Unmatch shapes in index letter '{$chr}' in equation:'{$equation}', but shapes {$shapeError} given.");
+                    }
+                } else {
+                    $allIndices[$chr] = $shapes[$idx][$axis];
+                }
+            }
+        }
+        $outputShape = [];
+        foreach(str_split($labelC) as $axis => $chr) {
+            if(!array_key_exists($chr,$allIndices)) {
+                throw new InvalidArgumentException("Target index letter '{$chr}' not found in inputs.:'{$equation}'");
+            }
+            $outputShape[$chr] = $allIndices[$chr];
+            unset($allIndices[$chr]);
+        }
+        $allIndices = array_merge($outputShape,$allIndices);
+        $outputShape = array_values($outputShape);
+
+        // complie labels
+        $allLabels = array_keys($allIndices);
+        $sizeOfIndices = array_values($allIndices);
+        $labels = [$labelA,$labelB,$labelC];
+        $compiledLabels = [];
+        foreach($labels as $label) {
+            $compiledLabel = [];
+            foreach(str_split($label) as $axis => $chr) {
+                $compiledLabel[] = array_search($chr,$allLabels);
+            }
+            $compiledLabels[] = $compiledLabel;
+        }
+
+        return [
+            $sizeOfIndices,
+            $compiledLabels,
+            $outputShape,
+        ];
+    }
+
+    /**
+     * @param array<int> $shapeA
+     * @param array<int> $labelA
+     * @param array<int> $shapeB
+     * @param array<int> $labelB
+     * @param array<int> $labelC
+     * @return array{0:array<int>,1:array<int>}
+     */
+    public function einsum_build_dims(
+        string $equation,
+        array $shapeA,
+        array $labelA,
+        array $shapeB,
+        array $labelB,
+        array $labelC,
+    ) : array
+    {
+        if(count($shapeA)!=count($labelA)) {
+            throw new InvalidArgumentException(
+                "Invalid rank of arg A.: (".implode(',',$shapeA)."), '{$equation}' given."
+            );
+        }
+        if(count($shapeB)!=count($labelB)) {
+            throw new InvalidArgumentException(
+                "Invalid rank of arg B.: (".implode(',',$shapeB)."), '{$equation}' given."
+            );
+        }
+        $sizeOfIndices = [];
+        foreach(array_map(null,$shapeA,$labelA) as [$dim,$lbl]) {
+            if(array_key_exists($lbl,$sizeOfIndices)) {
+                if($sizeOfIndices[$lbl] != $dim) {
+                    throw new InvalidArgumentException(
+                        "Invalid shape of args: a(".implode(',',$shapeA)."),b(".implode(',',$shapeB)."), '{$equation}' given."
+                    );
+                }
+            } else {
+                $sizeOfIndices[$lbl] = $dim;
+            }
+        }
+        foreach(array_map(null,$shapeB,$labelB) as [$dim,$lbl]) {
+            if(array_key_exists($lbl,$sizeOfIndices)) {
+                if($sizeOfIndices[$lbl] != $dim) {
+                    throw new InvalidArgumentException(
+                        "Invalid shape of args: a(".implode(',',$shapeA)."),b(".implode(',',$shapeB)."), '{$equation}' given."
+                    );
+                }
+            } else {
+                $sizeOfIndices[$lbl] = $dim;
+            }
+        }
+        ksort($sizeOfIndices);
+        $outputShape = array_slice($sizeOfIndices,0,count($labelC));
+        return [$sizeOfIndices,$outputShape];
+    }
+
+    /**
+     * @param array<int> $sizeOfIndices
+     * @param array<int> $label
+     * @param array<int> $shape
+     * @return array<int>
+     */
+    public function einsum_build_lds(
+        array $sizeOfIndices,
+        array $label,
+        array $shape,
+    ) : array
+    {
+        $lds = array_fill(0,count($sizeOfIndices),0);
+        $ld = 1;
+        foreach(array_reverse($label,true) as $axis => $lbl) {
+            $broadcast = false;
+            if($shape[$axis]==1) {
+                $broadcast = true;
+            }
+            if(!$broadcast) {
+                $lds[$lbl] += $ld;
+            }
+            $ld *= $sizeOfIndices[$lbl];
+        }
+        return $lds;
+    }
+
+    public function einsum(
+        string $equation,
+        NDArray $a,
+        NDArray $b,
+    ) : NDArray
+    {
+        $shapeA = $a->shape();
+        $shapeB = $b->shape();
+        $cacheKey = $equation;
+        if(isset($this->einsumEquationCache[$cacheKey])) {
+            [
+                $compiledLabels,
+            ] = $this->einsumEquationCache[$cacheKey];
+            [$labelA,$labelB,$labelC] = $compiledLabels;
+            [
+                $sizeOfIndices,
+                $outputShape,
+            ] = $this->einsum_build_dims($equation,$shapeA,$labelA,$shapeB,$labelB,$labelC);
+        } else {
+            [
+                $sizeOfIndices,
+                $compiledLabels,
+                $outputShape,
+            ] = $this->parseEinsum($equation, $a, $b);
+            [$labelA,$labelB,$labelC] = $compiledLabels;
+        }
+        $ldA = $this->einsum_build_lds($sizeOfIndices,$labelA,$shapeA);
+        $ldB = $this->einsum_build_lds($sizeOfIndices,$labelB,$shapeB);
+        $sizeOfIndices = $this->array($sizeOfIndices,dtype:NDArray::int32)->buffer();
+        $ldA = $this->array($ldA,dtype:NDArray::int32)->buffer();
+        $ldB = $this->array($ldB,dtype:NDArray::int32)->buffer();
+
+        $outputs = $this->alloc($outputShape,dtype:$a->dtype());
+        //$this->zeros($outputs);
+
+        $AA = $a->buffer();
+        $offsetA = $a->offset();
+        $BB = $b->buffer();
+        $offsetB = $b->offset();
+        $CC = $outputs->buffer();
+        $offsetC = $outputs->offset();
+        $ndimC = $outputs->ndim();
+
+        $this->math->einsum(
+            $sizeOfIndices,
+            $AA,
+            $offsetA,
+            $ldA,
+            $BB,
+            $offsetB,
+            $ldB,
+            $CC,
+            $offsetC,
+            $ndimC,
+        );
+
+        if(!isset($this->einsumEquationCache[$cacheKey])) {
+            $this->einsumEquationCache[$cacheKey] = 
+            [
+                $compiledLabels,
+            ];
+        }
+        return $outputs;
+    }
+
+    public function einsum4p1(
+        string $equation,
+        NDArray $a,
+        NDArray $b,
+        ?NDArray $c=null,
+    ) : NDArray
+    {
+        $shapeA = $a->shape();
+        $shapeB = $b->shape();
+        if(isset($this->einsum4p1EquationCache[$equation])) {
+            [
+                $compiledLabels,
+            ] = $this->einsum4p1EquationCache[$equation];
+            [$labelA,$labelB,$labelC] = $compiledLabels;
+            [
+                $dims,
+                $shapeC,
+            ] = $this->einsum_build_dims($equation,$shapeA,$labelA,$shapeB,$labelB,$labelC);
+            $sumDims = count($dims)-count($labelC);
+            $inputMaxDims = 5-(1-$sumDims);
+        } else {
+            [
+                $dims,
+                $compiledLabels,
+                $shapeC,
+            ] = $this->parseEinsum($equation, $a, $b);
+            [$labelA,$labelB,$labelC] = $compiledLabels;
+            $sumDims = count($dims)-count($labelC);
+            $inputMaxDims = 5-(1-$sumDims);
+            if(count($labelC)>4) {
+                throw new InvalidArgumentException("rank of C must be less than 4D or equal. (".implode(',',array_slice($dims,0,-count($labelC))).") given.");
+            }
+            if($sumDims>1) {
+                throw new InvalidArgumentException("rank of overlay dims must be less than 1D or equal. '{$equation}' and {$sumDims} sum dims given.");
+            }
+            if(count($dims)>$inputMaxDims) {
+                throw new InvalidArgumentException("dims must be less than {$inputMaxDims}D or equal.");
+            }
+            if(count($labelA)>$inputMaxDims) {
+                throw new InvalidArgumentException("rank of A must be less than {$inputMaxDims}D or equal. (".implode(',',$a->shape()).") given.");
+            }
+            if(count($labelB)>$inputMaxDims) {
+                throw new InvalidArgumentException("rank of B must be less than {$inputMaxDims}D or equal. (".implode(',',$b->shape()).") given.");
+            }
+        }
+        $ldA = $this->einsum_build_lds($dims,$labelA,$shapeA);
+        $ldB = $this->einsum_build_lds($dims,$labelB,$shapeB);
+
+        if($c==null) {
+            $c = $this->alloc($shapeC,dtype:$a->dtype());
+        } else {
+            if($c->shape()!=$shapeC) {
+                throw new InvalidArgumentException(
+                    "unmatch shape of C. the shape must be (".implode(',',$shapeC)."). ".
+                    "(".implode(',',$c->shape()).") given.");
+            }
+        }
+        if($sumDims==0) {
+            $dims[] = 1;
+            $ldA[]  = 1;
+            $ldB[]  = 1;
+        }
+        //echo "equation=$equation\n";
+        //echo "labelA=(".implode(',',$labelA).")\n";
+        //echo "labelB=(".implode(',',$labelB).")\n";
+        //echo "labelC=(".implode(',',$labelC).")\n";
+        //echo "shapeC=(".implode(',',$shapeC).")\n";
+        //echo "dims=(".implode(',',$dims).")\n";
+        //echo "ldA=(".implode(',',$ldA).")\n";
+        //echo "ldB=(".implode(',',$ldB).")\n";
+        $dims = array_pad($dims,-5,1);
+        $ldA = array_pad($ldA,-5,0);
+        $ldB = array_pad($ldB,-5,0);
+        //echo "dims=(".implode(',',$dims).")\n";
+        //echo "ldA=(".implode(',',$ldA).")\n";
+        //echo "ldB=(".implode(',',$ldB).")\n";
+        [$dim0,$dim1,$dim2,$dim3,$dim4] = $dims;
+        [$ldA0,$ldA1,$ldA2,$ldA3,$ldA4] = $ldA;
+        [$ldB0,$ldB1,$ldB2,$ldB3,$ldB4] = $ldB;
+        $AA = $a->buffer();
+        $offsetA = $a->offset();
+        $BB = $b->buffer();
+        $offsetB = $b->offset();
+        $CC = $c->buffer();
+        $offsetC = $c->offset();
+        $this->math->einsum4p1(
+            $dim0,
+            $dim1,
+            $dim2,
+            $dim3,
+            $dim4,
+            $AA,
+            $offsetA,
+            $ldA0,
+            $ldA1,
+            $ldA2,
+            $ldA3,
+            $ldA4,
+            $BB,
+            $offsetB,
+            $ldB0,
+            $ldB1,
+            $ldB2,
+            $ldB3,
+            $ldB4,
+            $CC,
+            $offsetC,
+        );
+        if(!isset($this->einsum4p1EquationCache[$equation])) {
+            $this->einsum4p1EquationCache[$equation] = [
+                $compiledLabels,
+            ];
+        }
+
+        return $c;
+    }
+    
+    /**
+     *    A(m,n,k,len) := A(m,n,k,len) : X(m,k) = True
+     *                    fill         : X(m,k) = False
+     */
+    public function masking(
+        NDArray $mask,
+        NDArray $data,
+        ?int $batchDims=null,
+        ?int $axis=null,
+        ?float $fill=null,
+        ?int $mode=null,
+        ) : NDArray
+    {
+
+        if($mask->dtype()!=NDArray::bool) {
+            $types = $this->dtypeToString[$mask->dtype()];
+            throw new InvalidArgumentException('dtype of mask must be bool.: '.$types);
+        }
+        $batchDims ??= 0;
+        if($batchDims<0) {
+            $batchDims += $data->ndim();
+        }
+        if($batchDims>$data->ndim()) {
+            throw new InvalidArgumentException(
+                "batchDims ($batchDims) must be less than dims of data (".$data->ndim().") or equal."
+            );
+        }
+        $axis ??= $batchDims;
+        if($axis<0) {
+            $axis += $data->ndim();
+        }
+        if($axis>$data->ndim()) {
+            throw new InvalidArgumentException(
+                "axis ($axis) must be less than to ndims of data (".$data->ndim().")"
+            );
+        }
+        if($batchDims>$axis) {
+            if($axis==0) {
+                $batchDims = 0;
+            } else {
+                throw new InvalidArgumentException("batchDims ($batchDims) must be less than or equal to axis ($axis)");
+            }
+        }
+        if($mask->ndim()<$batchDims) {
+            throw new InvalidArgumentException(
+                "batchDims ($batchDims) must be less than or equal to ndims of mask (".$mask->ndim().")"
+            );
+        }
+        $fill ??= 0;
+        $mode ??= 0;
+
+        //echo "data  sh: ".$this->printableShapes($data->shape())."\n";
+        //echo "mask sh: ".$this->printableShapes($mask->shape())."\n";
+        //echo "batchDims: ".$batchDims."\n";
+        // data
+        $outerShape = $data->shape();
+        $brodacastShape = array_splice($outerShape, $batchDims);
+        $innerShape = array_splice($brodacastShape, $axis-$batchDims);
+        $innterBroadcastShape = array_splice($innerShape,$mask->ndim()-$batchDims);
+        // mask
+        $outerShapeX = $mask->shape();
+        $innerShapeX = array_splice($outerShapeX, $batchDims);
+
+        //echo "mask: ".$this->printableShapes($mask->shape())."\n";
+        //echo "data: ".$this->printableShapes($data->shape())."\n";
+        //echo "batchDims: ".$batchDims."\n";
+        //echo "axis: ".$axis."\n";
+        //echo "outerShape: ".$this->printableShapes($outerShape)."\n";
+        //echo "brodacastShape: ".$this->printableShapes($brodacastShape)."\n";
+        //echo "innerShape: ".$this->printableShapes($innerShape)."\n";
+        //echo "outerShapeX: ".$this->printableShapes($outerShapeX)."\n";
+        //echo "innerShapeX: ".$this->printableShapes($innerShapeX)."\n";
+
+        if($outerShape!=$outerShapeX) {
+            throw new InvalidArgumentException('Unmatch dimension outer shape.: '.
+                'mask('.implode(',',$mask->shape()).') => data('.implode(',',$data->shape()).')');
+        }
+        if($innerShape!=$innerShapeX) {
+            throw new InvalidArgumentException('Unmatch dimension inner shape.: '.
+                'mask('.implode(',',$mask->shape()).') => data('.implode(',',$data->shape()).')');
+        }
+        $m = (int)array_product($outerShape);
+        $n = (int)array_product($brodacastShape);
+        $k = (int)array_product($innerShape);
+        $len = (int)array_product($innterBroadcastShape);
+
+        //echo "\n";
+        //echo "org m=$m,n=$n,k=$k,len=$len\n";
+        if($n==1) {
+            $k = $m*$k;
+            $m = 1;
+        }
+        if($k==1) {
+            $k = $m;
+            $len = $n*$len;
+            $m = 1;
+            $n = 1;
+        }
+        //echo "adj m=$m,n=$n,k=$k,len=$len\n";
+
+        $XX = $mask->buffer();
+        $offX = $mask->offset();
+        $AA = $data->buffer();
+        $offA = $data->offset();
+
+        $this->math->masking(  // tempolary implements
+            $m,
+            $n,
+            $k,
+            $len,
+            $fill,
+            $mode,
+            $XX,$offX,
+            $AA,$offA,
+        );
+
+        return $data;
+    }
+
+    public function isclose(NDArray $a, NDArray $b, float|object|null $rtol=null, ?float $atol=null,?bool $debug=null) : bool
     {
         $isCpx = $this->isComplexDtype($a->dtype());
         if($rtol===null) {
@@ -4341,6 +5338,9 @@ class LinearAlgebra
         $scaled = $this->scal($rtol,$this->copy($b));
         $close = $atol+$this->abs($this->amax($scaled));
 
+        if($debug) {
+            echo "diff=".sprintf('%14.8e',$diff).", close=".sprintf('%14.8e',$close)."\n";
+        }
         return $diff < $close;
     }
 
@@ -4378,7 +5378,7 @@ class LinearAlgebra
         return $aug;
     }
 
-    public function solve(NDArray $a, NDArray $b, float $epsilon=null) : NDArray
+    public function solve(NDArray $a, NDArray $b, ?float $epsilon=null) : NDArray
     {
         if($epsilon===null) {
             $epsilon = 1e-7;

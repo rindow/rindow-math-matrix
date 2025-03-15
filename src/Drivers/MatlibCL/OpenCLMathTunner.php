@@ -291,9 +291,9 @@ class OpenCLMathTunner
         NDArray $X,
         NDArray $A,
         NDArray $output,
-        int $axis=null,
-        object $events=null,object $waitEvents=null,
-        int $mode = null
+        ?int $axis=null,
+        ?object $events=null,?object $waitEvents=null,
+        ?int $mode = null
         ) : NDArray
     {
         if($X->dtype()!=NDArray::int32 && $X->dtype()!=NDArray::uint32) {
@@ -324,11 +324,11 @@ class OpenCLMathTunner
         bool $scatterAdd,
         NDArray $A,
         NDArray $X,
-        int $axis=null,
-        NDArray $output=null,
-        int $dtype=null,
-        object $events=null,object $waitEvents=null,
-        int $mode=null,
+        ?int $axis=null,
+        ?NDArray $output=null,
+        ?int $dtype=null,
+        ?object $events=null,?object $waitEvents=null,
+        ?int $mode=null,
         ) : NDArray
     {
         // if($axis===null) {
@@ -441,7 +441,7 @@ class OpenCLMathTunner
         return ($a[0]*$rows+$b[0])*($a[1]*$cols+$b[1])*($a[2]*$numClass+$b[2])+$c;
     }
 
-    public function showGraphScatterAdd(int $mode=null,bool $details=null) : void
+    public function showGraphScatterAdd(int $mode=null,?bool $details=null) : void
     {
         $marker = null;
         $colors = [1=>'b',2=>'g',3=>'r',4=>'m'];
@@ -740,7 +740,7 @@ class OpenCLMathTunner
         file_put_contents($dir.'/'.$filename,$code);
     }
 
-    protected function loadParameter(string $filename,bool $default=null) : ?int
+    protected function loadParameter(string $filename,?bool $default=null) : ?int
     {
         $filepath = __DIR__.'/params/'.$filename;
         if(!$default) {
@@ -776,7 +776,7 @@ class OpenCLMathTunner
     }
 
     public function setScatterAddParameter(
-        int $mode,int $rows,int $cols,int $numClass,int $value,bool $force=null) : void
+        int $mode,int $rows,int $cols,int $numClass,int $value,?bool $force=null) : void
     {
         $times = $this->loadParameter('ScatterAddTimesMode'.$mode.'.php');
         if(isset($times[$rows][$cols][$numClass])) {
@@ -1007,11 +1007,11 @@ class OpenCLMathTunner
 
     public function reduceSumTest(
         NDArray $A,
-        int $axis=null,
-        NDArray $X=null,
-        int $dtypeX=null,
-        object $events=null,object $waitEvents=null,
-        int $mode = null
+        ?int $axis=null,
+        ?NDArray $X=null,
+        ?int $dtypeX=null,
+        ?object $events=null,?object $waitEvents=null,
+        ?int $mode = null
         ) : NDArray
     {
         if($axis===null)
@@ -1106,11 +1106,11 @@ class OpenCLMathTunner
 
     public function reduceSumExTest(
         NDArray $A,
-        int $axis=null,
-        NDArray $B=null,
-        int $dtype=null,
-        object $events=null,object $waitEvents=null,
-        int $mode = null
+        ?int $axis=null,
+        ?NDArray $B=null,
+        ?int $dtype=null,
+        ?object $events=null,?object $waitEvents=null,
+        ?int $mode = null
         ) : NDArray
     {
         $ndim = $A->ndim();
@@ -1200,7 +1200,7 @@ class OpenCLMathTunner
         return $B;
     }
 
-    public function showGraphReduceSum(int $mode=null,bool $details=null) : void
+    public function showGraphReduceSum(?int $mode=null,?bool $details=null) : void
     {
         $marker = null;
         $colors = [0=>'m',1=>'b',2=>'g',3=>'r'];

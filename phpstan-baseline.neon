@@ -1,86 +1,133 @@
 parameters:
 	ignoreErrors:
 		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpBlas has an unused parameter \\$blas\\.$#"
+			message: '#^Constructor of class Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpBlas has an unused parameter \$blas\.$#'
+			identifier: constructor.unusedParameter
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpBlas.php
 
 		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpBlas has an unused parameter \\$forceBlas\\.$#"
+			message: '#^Constructor of class Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpBlas has an unused parameter \$forceBlas\.$#'
+			identifier: constructor.unusedParameter
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpBlas.php
 
 		-
-			message: "#^Class SplFixedArray specifies template type TKey of interface ArrayAccess as int but it's already specified as mixed\\.$#"
+			message: '#^Class SplFixedArray specifies template type TKey of interface ArrayAccess as int but it''s already specified as mixed\.$#'
+			identifier: generics.interfaceConflict
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpBuffer.php
 
 		-
-			message: "#^Comparison operation \"\\>\\=\" between int\\<0, max\\> and 0 is always true\\.$#"
+			message: '#^Comparison operation "\>\=" between int\<0, max\> and 0 is always true\.$#'
+			identifier: greaterOrEqual.alwaysTrue
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpLapack.php
 
 		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpLapack has an unused parameter \\$forceLapack\\.$#"
+			message: '#^Constructor of class Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpLapack has an unused parameter \$forceLapack\.$#'
+			identifier: constructor.unusedParameter
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpLapack.php
 
 		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpLapack has an unused parameter \\$lapack\\.$#"
+			message: '#^Constructor of class Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpLapack has an unused parameter \$lapack\.$#'
+			identifier: constructor.unusedParameter
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpLapack.php
 
 		-
-			message: "#^Comparison operation \"\\>\" between 2 and 1 is always true\\.$#"
+			message: '#^Comparison operation "\>" between 2 and 1 is always true\.$#'
+			identifier: greater.alwaysTrue
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpMath.php
 
 		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpMath has an unused parameter \\$forceMath\\.$#"
+			message: '#^Constructor of class Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpMath has an unused parameter \$forceMath\.$#'
+			identifier: constructor.unusedParameter
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpMath.php
 
 		-
-			message: "#^Constructor of class Rindow\\\\Math\\\\Matrix\\\\Drivers\\\\MatlibPHP\\\\PhpMath has an unused parameter \\$math\\.$#"
+			message: '#^Constructor of class Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpMath has an unused parameter \$math\.$#'
+			identifier: constructor.unusedParameter
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpMath.php
 
 		-
-			message: "#^Else branch is unreachable because previous condition is always true\\.$#"
+			message: '#^If condition is always false\.$#'
+			identifier: if.alwaysFalse
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpMath.php
 
 		-
-			message: "#^If condition is always false\\.$#"
-			count: 1
-			path: src/Drivers/MatlibPHP/PhpMath.php
+			message: '#^Instanceof between Interop\\Polite\\Math\\Matrix\\NDArray and Interop\\Polite\\Math\\Matrix\\NDArray will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 4
+			path: src/LinearAlgebra.php
 
 		-
-			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\Buffer\\:\\:copy\\(\\)\\.$#"
+			message: '#^Call to an undefined method Interop\\Polite\\Math\\Matrix\\Buffer\:\:copy\(\)\.$#'
+			identifier: method.notFound
 			count: 2
 			path: src/LinearAlgebraCL.php
 
 		-
-			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\Buffer\\:\\:fill\\(\\)\\.$#"
+			message: '#^Call to an undefined method Interop\\Polite\\Math\\Matrix\\Buffer\:\:fill\(\)\.$#'
+			identifier: method.notFound
 			count: 1
 			path: src/LinearAlgebraCL.php
 
 		-
-			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:getEvents\\(\\)\\.$#"
+			message: '#^Call to an undefined method Interop\\Polite\\Math\\Matrix\\NDArray\:\:getEvents\(\)\.$#'
+			identifier: method.notFound
 			count: 1
 			path: src/LinearAlgebraCL.php
 
 		-
-			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:toNDArray\\(\\)\\.$#"
+			message: '#^Call to an undefined method Interop\\Polite\\Math\\Matrix\\NDArray\:\:toNDArray\(\)\.$#'
+			identifier: method.notFound
 			count: 1
 			path: src/LinearAlgebraCL.php
 
 		-
-			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:valueSize\\(\\)\\.$#"
+			message: '#^Call to an undefined method Interop\\Polite\\Math\\Matrix\\NDArray\:\:valueSize\(\)\.$#'
+			identifier: method.notFound
 			count: 1
 			path: src/LinearAlgebraCL.php
 
 		-
-			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray\\:\\:serialize\\(\\)\\.$#"
+			message: '#^Instanceof between Interop\\Polite\\Math\\Matrix\\NDArray and Interop\\Polite\\Math\\Matrix\\NDArray will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 4
+			path: src/LinearAlgebraCL.php
+
+		-
+			message: '#^Call to an undefined method Interop\\Polite\\Math\\Matrix\\NDArray\:\:serialize\(\)\.$#'
+			identifier: method.notFound
 			count: 1
 			path: src/MatrixOperator.php
+
+		-
+			message: '#^Instanceof between Interop\\Polite\\Math\\Matrix\\NDArray and Interop\\Polite\\Math\\Matrix\\NDArray will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/MatrixOperator.php
+
+		-
+			message: '#^Call to function is_numeric\(\) with int will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 2
+			path: src/NDArrayCL.php
+
+		-
+			message: '#^Instanceof between Interop\\Polite\\Math\\Matrix\\DeviceBuffer and Interop\\Polite\\Math\\Matrix\\DeviceBuffer will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/NDArrayCL.php
+
+		-
+			message: '#^Call to function is_numeric\(\) with int will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 2
+			path: src/NDArrayPhp.php

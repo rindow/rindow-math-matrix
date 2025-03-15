@@ -21,7 +21,7 @@ Please see the documents on [Rindow mathematics project](https://rindow.github.i
 Requirements
 ============
 
-- PHP 8.1 or PHP8.2 or PHP8.3
+- PHP 8.1 or PHP8.2 or PHP8.3 or PHP8.4
 - PHP7.2, PHP7.3, PHP7.4 and PHP 8.0 are not supported in this release. Please use Release 1.1, which supports them.
 
 ### Strong recommend ###
@@ -30,7 +30,7 @@ You can perform very fast N-dimensional array operations in conjunction
 - [rindow-math-matrix-matlibffi](https://github.com/rindow/rindow-math-matrix-matlibffi): plug-in drivers for OpenBLAS,Rindow-Matlib,OpenCL,CLBlast for FFI
 - Pre-build binaries
   - [Rindow matlib](https://github.com/rindow/rindow-matlib/releases)
-  - [OpenBLAS](https://github.com/xianyi/OpenBLAS/releases)
+  - [OpenBLAS](https://github.com/OpenMathLib/OpenBLAS/releases)
   - [CLBlast](https://github.com/CNugteren/CLBlast/releases)
 
 Please see the [rindow-math-matrix-matlibffi](https://github.com/rindow/rindow-math-matrix-matlibffi) to setup plug-in and pre-build binaries.

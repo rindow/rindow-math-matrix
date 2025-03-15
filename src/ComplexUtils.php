@@ -7,7 +7,7 @@ use Interop\Polite\Math\Matrix\NDArray;
 
 trait ComplexUtils
 {
-    protected function cbuild(float $r=null, float $i=null) : object
+    protected function cbuild(?float $r=null, ?float $i=null) : object
     {
         return C($r, i:$i);
     }
@@ -34,7 +34,7 @@ trait ComplexUtils
         return gettype($value);
     }
 
-    protected function cistype(int $dtype=null) : bool
+    protected function cistype(?int $dtype=null) : bool
     {
         return $dtype==NDArray::complex64||$dtype==NDArray::complex128;
     }

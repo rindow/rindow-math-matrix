@@ -17,17 +17,17 @@ class PhpBLASFactory implements Driver
         return 'phpblas';
     }
 
-    public function Blas(object $blas=null,bool $forceBlas=null) : object
+    public function Blas(?object $blas=null,?bool $forceBlas=null) : object
     {
         return new PhpBlas($blas=null,$forceBlas=null);
     }
 
-    public function Lapack(object $blas=null,bool $forceBlas=null) : object
+    public function Lapack(?object $blas=null,?bool $forceBlas=null) : object
     {
         return new PhpLapack($blas=null,$forceBlas=null);
     }
 
-    public function Math(object $blas=null,bool $forceBlas=null) : object
+    public function Math(?object $blas=null,?bool $forceBlas=null) : object
     {
         return new PhpMath($blas=null,$forceBlas=null);
     }

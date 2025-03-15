@@ -8,6 +8,7 @@ if(!class_exists('RindowTest\Math\Matrix\LinearAlgebraTest\LinearAlgebraTest')) 
     require_once __DIR__.'/LinearAlgebraTest.php';
 }
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Rindow\Math\Plot\Plot;
 use RindowTest\Math\Matrix\LinearAlgebraTest\LinearAlgebraTest as ORGTest;
 use InvalidArgumentException;
@@ -27,7 +28,7 @@ use function Rindow\Math\Matrix\C;
 
 class TestMatrixOperator extends MatrixOperator
 {
-    protected function createLinearAlgebraCL(array $options=null) : object
+    protected function createLinearAlgebraCL(?array $options=null) : object
     {
         $queue = $this->service->createQueue($options);
         $la = new TestLinearAlgebraCL($queue,service:$this->service);
@@ -39,10 +40,10 @@ class TestLinearAlgebraCL extends LinearAlgebraCL
 {
     public function sumTest(
         NDArray $X,
-        NDArray $R=null,
-        object $events=null,
-        object $waitEvents=null,
-        int $mode = null
+        ?NDArray $R=null,
+        ?object $events=null,
+        ?object $waitEvents=null,
+        ?int $mode = null
         )
     {
         if($R==null) {
@@ -183,11 +184,11 @@ class TestLinearAlgebraCL extends LinearAlgebraCL
 */
     public function reduceSumTest( //reducesumex
         NDArray $A,
-        int $axis=null,
-        NDArray $B=null,
-        $dtype=null,
-        $events=null,$waitEvents=null,
-        $mode = null
+        ?int $axis=null,
+        ?NDArray $B=null,
+        ?int $dtype=null,
+        ?object $events=null, ?object $waitEvents=null,
+        ?int $mode = null
         ) : NDArray
     {
         $ndim = $A->ndim();
@@ -380,11 +381,11 @@ class TestLinearAlgebraCL extends LinearAlgebraCL
 */
     public function reduceMaxTest( //reducemaxex
         NDArray $A,
-        int $axis=null,
-        NDArray $B=null,
-        $dtype=null,
-        $events=null,$waitEvents=null,
-        $mode = null
+        ?int $axis=null,
+        ?NDArray $B=null,
+        ?int $dtype=null,
+        ?object $events=null, ?object $waitEvents=null,
+        ?int $mode = null
         ) : NDArray
     {
         $ndim = $A->ndim();
@@ -576,11 +577,11 @@ class TestLinearAlgebraCL extends LinearAlgebraCL
 */
     public function reduceArgMaxTest( //reduceargmaxex
         NDArray $A,
-        int $axis=null,
-        NDArray $B=null,
-        $dtype=null,
-        $events=null,$waitEvents=null,
-        $mode = null
+        ?int $axis=null,
+        ?NDArray $B=null,
+        ?int $dtype=null,
+        ?object $events=null, ?object $waitEvents=null,
+        ?int $mode = null
         ) : NDArray
     {
         $ndim = $A->ndim();
@@ -673,8 +674,8 @@ class TestLinearAlgebraCL extends LinearAlgebraCL
 
     public function softmaxTest(
         NDArray $X,
-        object $events=null, object $waitEvents=null,
-        $mode = null
+        ?object $events=null, ?object $waitEvents=null,
+        ?int $mode = null
         ) : NDArray
     {
         if($X->ndim()!=2) {
@@ -1444,9 +1445,7 @@ class LinearAlgebraCLTest extends ORGTest
         $this->assertTrue(true);
     }
 
-    /**
-    * @dataProvider modeProviderNoZero
-    */
+    #[DataProvider('modeProviderNoZero')]
     public function testSumSimpleOpenCL($mode)
     {
         $mo = $this->newMatrixOperator();
@@ -1498,9 +1497,7 @@ class LinearAlgebraCLTest extends ORGTest
         $this->assertEquals(123,$y);
     }
 
-    /**
-    * @dataProvider modeProviderNoZero
-    */
+    #[DataProvider('modeProviderNoZero')]
     public function testSumOpenCL($mode)
     {
         $dtype = NDArray::float32;
@@ -1634,9 +1631,7 @@ class LinearAlgebraCLTest extends ORGTest
         }
     }
 */
-    /**
-    * @dataProvider modeProvider
-    */
+    #[DataProvider('modeProvider')]
     public function testReduceSumOpenCL($mode)  // reducesumex
     {
         $mo = $this->newMatrixOperator();
@@ -1694,9 +1689,7 @@ class LinearAlgebraCLTest extends ORGTest
         }
     }
 
-    /**
-    * @dataProvider modeProvider
-    */
+    #[DataProvider('modeProvider')]
     public function testReduceMaxOpenCL($mode)
     {
         $mo = $this->newMatrixOperator();
@@ -1750,9 +1743,7 @@ class LinearAlgebraCLTest extends ORGTest
         }
     }
 
-    /**
-    * @dataProvider modeProvider
-    */
+    #[DataProvider('modeProvider')]
     public function testReduceArgMaxOpenCL($mode)
     {
         $mo = $this->newMatrixOperator();
@@ -1778,9 +1769,7 @@ class LinearAlgebraCLTest extends ORGTest
 
     }
 
-    /**
-    * @dataProvider modeProvider4mode
-    */
+    #[DataProvider('modeProvider4mode')]
     public function testScatterAddOpenCL($mode)
     {
         $mo = $this->newMatrixOperator();

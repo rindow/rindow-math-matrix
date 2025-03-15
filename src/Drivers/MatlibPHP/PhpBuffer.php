@@ -92,7 +92,7 @@ class PhpBuffer extends SplFixedArray implements BufferInterface
         parent::__construct($size);
     }
 
-    protected function isComplex(int $dtype=null) : bool
+    protected function isComplex(?int $dtype=null) : bool
     {
         $dtype = $dtype ?? $this->dtype;
         return $this->cistype($dtype);

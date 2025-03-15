@@ -1,6 +1,8 @@
 <?php
 namespace RindowTest\Math\Matrix\Drivers\MatlibPHP\PhpBlasTest;
 
+require_once __DIR__.'/Utils.php';
+
 use PHPUnit\Framework\TestCase;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\BLAS;
@@ -10,143 +12,12 @@ use InvalidArgumentException;
 use Rindow\Math\Matrix\Drivers\MatlibPHP\MatlibPhp;
 use Rindow\Math\Matrix\ComplexUtils;
 use function Rindow\Math\Matrix\C;
+use RindowTest\Math\Matrix\Drivers\MatlibPHP\Utils;
 
 class PhpBlasTest extends TestCase
 {
     use ComplexUtils;
-
-    protected $mo;
-
-    public function setUp() : void
-    {
-        $service = new MatlibPhp();
-        $this->mo = new MatrixOperator(service:$service);
-    }
-
-    public function getBlas()
-    {
-        $blas = $this->mo->service()->blas(Service::LV_BASIC);
-        return $blas;
-    }
-
-    public function alloc(array $shape,int $dtype=null) : NDArray
-    {
-        return $this->mo->zeros($shape,dtype:$dtype);
-    }
-
-    public function zeros(array $shape,int $dtype=null) : NDArray
-    {
-        return $this->mo->zeros($shape,dtype:$dtype);
-    }
-
-    public function ones(array $shape, int $dtype=null) : NDArray
-    {
-        return $this->mo->ones($shape,dtype:$dtype);
-    }
-
-    public function array(mixed $array,int $dtype=null) : NDArray
-    {
-        return $this->mo->array($array,dtype:$dtype);
-    }
-
-    protected function isComplex(int $dtype) : bool
-    {
-        return $this->cistype($dtype);
-    }
-
-    protected function toComplex(mixed $array) : mixed
-    {
-        if(!is_array($array)) {
-            if(is_numeric($array)) {
-                return C($array,i:0);
-            } else {
-                return C($array->real,i:$array->imag);
-            }
-        }
-        $cArray = [];
-        foreach($array as $value) {
-            $cArray[] = $this->toComplex($value);
-        }
-        return $cArray;
-    }
-
-    protected function complementTrans(?bool $trans,?bool $conj,int $dtype) : array
-    {
-        $trans = $trans ?? false;
-        if($this->isComplex($dtype)) {
-            $conj = $conj ?? $trans;
-        } else {
-            $conj = $conj ?? false;
-        }
-        return [$trans,$conj];
-    }
-
-    protected function buildValByType(float|int $value, int $dtype) : float|int|object
-    {
-        if($this->cistype($dtype)) {
-            $value = $this->cbuild($value);
-        }
-        return $value;
-    }
-
-    protected function transToCode(bool $trans,bool $conj) : int
-    {
-        if($trans) {
-            return $conj ? BLAS::ConjTrans : BLAS::Trans;
-        } else {
-            return $conj ? BLAS::ConjNoTrans : BLAS::NoTrans;
-        }
-    }
-
-    protected function abs(float|int|object $value) : float
-    {
-        if(is_numeric($value)) {
-            return abs($value);
-        }
-        $abs = sqrt(($value->real)**2+($value->imag)**2);
-        return $abs;
-    }
-
-    protected function copy(NDArray $x,NDArray $y=null) : NDArray
-    {
-        $blas = $this->getBlas();
-
-        if($y==null) {
-            $y = $this->zeros($x->shape(),dtype:$x->dtype());
-        }
-        $blas->copy(...$this->translate_copy($x,$y));
-        return $y;
-    }
-
-    protected function isclose(NDArray $a, NDArray $b, $rtol=null, $atol=null) : bool
-    {
-        $blas = $this->getBlas();
-
-        $isCpx = $this->isComplex($a->dtype());
-        if($rtol===null) {
-            $rtol = $isCpx?C(1e-04):1e-04;
-        }
-        if($atol===null) {
-            $atol = 1e-07;
-        }
-        if($a->shape()!=$b->shape()) {
-            return false;
-        }
-        // diff = b - a
-        $alpha =  $isCpx?C(-1):-1;
-        $diffs = $this->copy($b);
-        $blas->axpy(...$this->translate_axpy($a,$diffs,$alpha));
-        $iDiffMax = $blas->iamax(...$this->translate_amin($diffs));
-        $diff = $this->abs($diffs->buffer()[$iDiffMax]);
-
-        // close = atol + rtol * b
-        $scalB = $this->copy($b);
-        $blas->scal(...$this->translate_scal($rtol,$scalB));
-        $iCloseMax = $blas->iamax(...$this->translate_amin($scalB));
-        $close = $atol+$this->abs($scalB->buffer()[$iCloseMax]);
-
-        return $diff < $close;
-    }
+    use Utils;
 
     public function translate_scal(
         float|object $a,NDArray $X) : array
@@ -158,7 +29,7 @@ class PhpBlasTest extends TestCase
     }
 
     public function translate_axpy(
-        NDArray $X,NDArray $Y, float|object $alpha=null) : array
+        NDArray $X,NDArray $Y, float|object|null $alpha=null) : array
     {
         if($X->shape()!=$Y->shape()) {
             $shapeError = '('.implode(',',$X->shape()).'),('.implode(',',$Y->shape()).')';
@@ -220,10 +91,10 @@ class PhpBlasTest extends TestCase
     public function translate_rotg(
         NDArray $X,
         NDArray $Y,
-        NDArray $R=null,
-        NDArray $Z=null,
-        NDArray $C=null,
-        NDArray $S=null) : array
+        ?NDArray $R=null,
+        ?NDArray $Z=null,
+        ?NDArray $C=null,
+        ?NDArray $S=null) : array
     {
         if($X->shape()!=$Y->shape()) {
             $shapeError = '('.implode(',',$X->shape()).'),('.implode(',',$Y->shape()).')';
@@ -282,10 +153,10 @@ class PhpBlasTest extends TestCase
     public function translate_rotmg(
         NDArray $X,
         NDArray $Y,
-        NDArray $D1=null,
-        NDArray $D2=null,
-        NDArray $B1=null,
-        NDArray $P=null,
+        ?NDArray $D1=null,
+        ?NDArray $D2=null,
+        ?NDArray $B1=null,
+        ?NDArray $P=null,
         ) : array
     {
         if($X->size()!=1||$Y->size()!=1) {
@@ -330,13 +201,13 @@ class PhpBlasTest extends TestCase
     public function translate_gemm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $transA=null,
-        bool $transB=null,
-        bool $conjA=null,
-        bool $conjB=null,
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $transA=null,
+        ?bool $transB=null,
+        ?bool $conjA=null,
+        ?bool $conjB=null,
         ) : array
     {
         [$transA,$conjA] = $this->complementTrans($transA,$conjA,$A->dtype());
@@ -399,11 +270,11 @@ class PhpBlasTest extends TestCase
     public function translate_gemv(
         NDArray $A,
         NDArray $X,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $Y=null,
-        bool $trans=null,
-        bool $conj=null,
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $Y=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
         )
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());
@@ -461,11 +332,11 @@ class PhpBlasTest extends TestCase
     public function translate_symm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $right=null,
-        bool $lower=null
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $right=null,
+        ?bool $lower=null
         ) : array
     {
         if($A->ndim()!=2 || $B->ndim()!=2) {
@@ -525,12 +396,12 @@ class PhpBlasTest extends TestCase
 
     public function translate_syrk(
         NDArray $A,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null)
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null)
     {
         $trans = $trans ?? false;
         // $conj = $conj ?? $trans; // Doing so will result in an error.
@@ -582,12 +453,12 @@ class PhpBlasTest extends TestCase
     public function translate_syr2k(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        float|object $beta=null,
-        NDArray $C=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null,
+        float|object|null $alpha=null,
+        float|object|null $beta=null,
+        ?NDArray $C=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
         ) : array
     {
         $trans = $trans ?? false;
@@ -650,12 +521,12 @@ class PhpBlasTest extends TestCase
     public function translate_trmm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        bool $right=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null,
-        bool $unit=null,
+        float|object|null $alpha=null,
+        ?bool $right=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
+        ?bool $unit=null,
         ) : array
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());
@@ -709,12 +580,12 @@ class PhpBlasTest extends TestCase
     public function translate_trsm(
         NDArray $A,
         NDArray $B,
-        float|object $alpha=null,
-        bool $right=null,
-        bool $lower=null,
-        bool $trans=null,
-        bool $conj=null,
-        bool $unit=null,
+        float|object|null $alpha=null,
+        ?bool $right=null,
+        ?bool $lower=null,
+        ?bool $trans=null,
+        ?bool $conj=null,
+        ?bool $unit=null,
         ) : array
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());
@@ -764,10 +635,10 @@ class PhpBlasTest extends TestCase
 
     public function translate_omatcopy(
         NDArray $A,
-        bool $trans=null,
-        float|object $alpha=null,
-        NDArray $B=null,
-        bool $conj=null,
+        ?bool $trans=null,
+        float|object|null $alpha=null,
+        ?NDArray $B=null,
+        ?bool $conj=null,
         ) : array
     {
         [$trans,$conj] = $this->complementTrans($trans,$conj,$A->dtype());

@@ -13,6 +13,12 @@ class MatlibCLFactory implements Driver
         return true;
     }
 
+    public function Blas(object $queue, Service $service) : object
+    {
+        $openclblas = new OpenCLBlas($queue, $service);
+        return $openclblas;
+    }
+
     public function Math(object $queue, Service $service) : object
     {
         $openclmath = new OpenCLMath($queue, $service);

@@ -26,8 +26,8 @@ class PhpLapack
     ];
 
     public function __construct(
-        object $lapack=null,
-        bool $forceLapack=null
+        ?object $lapack=null,
+        ?bool $forceLapack=null
         )
     {
         //$this->lapack = $lapack;
@@ -51,20 +51,20 @@ class PhpLapack
                 return Service::LV_BASIC;
             }
 
-            public function buffer(int $level=null) : object
+            public function buffer(?int $level=null) : object
             {
                 return $this->bufferFactory;
             }
             public function info() : string {throw new \Exception("error");}
             public function name() : string {throw new \Exception("error");}
-            public function blas(int $level=null) : object {throw new \Exception("error");}
-            public function lapack(int $level=null) : object {throw new \Exception("error");}
-            public function math(int $level=null) : object {throw new \Exception("error");}
+            public function blas(?int $level=null) : object {throw new \Exception("error");}
+            public function lapack(?int $level=null) : object {throw new \Exception("error");}
+            public function math(?int $level=null) : object {throw new \Exception("error");}
             public function openCL() : object {throw new \Exception("error");}
             public function blasCL(object $queue) : object {throw new \Exception("error");}
             public function mathCL(object $queue) : object {throw new \Exception("error");}
             public function mathCLBlast(object $queue) : object {throw new \Exception("error");}
-            public function createQueue(array $options=null) : object { throw new \Exception("error");}
+            public function createQueue(?array $options=null) : object { throw new \Exception("error");}
         };
         return $service;
     }

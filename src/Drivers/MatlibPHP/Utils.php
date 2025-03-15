@@ -4,9 +4,29 @@ namespace Rindow\Math\Matrix\Drivers\MatlibPHP;
 use InvalidArgumentException;
 
 use Interop\Polite\Math\Matrix\Buffer as BufferInterface;
+use Interop\Polite\Math\Matrix\NDArray;
+use Interop\Polite\Math\Matrix\Buffer;
 
 trait Utils
 {
+    /** @var array<int,bool> $integerDtypes */
+    protected array $integerDtypes = [
+        NDArray::int8 => true,
+        NDArray::uint8 => true,
+        NDArray::int16 => true,
+        NDArray::uint16 => true,
+        NDArray::int32 => true,
+        NDArray::uint32 => true,
+        NDArray::int64 => true,
+        NDArray::uint64 => true,
+    ];
+
+    /** @var array<int,bool> $floatDtypes */
+    protected array $floatDtypes = [
+        NDArray::float32 => true,
+        NDArray::float64 => true,
+    ];
+
     protected function assertShapeParameter(
         string $name, int $n) : void
     {
@@ -54,4 +74,8 @@ trait Utils
         }
     }
     
+    protected function isIntegerDtype(int $dtype) : bool
+    {
+        return array_key_exists($dtype, $this->integerDtypes);
+    }
 }

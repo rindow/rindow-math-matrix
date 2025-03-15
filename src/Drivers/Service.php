@@ -11,10 +11,10 @@ interface Service
     public function serviceLevel() : int;
     public function info() : string;
     public function name() : string;
-    public function blas(int $level=null) : object;
-    public function lapack(int $level=null) : object;
-    public function math(int $level=null) : object;
-    public function buffer(int $level=null) : object;
+    public function blas(?int $level=null) : object;
+    public function lapack(?int $level=null) : object;
+    public function math(?int $level=null) : object;
+    public function buffer(?int $level=null) : object;
     public function openCL() : object;
     public function blasCL(object $queue) : object;
     public function mathCL(object $queue) : object;
@@ -22,5 +22,5 @@ interface Service
     /**
      * @param array<string,mixed> $options
      */
-    public function createQueue(array $options=null) : object;
+    public function createQueue(?array $options=null) : object;
 }

@@ -15,7 +15,7 @@ class Selector
     /**
      * @param array<string> $catalog
      */
-    public function __construct(array $catalog = null)
+    public function __construct(?array $catalog = null)
     {
         $catalog = $catalog ?? [
             'Rindow\Math\Matrix\Drivers\MatlibFFI\MatlibFFI',
@@ -32,7 +32,7 @@ class Selector
         echo $message."\n";
     }
 
-    public function select(int $verbose=null) : Service
+    public function select(?int $verbose=null) : Service
     {
         if($this->recommended) {
             return $this->recommended;

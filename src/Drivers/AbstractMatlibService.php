@@ -74,7 +74,7 @@ abstract class AbstractMatlibService implements Service
         }
     }
 
-    protected function setVerbose(int $verbose=null) : void
+    protected function setVerbose(?int $verbose=null) : void
     {
         $verbose ??= 0;
         $this->logLevel = 10 - $verbose;
@@ -248,7 +248,7 @@ abstract class AbstractMatlibService implements Service
         return $this->name;
     }
 
-    public function blas(int $level=null) : object
+    public function blas(?int $level=null) : object
     {
         $level = $level ?? Service::LV_ADVANCED;
         switch($level) {
@@ -264,7 +264,7 @@ abstract class AbstractMatlibService implements Service
         }
     }
 
-    public function lapack(int $level=null) : object
+    public function lapack(?int $level=null) : object
     {
         $level = $level ?? Service::LV_ADVANCED;
         switch($level) {
@@ -280,7 +280,7 @@ abstract class AbstractMatlibService implements Service
         }
     }
 
-    public function math(int $level=null) : object
+    public function math(?int $level=null) : object
     {
         $level = $level ?? Service::LV_ADVANCED;
         switch($level) {
@@ -296,7 +296,7 @@ abstract class AbstractMatlibService implements Service
         }
     }
 
-    public function buffer(int $level=null) : object
+    public function buffer(?int $level=null) : object
     {
         $level = $level ?? Service::LV_ADVANCED;
         switch($level) {
@@ -325,6 +325,11 @@ abstract class AbstractMatlibService implements Service
         return $this->blasCLFactory()->Blas($queue, service:$this);
     }
 
+    public function blasCL2(object $queue) : object
+    {
+        return $this->mathCLFactory()->Blas($queue, service:$this);
+    }
+
     public function mathCL(object $queue) : object
     {
         return $this->mathCLFactory()->Math($queue, service:$this);
@@ -335,7 +340,7 @@ abstract class AbstractMatlibService implements Service
         return $this->clblastFactory()->Math($queue, service:$this);
     }
 
-    public function createQueue(array $options=null) : object
+    public function createQueue(?array $options=null) : object
     {
         if($this->serviceLevel()<Service::LV_ACCELERATED) {
             throw new InvalidArgumentException('Service level requirements not met.');

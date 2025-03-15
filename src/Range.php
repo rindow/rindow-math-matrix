@@ -17,8 +17,8 @@ class Range implements IteratorAggregate,Countable
 
     public function __construct(
         int|float $limit,
-        int|float $start=null,
-        int|float $delta=null
+        int|float|null $start=null,
+        int|float|null $delta=null
     ) {
         $this->limit = $limit;
         $this->start = $start ?? 0;

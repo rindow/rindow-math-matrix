@@ -10,7 +10,7 @@ abstract class AbstractDriver implements Driver
     protected string $OVER_VERSION   = '0.0.0';
     protected string $extName        = 'unknown';
 
-    protected function strVersion(string $name=null) : string
+    protected function strVersion(?string $name=null) : string
     {
         if($name==null) {
             $version = phpversion();
