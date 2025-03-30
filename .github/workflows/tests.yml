@@ -80,7 +80,7 @@ jobs:
       #    php_version: ${{ matrix.php }}
       #    path: src/
 
-      - name: Composer
+      - name: PHP Static Analysys
         run: phpstan
 
       #- name: PHPUnit Tests
