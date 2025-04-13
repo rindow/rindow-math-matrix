@@ -430,17 +430,17 @@ class LinearAlgebra
         $N = $X->size();
         $XX = $X->buffer();
         $offX = $X->offset();
-        if(method_exists($this->blas,'iamin')) {
+        if($this->blas->hasIamin()) {
             return $this->blas->iamin($N,$XX,$offX,1);
         } else {
-            return $this->iaminCompatible($N,$XX,$offX,1);
+            return $this->blasIaminCompatible($N,$XX,$offX,1);
         }
     }
 
     /**
     *   legacy opennblas compatible
     */
-    protected function iaminCompatible(
+    public function blasIaminCompatible(
         int $n,
         Buffer $X, int $offsetX, int $incX ) : int
     {
@@ -448,15 +448,27 @@ class LinearAlgebra
             echo "*iamin* not found. probably OpenBLAS is legacy version.";
             $this->iaminwarning = true;
         }
-        if($offsetX+($n-1)*$incX>=count($X))
+        if($offsetX+($n-1)*$incX>=count($X)) {
             throw new InvalidArgumentException('Vector X specification too large for buffer.');
+        }
         $idxX = $offsetX+$incX;
-        $acc = abs($X[$offsetX]);
-        $idx = 0;
-        for($i=1; $i<$n; $i++,$idxX+=$incX) {
-            if($acc > abs($X[$idxX])) {
-                $acc = abs($X[$idxX]);
-                $idx = $i;
+        if($this->isComplex($X->dtype())) {
+            $acc = $this->cabs($X[$offsetX]);
+            $idx = 0;
+            for($i=1; $i<$n; $i++,$idxX+=$incX) {
+                if($acc > $this->cabs($X[$idxX])) {
+                    $acc = $this->cabs($X[$idxX]);
+                    $idx = $i;
+                }
+            }
+        } else {
+            $acc = abs($X[$offsetX]);
+            $idx = 0;
+            for($i=1; $i<$n; $i++,$idxX+=$incX) {
+                if($acc > abs($X[$idxX])) {
+                    $acc = abs($X[$idxX]);
+                    $idx = $i;
+                }
             }
         }
         return $idx;
@@ -488,10 +500,10 @@ class LinearAlgebra
         $N = $X->size();
         $XX = $X->buffer();
         $offX = $X->offset();
-        if(method_exists($this->blas,'iamin')) {
+        if($this->blas->hasIamin()) {
             $i = $this->blas->iamin($N,$XX,$offX,1);
         } else {
-            $i = $this->iaminCompatible($N,$XX,$offX,1);
+            $i = $this->blasIaminCompatible($N,$XX,$offX,1);
         }
         if($this->isComplex($X->dtype())) {
             return $this->cabs($XX[$offX+$i]);
@@ -1468,16 +1480,121 @@ class LinearAlgebra
         $trans = $this->transToCode($trans,$conj);
         $order = BLAS::RowMajor;
 
-        $this->blas->omatcopy(
-            $order,$trans,
-            $M,$N,
-            $alpha,
-            $AA, $offA, $ldA,
-            $BB, $offB, $ldB,
-        );
+        if($this->blas->hasOmatcopy()) {
+            $this->blas->omatcopy(
+                $order,$trans,
+                $M,$N,
+                $alpha,
+                $AA, $offA, $ldA,
+                $BB, $offB, $ldB,
+            );
+        } else {
+            $this->omatcopyCompatible(
+                $order,$trans,
+                $M,$N,
+                $alpha,
+                $AA, $offA, $ldA,
+                $BB, $offB, $ldB,
+            );
+        }
 
         return $B;
     }
+
+
+    protected function createIdentityMatrix(int $n, int $dtype) : Buffer
+    {
+        if ($n <= 0) {
+            throw new InvalidArgumentException("Error: Matrix dimension must be positive.");
+        }
+        // Use calloc for zero initialization, which works for complex zero (0.0 + 0.0i)
+        // assuming the underlying representation of 0.0f is all bits zero.
+        $imat = $this->zeros($this->alloc([$n,$n],dtype:$dtype))->buffer();
+
+        // Set diagonal elements to 1.0 + 0.0i
+        // Accessing column-major matrix I(n x n): Element (i, i) is at index i + i * n
+        for($i=0; $i<$n; $i++) {
+            $imat[$i + $i * $n] = $this->buildValByType(1.0,$dtype); // I is the imaginary unit from complex.h
+        }
+        return $imat;
+    }
+    
+    protected function omatcopyCompatible(
+        int $order,
+        int $trans,
+        int $rows,
+        int $cols,
+        float|object $alpha,
+        Buffer $A, int $offsetA, int $ldA,
+        Buffer $B, int $offsetB, int $ldB,
+    ) : void
+    {
+        if ($rows <= 0 || $cols <= 0) {
+            return; // Nothing to do for empty matrices
+        }
+        $dtype = $A->dtype();
+    
+        // Beta parameter for GEMM: C = alpha*op(A)*Id + beta*C
+        // We want B = alpha*op(A), so we use beta = 0.
+        $beta = $this->buildValByType(0.0,$dtype);
+
+        // int m, n, k;           // Dimensions for GEMM C(m x n) = op(A)(m x k) * Identity(k x n)
+        // int ld_identity;       // Leading dimension of the identity matrix
+    
+        // Determine GEMM parameters based on the transpose operation
+        if ($trans == BLAS::NoTrans) {
+            // B(rows x cols) = alpha * A(rows x cols) * I(cols x cols)
+            $m = $rows;          // Rows of B and A
+            $n = $cols;          // Columns of B and A
+            $k = $cols;          // Inner dimension (columns of A, rows of I)
+            $ldIdentity = $k;    // Identity is k x k = cols x cols
+    
+            $identity = $this->createIdentityMatrix($k,$dtype);
+    
+            // C = alpha * op(A) * op(B) + beta * C
+            // Here: B_out = alpha * A * I + 0 * B_out
+            $this->blas->gemm($order, BLAS::NoTrans, BLAS::NoTrans, // op(A)=A, op(Id)=Id
+                        $m, $n, $k,
+                        $alpha, $A, $offsetA, $ldA,
+                        $identity, 0, $ldIdentity, // Matrix B in GEMM is Identity
+                        $beta, $B, $offsetB, $ldB); // Matrix C in GEMM is output B
+    
+        } else if ($trans == BLAS::Trans) {
+            // B(cols x rows) = alpha * A^T(cols x rows) * I(rows x rows)
+            $m = $cols;          // Rows of B and A^T
+            $n = $rows;          // Columns of B and A^T
+            $k = $rows;          // Inner dimension (columns of A^T, rows of I)
+            $ldIdentity = $k;    // Identity is k x k = rows x rows
+            $identity = $this->createIdentityMatrix($k,$dtype);
+    
+            // Here: B_out = alpha * A^T * I + 0 * B_out
+            $this->blas->gemm($order, BLAS::Trans, BLAS::NoTrans, // op(A)=A^T, op(Id)=Id
+                        $m, $n, $k,
+                        $alpha, $A, $offsetA, $ldA,  // A is input, operation is Transpose
+                        $identity, 0, $ldIdentity,
+                        $beta, $B, $offsetB, $ldB);
+    
+        } else if ($trans == BLAS::ConjTrans) {
+            // B(cols x rows) = alpha * A^H(cols x rows) * I(rows x rows)
+            $m = $cols;          // Rows of B and A^H
+            $n = $rows;          // Columns of B and A^H
+            $k = $rows;          // Inner dimension (columns of A^H, rows of I)
+            $ldIdentity = $k;    // Identity is k x k = rows x rows
+    
+            $identity = $this->createIdentityMatrix($k,$dtype);
+    
+            // Here: B_out = alpha * A^H * I + 0 * B_out
+            $this->blas->gemm($order, BLAS::ConjTrans, BLAS::NoTrans, // op(A)=A^H, op(Id)=Id
+                        $m, $n, $k,
+                        $alpha, $A, $offsetA, $ldA, // A is input, operation is Conjugate Transpose
+                        $identity, 0, $ldIdentity,
+                        $beta, $B, $offsetB, $ldB);
+        } else {
+            throw new InvalidArgumentException("Error: Invalid transpose parameter provided.");
+            // No operation performed
+        }
+    }
+
 
     /**
     *    ret := x_1 + ... + x_n
@@ -4259,28 +4376,31 @@ class LinearAlgebra
         if($fullMatrices===null)
             $fullMatrices = true;
         [$m,$n] = $matrix->shape();
+        $k = min($m, $n);
         if($fullMatrices) {
             $jobu  = 'A';
             $jobvt = 'A';
-            $ldA = $n;
-            $ldU = $m;
-            $ldVT = $n;
+            $rowsU = $m; $colsU = $m;    // U is m x m
+            $rowsVT = $n; $colsVT = $n; // VT is n x n
         } else {
             $jobu  = 'S';
             $jobvt = 'S';
-            $ldA = $n;
-            $ldU = min($m,$n);
-            #$ldVT = min($m,$n);
-            $ldVT = $n; // bug in the lapacke ???
+            $rowsU = $m; $colsU = $k;    // U is m x k
+            //$rowsVT = $k; $colsVT = $n;// VT is k x n
+            $rowsVT = $n; $colsVT = $n;  // bug int the lapacke
         }
+        $ldA = $n;       // Input A is ROW_MAJOR (m x n), ld = n
+        $ldU = $colsU;   // Output U is ROW_MAJOR (rowsU x colsU), ld = colsU
+        $ldVT = $colsVT; // Output VT is ROW_MAJOR (rowsVT x colsVT), ld = colsVT = n
 
-        $S = $this->alloc([min($m,$n)],dtype:$matrix->dtype());
+        $S = $this->alloc([$k],dtype:$matrix->dtype());
         $this->zeros($S);
-        $U = $this->alloc([$m,$ldU],dtype:$matrix->dtype());
+        // Allocate U and VT with correct ROW_MAJOR dimensions and leading dimensions
+        $U = $this->alloc([$rowsU, $colsU],dtype:$matrix->dtype());
         $this->zeros($U);
-        $VT = $this->alloc([$ldVT,$n],dtype:$matrix->dtype());
+        $VT = $this->alloc([$rowsVT, $colsVT],dtype:$matrix->dtype());
         $this->zeros($VT);
-        $SuperB = $this->alloc([min($m,$n)-1],dtype:$matrix->dtype());
+        $SuperB = $this->alloc([$k-1],dtype:$matrix->dtype()); // Size is min(m,n)-1
         $this->zeros($SuperB);
 
         $AA = $matrix->buffer();
@@ -4294,20 +4414,20 @@ class LinearAlgebra
         $SuperBB = $SuperB->buffer();
         $offsetSuperB = $SuperB->offset();
         $this->lapack->gesvd(
-            self::LAPACK_ROW_MAJOR,
+            self::LAPACK_ROW_MAJOR, // Specify layout
             ord($jobu),
             ord($jobvt),
             $m,
             $n,
-            $AA,  $offsetA,  $ldA,
+            $AA,  $offsetA,  $ldA,  // Pass ROW_MAJOR A and its ld
             $SS,  $offsetS,
-            $UU,  $offsetU,  $ldU,
-            $VVT, $offsetVT, $ldVT,
+            $UU,  $offsetU,  $ldU,  // Pass ROW_MAJOR U buffer and its ld
+            $VVT, $offsetVT, $ldVT, // Pass ROW_MAJOR VT buffer and its ld
             $SuperBB,  $offsetSuperB
         );
         if(!$fullMatrices) {
             // bug in the lapacke ???
-            $VT = $this->copy($VT[R(0,min($m,$n))]);
+            $VT = $this->copy($VT[R(0,$k)]);
         }
         return [$U,$S,$VT];
     }
@@ -4324,7 +4444,7 @@ class LinearAlgebra
         if($A->ndim()<1) {
             throw new InvalidArgumentException('input array must be grator than or equal 1D.');
         }
-        if($A->ndim()==2 && $this->isFloat($A)) {
+        if($A->ndim()==2 && $this->isFloat($A) && $this->blas->hasOmatcopy()) {
             if($perm) {
                 if(count($perm)!=2) {
                     throw new InvalidArgumentException('unmatch sourceshape and perm');

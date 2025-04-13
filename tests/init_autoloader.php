@@ -8,8 +8,8 @@ if(COMPOSER_LIBRARY_PATH && file_exists(COMPOSER_LIBRARY_PATH.'/vendor/autoload.
     throw new \Exception("Loader is not found.");
 }
 $loader->addPsr4('Rindow\\Math\\Matrix\\', __DIR__.'/../src');
-if(defined('USE_MATLIBEXT') && USE_MATLIBEXT) {
-    $loader->addPsr4('Rindow\\Math\\Matrix\\Drivers\\MatlibExt\\', __DIR__.'/../../rindow-math-matrix-matlibext/src');
+if(getenv('ADD_MATLIBFFI')) {
+    $loader->addPsr4('Rindow\\Math\\Matrix\\Drivers\\MatlibExt\\', getenv('ADD_MATLIBEXT').'/src');
 } else {
     $loader->addPsr4('Rindow\\Math\\Matrix\\Drivers\\MatlibFFI\\', __DIR__.'/../../rindow-math-matrix-matlibffi/src');
     $loader->addPsr4('Rindow\\Math\\Buffer\\FFI\\', __DIR__.'/../../rindow-math-buffer-ffi/src');

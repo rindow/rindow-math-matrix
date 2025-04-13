@@ -977,10 +977,18 @@ class MatrixOperator
     public function amin(NDArray $X, ?int $axis=null) : mixed
     {
         $blas = $this->getBlas($X->dtype());
-        $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
-            $pos = $blas->iamin($N,$XX,$offX+$bufPos,$incX);
-            return $XX[$offX+$bufPos+$pos*$incX];
-        };
+        if($blas->hasIamin()) {
+            $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
+                $pos = $blas->iamin($N,$XX,$offX+$bufPos,$incX);
+                return $XX[$offX+$bufPos+$pos*$incX];
+            };
+        } else {
+            $la = $this->la();
+            $func = function($N,$XX,$offX,$bufPos,$incX) use ($la) {
+                $pos = $la->blasIaminCompatible($N,$XX,$offX+$bufPos,$incX);
+                return $XX[$offX+$bufPos+$pos*$incX];
+            };
+        }
 
         return $this->walkAxis($func,$func,$X,$axis);
     }
@@ -988,10 +996,18 @@ class MatrixOperator
     public function argAmin(NDArray $X, ?int $axis=null) : mixed
     {
         $blas = $this->getBlas($X->dtype());
-        $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
-            $pos = $blas->iamin($N,$XX,$offX+$bufPos,$incX);
-            return $pos;
-        };
+        if($blas->hasIamin()) {
+            $func = function($N,$XX,$offX,$bufPos,$incX) use ($blas) {
+                $pos = $blas->iamin($N,$XX,$offX+$bufPos,$incX);
+                return $pos;
+            };
+        } else {
+            $la = $this->la();
+            $func = function($N,$XX,$offX,$bufPos,$incX) use ($la) {
+                $pos = $la->blasIaminCompatible($N,$XX,$offX+$bufPos,$incX);
+                return $pos;
+            };
+        }
 
         return $this->walkAxis($func,$func,$X,$axis,$this->defaultIntType);
     }

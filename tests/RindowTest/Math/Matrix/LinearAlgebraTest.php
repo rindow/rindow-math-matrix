@@ -8371,7 +8371,11 @@ class LinearAlgebraTest extends TestCase
                 $this->assertEquals([0,0,1,2,3],$Y->toArray());
             }
         } else {
-            $this->assertEquals([255,0,1,2,3],$Y->toArray());
+            if($mo->isAdvanced()&&(strtolower(php_uname('m')) === 'arm64')) {
+                $this->assertEquals([0,0,1,2,3],$Y->toArray());
+            } else {
+                $this->assertEquals([255,0,1,2,3],$Y->toArray());
+            }
         }
 
         $dtype = NDArray::uint16;
@@ -8383,7 +8387,11 @@ class LinearAlgebraTest extends TestCase
                 $this->assertEquals([0,0,1,2,3],$Y->toArray());
             }
         } else {
-            $this->assertEquals([65535,0,1,2,3],$Y->toArray());
+            if($mo->isAdvanced()&&(strtolower(php_uname('m')) === 'arm64')) {
+                $this->assertEquals([0,0,1,2,3],$Y->toArray());
+            } else {
+                $this->assertEquals([65535,0,1,2,3],$Y->toArray());
+            }
         }
 
         // ***** CAUTION ******
@@ -8402,7 +8410,11 @@ class LinearAlgebraTest extends TestCase
             $dtype = NDArray::uint32;
             $Y = $math->astype($X, $dtype);
             if($mo->service()->serviceLevel()>=Service::LV_ADVANCED) {
-                $this->assertEquals([4294966296,0,1,2,0],$Y->toArray());
+                if($mo->isAdvanced()&&(strtolower(php_uname('m')) === 'arm64')) {
+                    $this->assertEquals([0,0,1,2,4294967295],$Y->toArray());
+                } else {
+                    $this->assertEquals([4294966296,0,1,2,0],$Y->toArray());
+                }
             } else {
                 $this->assertEquals([4294966296,0,1,2,4294967295],$Y->toArray());
             }
@@ -8432,7 +8444,11 @@ class LinearAlgebraTest extends TestCase
             // CPU
             $dtype = NDArray::uint64;
             $Y = $math->astype($X, $dtype);
-            $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
+            if($mo->isAdvanced()&&(strtolower(php_uname('m')) === 'arm64')) {
+                $this->assertEquals([0,0,1,2,3],$Y->toArray());
+            } else {
+                $this->assertEquals([-1000,0,1,2,3],$Y->toArray());
+            }
         }
     }
 

@@ -79,6 +79,16 @@ class PhpBlas
         return 0; // parallel mode = 0 : serial 
     }
 
+    public function hasIamin() : bool
+    {
+        return true;
+    }
+
+    public function hasOmatcopy() : bool
+    {
+        return true;
+    }
+
     protected function sign(float $x,float $y) : float
     {
         if($y<0) {
