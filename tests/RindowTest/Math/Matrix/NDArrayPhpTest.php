@@ -692,4 +692,35 @@ class NDArrayPhpTest extends TestCase
         $this->assertEquals([1,2,3],$array[R(1,4)]->toArray());
         NDArrayPhp::$rangeStyle = NDArrayPhp::RANGE_STYLE_DEFAULT;
     }
+
+    public function testOffsetSetScalarNDArray()
+    {
+        $value = new NDArrayPhp(100,dtype:NDArray::int32,service:$this->service);
+        $array = new NDArrayPhp([0,1,2,3,4],dtype:NDArray::int32,service:$this->service);
+        $array[1] = $value;
+        $this->assertEquals([0,100,2,3,4],$array->toArray());
+
+        $value = new NDArrayPhp(C(100, i:0),dtype:NDArray::complex64,service:$this->service);
+        $array = new NDArrayPhp([C(0, i:0),C(1, i:0),C(2, i:0),C(3, i:0),C(4, i:0)],dtype:NDArray::complex64,service:$this->service);
+        $array[1] = $value;
+        $this->assertEquals([C(0, i:0),C(100, i:0),C(2, i:0),C(3, i:0),C(4, i:0)],$array->toArray());
+    }
+
+    public function testOffsetSetScalarNDArrayWithIllegalNDArray()
+    {
+        $value = new NDArrayPhp([100],dtype:NDArray::int32,service:$this->service);
+        $array = new NDArrayPhp([0,1,2,3,4],dtype:NDArray::int32,service:$this->service);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Must be scalar type');
+        $array[1] = $value;
+    }
+
+    public function testOffsetSetScalarNDArrayWithDifferentDtype()
+    {
+        $value = new NDArrayPhp(100,dtype:NDArray::int32,service:$this->service);
+        $array = new NDArrayPhp([0,1,2,3,4],dtype:NDArray::float32,service:$this->service);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Must be same dtype');
+        $array[1] = $value;
+    }
 }

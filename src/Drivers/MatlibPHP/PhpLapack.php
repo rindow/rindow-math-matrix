@@ -105,61 +105,32 @@ class PhpLapack
         Buffer $SuperB,  int $offsetSuperB
     ) : void
     {
-        //if($this->useLapack($A)) {
-        //    $this->lapack->gesvd(
-        //        $matrix_layout,
-        //        $jobu,
-        //        $jobvt,
-        //        $m,
-        //        $n,
-        //        $A,  $offsetA,  $ldA,
-        //        $S,  $offsetS,
-        //        $U,  $offsetU,  $ldU,
-        //        $VT, $offsetVT, $ldVT,
-        //        $SuperB,  $offsetSuperB
-        //    );
-        //    return;
-        //}
-        if(method_exists($A,'dtype')) {
-            $dtype = $A->dtype();
-        } else {
-            $dtype = $this->defaultFloatType;
-        }
-
+        $dtype = $A->dtype();
         $transposed = false;
-        $A = new NDArrayPhp($A,$dtype,[$m,$n],$offsetA,service:$this->service);
+        $A = $this->assign($A,$dtype,[$m,$n],$offsetA);
+        $VT = $this->assign($VT,$dtype,[$ldVT,$n],$offsetVT);
         $offsetV = $V = null;
-        //if($m<$n) {
-        //    throw new InvalidArgumentException('unsuppoted shape by PhpLapack. M must be greater than N or equal.');
-        //}
         if($m<$n) {
-         $transposed = true;
-         $A = $this->transpose($A);
-         [$m,$n] = [$n,$m];
-         [$ldU,$ldVT] = [$ldVT,$ldU];
-         [$U,$V] = [$V,$U];
-         [$offsetU,$offsetV] = [$offsetV,$offsetU];
+            $transposed = true;
+            $A = $this->transpose($A);
+            [$m,$n] = [$n,$m];
+            [$ldU,$ldVT] = [$ldVT,$ldU];
+            [$U,$V] = [$V,$U];
+            [$offsetU,$offsetV] = [$offsetV,$offsetU];
         }
 
-        $U = new NDArrayPhp($U,$dtype,[$m,$ldU],$offsetU,service:$this->service);
-        $V = new NDArrayPhp($V,$dtype,[$n,$ldVT],$offsetV,service:$this->service);
+        $U = $this->assign($U,$dtype,[$m,$ldU],$offsetU);
+        $V = $this->assign($V,$dtype,[$n,$ldVT],$offsetV);
 
-        $min_num = min($m,$n);
+        $min_num = (int)min($m,$n);
         for($i=0;$i<$m;$i++) {
-            $this->copy($A[$i][R(0,(int)($min_num))],
-                $U[$i][R(0,(int)($min_num))]);
+            $this->copy($A[$i][R(0,$min_num)],
+                $U[$i][R(0,$min_num)]);
         }
         for($i=0;$i<$min_num;$i++) {
-            $this->copy($A[$i][R(0,(int)($n))],
-                $V[$i][R(0,(int)($n))]);
+            $this->copy($A[$i][R(0,$n)],
+                $V[$i][R(0,$n)]);
         }
-
-        #echo "--- a ---\n";
-        #$this->print($A);
-        #echo "--- u ---\n";
-        #$this->print($U);
-        #echo "--- v ---\n";
-        #$this->print($V);
 
         $eps = 2.22045e-016;
 
@@ -431,34 +402,11 @@ class PhpLapack
         }
 
         if($transposed) {
-            $UT = $this->transpose($V);
-            $this->copy($UT,$V);
-            $VT = new NDArrayPhp($VT,$dtype,[$ldU,$m],$offsetVT,service:$this->service);
-            $this->copy($U,$VT);
+            $this->transpose($U,$VT);
         } else {
-            $VT = new NDArrayPhp($VT,$dtype,[$ldVT,$n],$offsetVT,service:$this->service);
-            for($i=0;$i<$ldVT;$i++) {
-                for($j=0;$j<$n;$j++) {
-                    $VT[$i][$j] = $V[$j][$i];
-                }
-            }
+            $this->transpose($V,$VT);
         }
-        //$matrices['U'] = $U;
-        //$matrices['S'] = $S;
-        //$matrices['W'] = $W;
-        //$matrices['V'] = $this->matrixTranspose($V);
-        //$matrices['Rank'] = $rank;
-        //$matrices['K'] = $k;
-
-        #return [$U,$S,$this->transpose($V)];
     }
-
-    //private function print(NDArray $a) : void
-    //{
-    //    foreach($a->toArray() as $array) {
-    //        echo '['.implode(',',array_map(function($a){return sprintf('%5.2f',$a);},$array))."],\n";
-    //    }
-    //}
 
     /**
      * @param array<int> $shape
@@ -468,17 +416,13 @@ class PhpLapack
         return new NDArrayPhp(null,$dtype,$shape,service:$this->service);
     }
 
-    //private function zeros(NDArray $X) : void
-    //{
-    //    $N = $X->size();
-    //    $XX = $X->buffer();
-    //    $offX = $X->offset();
-    //    $posX = $offX;
-    //    for($i=0;$i<$N;$i++) {
-    //        $XX[$posX] = 0;
-    //        $posX++;
-    //    }
-    //}
+    /**
+     * @param array<int> $shape
+     */
+    private function assign(?Buffer $buffer, int $dtype, array $shape, ?int $offset) : NDArray
+    {
+        return new NDArrayPhp($buffer,$dtype,$shape,$offset,service:$this->service);
+    }
 
     private function copy(NDArray $X, NDArray $Y) : void
     {
@@ -525,39 +469,56 @@ class PhpLapack
         }
     }
 
-    /**
-    *   copied from MatrixOperator
-    */
-    public function transpose(NDArray $X) : NDArray
+    private function transpose(NDArray $X, ?NDArray $Y=null) : NDArray
     {
+        // (Implementation remains the same)
         $shape = $X->shape();
-        $newShape = array_reverse($shape);
-        $Y = $this->alloc($newShape, $X->dtype());
-        $w = 1;
-        $posY = 0;
-        $posX = 0;
-        $this->_transpose($newShape, $w, $X->buffer(), $X->offset(), $posX, $Y->buffer(), $posY);
+        if (count($shape) !== 2) {
+            throw new InvalidArgumentException("Transpose currently only supports 2D matrices.");
+        }
+        if($Y===null) {
+            $newShape = array_reverse($shape);
+            $Y = $this->alloc($newShape, $X->dtype());
+        }
+
+        $rows = $shape[0];
+        $cols = $shape[1];
+        $XX = $X->buffer(); $offX = $X->offset();
+        $YY = $Y->buffer(); $offY = $Y->offset();
+
+        $idxX = $offX;
+        for($i=0; $i<$rows; ++$i) {
+            for($j=0; $j<$cols; ++$j) {
+                $idxY = $offY + $j * $rows + $i;
+                $YY[$idxY] = $XX[$idxX];
+                $idxX++;
+            }
+        }
         return $Y;
     }
 
-    /**
-     * @param array<int> $shape
-     */
-    protected function _transpose(
-        array $shape, int $w,
-        Buffer $bufX, int $offX, int $posX,
-        Buffer $bufY, int &$posY) : void
+    protected function printArray(NDArray $x,?string $format=null) : void
     {
-        $n=array_shift($shape);
-        $W = $w*$n;
-        $deps = count($shape);
-        for($i=0;$i<$n;$i++) {
-            if($deps) {
-                $this->_transpose($shape, $W, $bufX, $offX, $posX+$w*$i, $bufY, $posY);
-            } else {
-                $bufY[$posY] = $bufX[$offX + $posX+$w*$i];
-                $posY++;
-            }
+        $format ??= '%f';
+        $shape = $x->shape();
+        if(count($shape)===1) {
+            $m = 1;
+            $n = $shape[0];
+        } elseif(count($shape)===2) {
+            [$m,$n] = $shape;
+        } else {
+            throw new InvalidArgumentException("Transpose currently only supports 2D matrices.");
         }
+        $buffer = $x->buffer();
+        $pos = $x->offset();
+        if($m>1) echo "[\n";
+        for($i=0;$i<$m;$i++) {
+            echo "[";
+            for($j=0;$j<$n;$j++) {
+                echo sprintf($format,$buffer[$pos++]).",";
+            }
+            echo "]\n";
+        }
+        if($m>1) echo "]\n";
     }
 }

@@ -52,17 +52,6 @@ class MatrixOperator
     ];
     protected int $defaultIntType = NDArray::int32;
     protected int $defaultFloatType = NDArray::float32;
-    /** @var array<int,string> $dtypeToString */
-    protected array $dtypeToString = [
-        NDArray::bool=>'bool',
-        NDArray::int8=>'int8',   NDArray::uint8=>'uint8',
-        NDArray::int16=>'int16', NDArray::uint16=>'uint16',
-        NDArray::int32=>'int32', NDArray::uint32=>'uint32',
-        NDArray::int64=>'int64', NDArray::uint64=>'uint64',
-        NDArray::float16=>'float16',
-        NDArray::float32=>'float32', NDArray::float64=>'float64',
-        NDArray::complex64=>'complex64', NDArray::complex128=>'complex128',
-    ];
     
     /** @var array<int,int> $dtypePrecision */
     protected array $dtypePrecision = [
@@ -738,17 +727,17 @@ class MatrixOperator
     {
         return new class($shape,$skipDims) implements Iterator
         {
-            /** @var array<int> $shape */
+            /** @var array<int,int> $shape */
             protected array $shape;
-            /** @var array<int> $skipDims */
+            /** @var array<int,int> $skipDims */
             protected array $skipDims;
-            /** @var array<int> $current */
+            /** @var array<int,int> $current */
             protected array $current;
             protected bool $endOfItem = false;
         
             /**
-             * @param array<int> $shape
-             * @param array<int> $skipDims
+             * @param array<int,int> $shape
+             * @param array<int,int> $skipDims
              */
             public function __construct(array $shape, array $skipDims)
             {
@@ -758,7 +747,7 @@ class MatrixOperator
             }
 
             /**
-             * @return array<int>
+             * @return array<int,int>
              */
             public function getCurrentIndex() : array
             {
@@ -1432,10 +1421,7 @@ class MatrixOperator
 
     public function dtypeToString(int $dtype) : string
     {
-        if(!isset($this->dtypeToString[$dtype])) {
-            return 'Unknown';
-        }
-        return $this->dtypeToString[$dtype];
+        return $this->la()->dtypeToString($dtype);
     }
 
     /**
@@ -1451,66 +1437,7 @@ class MatrixOperator
         ?string $format=null,
         bool|int|null $indent=null) : string
     {
-        $shape = $array->shape();
-        if(count($shape)==0) {
-            $value = $array->toArray();
-            if($format) {
-                return sprintf($format,$value);
-            } else {
-                return strval($value);
-            }
-        }
-        $n = array_shift($shape);
-        if(!is_numeric($indent) && $indent===true) {
-            $indent=1;
-        }
-        if(count($shape)==0) {
-            if($array->dtype()==NDArray::bool) {
-                $str = '';
-                foreach($array->toArray() as $value) {
-                    $str .= ($str==='') ? '[' : ',';
-                    $str .= $value ? 'true' : 'false';
-                }
-                $str .= ']';
-                return $str;
-            } else {
-                if($format) {
-                    return '['.implode(',',array_map(function($x) use ($format,$array) {
-                            if($array->dtype()==NDArray::complex64||$array->dtype()==NDArray::complex128) {
-                                return sprintf($format,$x->real,$x->imag);
-                            } else {
-                                return sprintf($format,$x);
-                            }
-                        },$array->toArray())).']';
-                } else {
-                    return '['.implode(',',$array->toArray()).']';
-                }
-            }
-        }
-        $string = '[';
-        if($indent) {
-            $string .= "\n";
-        }
-        for($i=0;$i<$n;$i++) {
-            if($i!=0) {
-                $string .= ',';
-                if($indent) {
-                    $string .= "\n";
-                }
-            }
-            if($indent) {
-                $string .= str_repeat(' ',$indent);
-                $string .= $this->toString($array[$i],$format,$indent+1);
-            } else {
-                $string .= $this->toString($array[$i],$format,$indent);
-            }
-        }
-        if($indent) {
-            $string .= "\n";
-            $string .= str_repeat(' ',$indent-1);
-        }
-        $string .= ']';
-        return $string;
+        return $this->la()->toString($array,format:$format,indent:$indent);
     }
 
     public function random() : object
@@ -1530,6 +1457,16 @@ class MatrixOperator
             service:$this->service,
             defaultFloatType:$this->defaultFloatType);
         return $this->la;
+    }
+
+    public function randInt(?int $min=null, ?int $max=null) : int
+    {
+        return $this->la()->randInt(min:$min, max:$max);
+    }
+
+    public function setSeed(int $seed) : void
+    {
+        $this->la()->setSeed($seed);
     }
 
     protected function laPhpMode() : object

@@ -20,42 +20,42 @@ jobs:
       matrix:
         #ffi: ['','ffi']
         include:
-          #- name: PHP8.1
-          #  os: ubuntu-latest
-          #  arch: 'amd64'
-          #  php: '8.1'
-          #  phpunit: '10.5'
-          #  ffi: 'ffi'
-          #- name: PHP8.3
-          #  os: ubuntu-latest
-          #  arch: 'amd64'
-          #  php: '8.3'
-          #  phpunit: '11.5'
-          #  ffi: 'ffi'
-          - name: PHP8.4
+          - name: PHP8.1
             os: ubuntu-latest
             arch: 'amd64'
-            php: '8.4'
+            php: '8.1'
+            phpunit: '10.5'
+            ffi: 'ffi'
+          #- name: PHP8.4
+          #  os: ubuntu-latest
+          #  arch: 'amd64'
+          #  php: '8.4'
+          #  phpunit: '11.5'
+          #  ffi: 'ffi'
+          - name: PHP8.5
+            os: ubuntu-latest
+            arch: 'amd64'
+            php: '8.5'
             phpunit: '11.5'
             ffi: 'ffi'
           - name: Windows
             os: windows-latest
             arch: 'x64'
-            php: '8.4'
+            php: '8.5'
             phpunit: '11.5'
             ffi: 'ffi'
           - name: macOS
             os: macos-latest
             arch: 'arm64'
-            php: '8.4'
+            php: '8.5'
             phpunit: '11.5'
             ffi: 'ffi'
-          - name: macOS-x86_64
-            os: macos-13
-            arch: 'x86_64'
-            php: '8.4'
-            phpunit: '11.5'
-            ffi: 'ffi'
+          #- name: macOS-x86_64
+          #  os: macos-13
+          #  arch: 'x86_64'
+          #  php: '8.5'
+          #  phpunit: '11.5'
+          #  ffi: 'ffi'
 
     steps:
       - name: Setup PHP ${{ matrix.php }}
@@ -64,7 +64,7 @@ jobs:
           php-version: ${{ matrix.php }}
           # PHP Extras
           coverage: none
-          tools: composer, phpstan
+          tools: composer, phpstan:2.1.x
           ini-values: "memory_limit=512M"
           extensions: ${{ matrix.ffi }}
         env:
@@ -108,7 +108,7 @@ jobs:
       - name: Run Composer Update
         run: |
           composer update
-          composer require --dev phpunit/phpunit=^${{ matrix.phpunit }}
+          composer require --dev "phpunit/phpunit=${{ matrix.phpunit }}.*"
 
       - name: Download Add-packs (Linux)
         if: ${{ startsWith(matrix.os, 'ubuntu-') }}

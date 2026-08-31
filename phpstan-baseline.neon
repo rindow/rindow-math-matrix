@@ -13,6 +13,18 @@ parameters:
 			path: src/Drivers/MatlibPHP/PhpBlas.php
 
 		-
+			message: '#^Call to function is_int\(\) with int will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpBuffer.php
+
+		-
+			message: '#^Cannot assign offset int to Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpBuffer\.$#'
+			identifier: offsetAssign.dimType
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpBuffer.php
+
+		-
 			message: '#^Class SplFixedArray specifies template type TKey of interface ArrayAccess as int but it''s already specified as mixed\.$#'
 			identifier: generics.interfaceConflict
 			count: 1
@@ -35,6 +47,12 @@ parameters:
 			identifier: constructor.unusedParameter
 			count: 1
 			path: src/Drivers/MatlibPHP/PhpLapack.php
+
+		-
+			message: '#^Cannot assign offset int\<0, max\> to Rindow\\Math\\Matrix\\Drivers\\MatlibPHP\\PhpBuffer\.$#'
+			identifier: offsetAssign.dimType
+			count: 1
+			path: src/Drivers/MatlibPHP/PhpMath.php
 
 		-
 			message: '#^Comparison operation "\>" between 2 and 1 is always true\.$#'
@@ -127,7 +145,7 @@ parameters:
 			path: src/NDArrayCL.php
 
 		-
-			message: '#^Call to function is_numeric\(\) with int will always evaluate to true\.$#'
+			message: '#^Call to function is_scalar\(\) with int will always evaluate to true\.$#'
 			identifier: function.alreadyNarrowedType
-			count: 2
+			count: 1
 			path: src/NDArrayPhp.php

@@ -5,6 +5,8 @@ parameters:
 		-
 			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\.*[Device\\|Linear]*Buffer\\:\\:dump\\(\\)#"
 		-
+			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\.*[Device\\|Linear]*Buffer\\:\\:load\\(\\)#"
+		-
 			message: "#^Call to an undefined method Interop\\\\Polite\\\\Math\\\\Matrix\\\\.*[Device\\|Linear]*Buffer\\:\\:value_size\\(\\)#"
 		-
 			message: "#function count expects array|Countable, Interop\\\\Polite\\\\Math\\\\Matrix\\\\NDArray given#"

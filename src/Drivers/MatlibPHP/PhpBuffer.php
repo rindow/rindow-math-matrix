@@ -107,7 +107,7 @@ class PhpBuffer extends SplFixedArray implements BufferInterface
     }
 
     /**
-     * @param array<mixed> $array
+     * @param array<int,mixed> $array
      */
     public static function fromArrayWithDtype(array $array, int $dtype) : BufferInterface
     {

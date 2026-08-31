@@ -32,18 +32,18 @@ class LinearAlgebraPHPModeTest extends ORGTest
     }
 
 
-    public function testSvdFull1()
-    {
-        $this->markTestSkipped('Unsuppored function without openblas');
-    }
+    //public function testSvdFull1()
+    //{
+    //    $this->markTestSkipped('Unsuppored function without openblas');
+    //}
 
-    public function testSvdFull2()
-    {
-        $this->markTestSkipped('Unsuppored function without openblas');
-    }
+    //public function testSvdFull2()
+    //{
+    //    $this->markTestSkipped('Unsuppored function without openblas');
+    //}
 
-    public function testSvdSmallVT()
-    {
-        $this->markTestSkipped('Unsuppored function without openblas');
-    }
+    //public function testSvdSmallVT()
+    //{
+    //    $this->markTestSkipped('Unsuppored function without openblas');
+    //}
 }

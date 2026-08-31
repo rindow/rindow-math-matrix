@@ -352,10 +352,17 @@ class NDArrayPhp implements NDArray, Countable, Serializable, IteratorAggregate
                 !array_key_exists(0, $offset) || !array_key_exists(1, $offset) ||
                 $offset[0]>$offset[1]) {
                 $det = '';
-                if(is_numeric($offset[0])&&is_numeric($offset[1])) {
-                    $det = ':['. implode(',', $offset).']';
+                foreach($offset as $i=>$v) {
+                    if($det!=='') {
+                        $det .= ',';
+                    }
+                    if(is_scalar($v)) {
+                        $det .= $v;
+                    } else {
+                        $det .= gettype($v);
+                    }
                 }
-                throw new OutOfRangeException("Illegal range specification.".$det);
+                throw new OutOfRangeException("Illegal range specification. ($det) given.");
             }
             $start = $offset[0];
             $limit = $offset[1];
@@ -461,13 +468,23 @@ class NDArrayPhp implements NDArray, Countable, Serializable, IteratorAggregate
         $shape = $this->_shape;
         $max = array_shift($shape);
         if(!count($shape)) {
-            if($this->isComplex()) {
-                if(!($value instanceof Complex)) {
-                    throw new InvalidArgumentException("Must be complex type");
-                }
-            } else {
-                if(!is_scalar($value)) {
+            if($value instanceof self) {
+                if($value->ndim()!=0) {
                     throw new InvalidArgumentException("Must be scalar type");
+                }
+                if($value->dtype()!=$this->_dtype) {
+                    throw new InvalidArgumentException("Must be same dtype");
+                }
+                $value = $value->buffer()[$value->offset()];
+            } else {
+                if($this->isComplex()) {
+                    if(!($value instanceof Complex)) {
+                        throw new InvalidArgumentException("Must be complex type");
+                    }
+                } else {
+                    if(!is_scalar($value)) {
+                        throw new InvalidArgumentException("Must be scalar type");
+                    }
                 }
             }
             $this->_buffer[$this->_offset+$offset] = $value;
@@ -475,7 +492,15 @@ class NDArrayPhp implements NDArray, Countable, Serializable, IteratorAggregate
         }
 
         if(!($value instanceof self)||$value->shape()!=$shape) {
-            throw new InvalidArgumentException("Unmatch shape numbers");
+            $strArrayShape = '('.implode(',',$shape).')';
+            if($value instanceof self) {
+                $strValueShape = '('.implode(',',$value->shape()).')';
+            } elseif(is_object($value)) {
+                $strValueShape = get_class($value);
+            } else {
+                $strValueShape = gettype($value);
+            }
+            throw new InvalidArgumentException("Unmatch shape numbers: $strArrayShape <- $strValueShape");
         }
         $copy = $value->buffer();
         $size = (int)array_product($shape);

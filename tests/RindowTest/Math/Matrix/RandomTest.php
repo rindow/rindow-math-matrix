@@ -33,7 +33,7 @@ class RandomTest extends TestCase
     public function testRandomInt()
     {
         $mo = $this->newMatrixOperator();
-        $x = $mo->random()->randomInt(100);
+        $x = $mo->random()->randomInt(0, 100);
         $this->assertTrue(true);
     }
 

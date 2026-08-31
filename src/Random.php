@@ -19,8 +19,8 @@ class Random
 
     protected function genRandNormal(float $av, float $sd) : float
     {
-        $x=random_int(1, PHP_INT_MAX-1)/PHP_INT_MAX;
-        $y=random_int(1, PHP_INT_MAX-1)/PHP_INT_MAX;
+       $x=$this->mo->randInt(1, PHP_INT_MAX-1) / PHP_INT_MAX;
+       $y=$this->mo->randInt(1, PHP_INT_MAX-1) / PHP_INT_MAX;
         return sqrt(-2*log($x))*cos(2*pi()*$y)*$sd+$av;
     }
 
@@ -49,7 +49,7 @@ class Random
         $buffer = $array->buffer();
         $size = $array->size();
         for($i=0;$i<$size;$i++) {
-            $buffer[$i] = $this->randomInt(PHP_INT_MAX)/PHP_INT_MAX;
+            $buffer[$i] = $this->randomInt(0, PHP_INT_MAX) / PHP_INT_MAX;
         }
         return $array;
     }
@@ -71,9 +71,9 @@ class Random
         return $array;
     }
 
-    public function randomInt(int $max) : int
+    public function randomInt(int $min, int $max) : int
     {
-        return random_int(0, $max);
+        return $this->mo->randInt($min, $max);
     }
 
     public function choice(mixed $a, ?int $size=null, ?bool $replace=null) : mixed
@@ -99,7 +99,7 @@ class Random
         }
 
         if($size==1) {
-            $idx = $this->randomInt($a->size()-1);
+            $idx = $this->randomInt(0, $a->size()-1);
             return $a[$idx];
         }
 
@@ -107,7 +107,7 @@ class Random
         $sourceSize = $a->size();
         if($replace) {
             for($n=0;$n<$size;$n++) {
-                $idx = $this->randomInt($sourceSize-1);
+                $idx = $this->randomInt(0, $sourceSize-1);
                 $r[$n] = $a[$idx];
             }
         } else {
@@ -120,7 +120,7 @@ class Random
                 $select = $this->mo->arange($sourceSize);
             }
             for($n=0;$n<$size;$n++) {
-                $idx = $this->randomInt($sourceSize-$n-1);
+                $idx = $this->randomInt(0, $sourceSize-$n-1);
                 $r[$n] = $a[$select[$idx]];
                 $select[$idx] = $select[$sourceSize-$n-1];
             }

@@ -508,9 +508,9 @@ class NDArrayCL implements NDArray, Countable, IteratorAggregate
             0,
             $dtype
         );
-        $events = $this->service()->openCL()->EventList();
-        $newBuffer->copy($this->queue, $this->buffer, 0, 0, 0, $events);
-        $events->wait();
+        //$events = $this->service()->openCL()->EventList();
+        $newBuffer->copy($this->queue, $this->buffer, 0, 0, 0, /*$events*/);
+        //$events->wait();
         $this->flags = $flags;
         $this->buffer = $newBuffer;
     }

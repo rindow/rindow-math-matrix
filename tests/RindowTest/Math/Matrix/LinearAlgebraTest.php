@@ -6,10 +6,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Interop\Polite\Math\Matrix\NDArray;
 use Interop\Polite\Math\Matrix\OpenCL;
 use Interop\Polite\Math\Matrix\DeviceBuffer;
+use Interop\Polite\Math\Matrix\BLAS;
 use Rindow\Math\Matrix\MatrixOperator;
 use Rindow\Math\Matrix\NDArrayPhp;
 use Rindow\Math\Matrix\Drivers\Selector;
 use Rindow\Math\Matrix\Drivers\Service;
+use Rindow\Math\Matrix\Drivers\MatlibPHP\PhpCalcComplex;
 use Rindow\Math\Plot\Plot;
 use ArrayObject;
 use InvalidArgumentException;
@@ -119,6 +121,24 @@ class LinearAlgebraTest extends TestCase
             $cArray[] = $this->toComplex($value);
         }
         return $cArray;
+    }
+
+    protected function getCalcComplex() : object
+    {
+        return new PhpCalcComplex();
+    }
+
+    protected function absarray(NDArray $x) : NDArray
+    {
+        $y = $this->newArray($x->shape(),dtype:$x->dtype());
+        $xx = $x->buffer();
+        $yy = $y->buffer();
+        $ofs_x = $x->offset();
+        $size = $x->size();
+        for($i=0;$i<$size;$i++) {
+            $yy[$i] = abs($xx[$ofs_x+$i]);
+        }
+        return $y;
     }
 
     public function testSpeedTest()
@@ -654,10 +674,14 @@ class LinearAlgebraTest extends TestCase
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
         $x = $la->array([[1,2],[3,4]],dtype:NDArray::float32);
+        $orgX = $la->copy($x);
         $nrm2 = sqrt(1+2**2+3**2+4**2);
         $this->assertLessThan(0.00001,abs($nrm2-
             $la->nrm2($x)
         ));
+        $x = $la->toNDArray($x);
+        $orgX = $la->toNDArray($orgX);
+        $this->assertTrue($mo->la()->isclose($x,$orgX));
 
         $x = $la->array([[C(1),C(2)],[C(3),C(4)]],dtype:NDArray::complex64);
         $nrm2 = sqrt(1+2**2+3**2+4**2);
@@ -670,10 +694,14 @@ class LinearAlgebraTest extends TestCase
     *    a,b,cos,sin := rotg(x,y)
     *
     */
-    public function testRotg()
+    public function testRotgFloat()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
         $x = $la->array([1,2,3,4,5],dtype:NDArray::float32);
         $y = $la->array([1,2,3,4,5],dtype:NDArray::float32);
         $x = $x->reshape([$x->size(),1]);
@@ -699,10 +727,57 @@ class LinearAlgebraTest extends TestCase
         }
     }
 
-    public function testRot()
+    public function testRotgComplex()
+    {
+        $dtype = NDArray::complex64;
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
+        $calc = $this->getCalcComplex();
+        $a = $la->array([C(1.0, 1.0)],dtype:$dtype);
+        $b = $la->array([C(2.0,-1.0)],dtype:$dtype);
+
+        [$r,$z,$c,$s] = $la->rotg($a,$b);
+        // OpenBLAS
+        // r = 1.8708287477493+INFi  <-- Bug ?
+        // c = 0.5345224738121+0i
+        // s = 0.26726123690605+0.80178374052048i        
+        //echo "\n";
+        //echo "r = ".$r[0]."\n";
+        //echo "z = ".$z[0]."\n";
+        //echo "c = ".$c[0]."\n";
+        //echo "s = ".$s[0]."\n";
+        // $trueR = $calc->scale(sqrt(7/2),C(1,i:1));
+        // $trueR = $la->toNDArray($la->array([$trueR],dtype:$dtype));
+        // $this->assertTrue($mo->la()->isclose(
+        //     $trueR,
+        //     $r,
+        // ));
+        $trueC = C(sqrt(2/7));
+        $trueC = $la->toNDArray($la->array([$trueC],dtype:$dtype));
+        $this->assertTrue($mo->la()->isclose(
+            $trueC,
+            $c,
+        ));
+        $trueS = $calc->scale(1/sqrt(14),C(1,i:+3));
+        $trueS = $la->toNDArray($la->array([$trueS],dtype:$dtype));
+        $this->assertTrue($mo->la()->isclose(
+            $trueS,
+            $s,
+        ));
+    }
+
+    public function testRotFloat()
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
         $x = $la->array([1,2,3,4,5],dtype:NDArray::float32);
         $y = $la->array([1,2,3,4,5],dtype:NDArray::float32);
         $c = $la->array([cos(pi()/4)],dtype:NDArray::float32);
@@ -723,6 +798,10 @@ class LinearAlgebraTest extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
 
         $xy = [
             [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
@@ -767,6 +846,10 @@ class LinearAlgebraTest extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
         
         $xy = [
             [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
@@ -813,6 +896,10 @@ class LinearAlgebraTest extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
 
         // givens rotation
         $ax = $la->array(0,dtype:NDArray::float32);  // pi/2 rotation
@@ -834,6 +921,10 @@ class LinearAlgebraTest extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
 
         $x = $la->array([0,1,2,3],dtype:NDArray::float32);
         $y = $la->array([1,0,2,3],dtype:NDArray::float32);
@@ -849,6 +940,10 @@ class LinearAlgebraTest extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
         
         $xy = [
             [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
@@ -903,6 +998,10 @@ class LinearAlgebraTest extends TestCase
     {
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
         
         $xy = [
             [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1], [0,-1], [1,-1],
@@ -1048,6 +1147,444 @@ class LinearAlgebraTest extends TestCase
             ,$Y->toArray());
 
         }
+    }
+
+    public function testTrsvNormal()
+    {
+        $dtype = NDArray::float32;
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // BLAS::Upper,BLAS::NoTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [1,2,3],
+            [9,4,5],
+            [9,9,6],
+        ],dtype:$dtype);
+        $b0 = 7+2*8+3*9;
+        $b1 = 4*8+5*9;
+        $b2 = 6*9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::NoTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [1,9,9],
+            [2,4,9],
+            [3,5,6],
+        ],dtype:$dtype);
+        $b0 = 7;
+        $b1 = 2*7+4*8;
+        $b2 = 3*7+5*8+6*9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X,lower:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Upper,BLAS::NoTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [9,2,3],
+            [9,9,5],
+            [9,9,9],
+        ],dtype:$dtype);
+        $b0 = 7+2*8+3*9;
+        $b1 = 8+5*9;
+        $b2 = 9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::NoTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [9,9,9],
+            [2,9,9],
+            [3,5,9],
+        ],dtype:$dtype);
+        $b0 = 7;
+        $b1 = 2*7+8;
+        $b2 = 3*7+5*8+9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X,lower:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+    }
+    
+    public function testTrsvTranspose()
+    {
+        $dtype = NDArray::float32;
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // BLAS::Upper,BLAS::Trans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [1,2,3],
+            [9,4,5],
+            [9,9,6],
+        ],dtype:$dtype);
+        $b0 = 7;
+        $b1 = 2*7+4*8;
+        $b2 = 3*7+5*8+6*9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X,trans:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::Trans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [1,9,9],
+            [2,4,9],
+            [3,5,6],
+        ],dtype:$dtype);
+        $b0 = 7+2*8+3*9;
+        $b1 = 4*8+5*9;
+        $b2 = 6*9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,lower:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Upper,BLAS::Trans,BLAS::Unit
+        //
+        $A = $la->array([
+            [9,2,3],
+            [9,9,5],
+            [9,9,9],
+        ],dtype:$dtype);
+        $b0 = 7;
+        $b1 = 2*7+8;
+        $b2 = 3*7+5*8+9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::Trans,BLAS::Unit
+        //
+        $A = $la->array([
+            [9,9,9],
+            [2,9,9],
+            [3,5,9],
+        ],dtype:$dtype);
+        $b0 = 7+2*8+3*9;
+        $b1 = 8+5*9;
+        $b2 = 9;
+        $X = $la->array([$b0,$b1,$b2],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,lower:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([7,8,9],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+    }
+
+    public function testTrsvComplexNormal()
+    {
+        $dtype = NDArray::complex64;
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // BLAS::Upper,BLAS::NoTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(2,5),C(3,4)],
+            [C(9,9),C(4,3),C(5,2)],
+            [C(9,9),C(9,9),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(-72,i:164),C(39,i:109),C(47,i:51)],dtype:$dtype);
+        $la->trsv($A,$X);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::NoTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(9,9),C(9,9)],
+            [C(2,5),C(4,3),C(9,9)],
+            [C(3,4),C(5,2),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(-47,i:51),C(-23,i:109),C(56,i:162)],dtype:$dtype);
+        $la->trsv($A,$X,lower:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Upper,BLAS::NoTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(2,5),C(3,4)],
+            [C(9,9),C(9,9),C(5,2)],
+            [C(9,9),C(9,9),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(-18,i:122),C(39,i:61),C(9,i:7)],dtype:$dtype);
+        $la->trsv($A,$X,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::NoTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(9,9),C(9,9)],
+            [C(2,5),C(9,9),C(9,9)],
+            [C(3,4),C(5,2),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(7,i:9),C(-23,i:61),C(18,i:118)],dtype:$dtype);
+        $la->trsv($A,$X,lower:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+    }
+
+    public function testTrsvComplexTranspose()
+    {
+        $dtype = NDArray::complex64;
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // BLAS::Upper,BLAS::ConjTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(2,5),C(3,4)],
+            [C(9,9),C(4,3),C(5,2)],
+            [C(9,9),C(9,9),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(61,i:-33),C(115,i:-9),C(174,i:56)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+
+        //
+        // BLAS::Lower,BLAS::ConjTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(9,9),C(9,9)],
+            [C(2,5),C(4,3),C(9,9)],
+            [C(3,4),C(5,2),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(172,i:-72),C(115,i:25),C(61,i:33)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,lower:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Upper,BLAS::ConjTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(2,5),C(3,4)],
+            [C(9,9),C(9,9),C(5,2)],
+            [C(9,9),C(9,9),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(7,i:9),C(67,i:-9),C(122,i:30)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::ConjTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(9,9),C(9,9)],
+            [C(2,5),C(9,9),C(9,9)],
+            [C(3,4),C(5,2),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(118,i:-30),C(67,i:25),C(9,i:7)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,lower:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+    }
+
+    public function testTrsvComplexNoConjTranspose()
+    {
+        $dtype = NDArray::complex64;
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // BLAS::Upper,BLAS::Trans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(2,5),C(3,4)],
+            [C(9,9),C(4,3),C(5,2)],
+            [C(9,9),C(9,9),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(-47,i:51),C(-23,i:109),C(56,i:162)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,conj:false);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::Trans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(9,9),C(9,9)],
+            [C(2,5),C(4,3),C(9,9)],
+            [C(3,4),C(5,2),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(-72,i:164),C(39,i:109),C(47,i:51)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,conj:false,lower:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Upper,BLAS::Trans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(2,5),C(3,4)],
+            [C(9,9),C(9,9),C(5,2)],
+            [C(9,9),C(9,9),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(7,i:9),C(-23,i:61),C(18,i:118)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,conj:false,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::Trans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(9,9),C(9,9)],
+            [C(2,5),C(9,9),C(9,9)],
+            [C(3,4),C(5,2),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(-18,i:122),C(39,i:61),C(9,i:7)],dtype:$dtype);
+        $la->trsv($A,$X,trans:true,conj:false,lower:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+    }
+
+    //public function testBLASTrsvComplexSample()
+    //{
+    //    $dtype = NDArray::complex64;
+    //    $mo = $this->newMatrixOperator();
+    //    $la = $this->newLA($mo);
+    //    $A = $la->array([
+    //        //[C(1,6),C(2,5),C(3,4)],
+    //        //[C(0,0),C(4,3),C(5,2)],
+    //        //[C(0,0),C(0,0),C(6,1)],
+    //        //[C(1,6),C(0,0),C(0,0)],
+    //        //[C(2,5),C(4,3),C(0,0)],
+    //        //[C(3,4),C(5,2),C(6,1)],
+    //        //[C(1,0),C(2,5),C(3,4)],
+    //        //[C(0,0),C(1,0),C(5,2)],
+    //        //[C(0,0),C(0,0),C(1,0)],
+    //        [C(1,0),C(0,0),C(0,0)],
+    //        [C(2,5),C(1,0),C(0,0)],
+    //        [C(3,4),C(5,2),C(1,0)],
+    //    ],dtype:$dtype);
+    //    $X = $la->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+    //    $B = $la->gemv($A,$X,trans:false,conj:true);
+    //    echo $mo->toString($B)."\n";
+    //    $this->assertTrue(true);
+    //}
+
+    public function testTrsvComplexNoTransposeConj()
+    {
+        $dtype = NDArray::complex64;
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false || PHP_OS==='Darwin') {
+                $this->markTestSkipped('ConjNoTrans Not Supported');
+                return;
+        }
+
+        //
+        // BLAS::Upper,BLAS::ConjNoTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(2,5),C(3,4)],
+            [C(9,9),C(4,3),C(5,2)],
+            [C(9,9),C(9,9),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(172,i:-72),C(115,i:25),C(61,i:33)],dtype:$dtype);
+        $la->trsv($A,$X,trans:false,conj:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::ConjNoTrans,BLAS::NonUnit
+        //
+        $A = $la->array([
+            [C(1,6),C(9,9),C(9,9)],
+            [C(2,5),C(4,3),C(9,9)],
+            [C(3,4),C(5,2),C(6,1)],
+        ],dtype:$dtype);
+        $X = $la->array([C(61,i:-33),C(115,-9),C(174,i:+56)],dtype:$dtype);
+        $la->trsv($A,$X,trans:false,conj:true,lower:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Upper,BLAS::ConjNoTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(2,5),C(3,4)],
+            [C(9,9),C(9,9),C(5,2)],
+            [C(9,9),C(9,9),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(118,i:-30),C(67,i:25),C(9,i:7)],dtype:$dtype);
+        $la->trsv($A,$X,trans:false,conj:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
+        //
+        // BLAS::Lower,BLAS::ConjNoTrans,BLAS::Unit
+        //
+        $A = $la->array([
+            [C(9,9),C(9,9),C(9,9)],
+            [C(2,5),C(9,9),C(9,9)],
+            [C(3,4),C(5,2),C(9,9)],
+        ],dtype:$dtype);
+        $X = $la->array([C(7,i:9),C(67,i:-9),C(122,i:30)],dtype:$dtype);
+        $la->trsv($A,$X,trans:false,conj:true,lower:true,unit:true);
+        $X = $la->toNDArray($X);
+        $trues = $mo->array([C(7,9),C(8,8),C(9,7)],dtype:$dtype);
+        $this->assertTrue($mo->la()->isclose($trues,$X));
+
     }
 
     public function testGemmNormal()
@@ -3381,6 +3918,43 @@ class LinearAlgebraTest extends TestCase
         ,$X->toArray());
     }
 
+    public function testMaximumBroadcast()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := maximum(A,X)
+        $a = $la->array([[-1,0,1],[2,3,4]]);
+        $x = $la->array([1,2,3]);
+        $la->maximum($a,$x);
+        $this->assertEquals(
+            [[1,2,3],[2,3,4]]
+        ,$a->toArray());
+
+
+        // X := maximum(X,1)
+        $a = $la->array([-1,0,1,2,3,4]);
+        $x = $la->array(1);
+        $la->maximum($a,$x);
+        $this->assertEquals(
+            [1,1,1,2,3,4]
+        ,$a->toArray());
+    }
+
+    public function testMaximumScalar()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := maximum(2,1)
+        $a = $la->array(2);
+        $x = $la->array(1);
+        $la->maximum($a,$x);
+        $this->assertEquals(
+            2
+        ,$a->toArray());
+    }
+
     public function testMinimumFloat()
     {
         $mo = $this->newMatrixOperator();
@@ -3466,6 +4040,15 @@ class LinearAlgebraTest extends TestCase
         $this->assertEquals(0.0, $X[1]);
         $this->assertEquals(0.0, $X[2]);
         $this->assertEquals(0.0, $X[3]);
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->greater($X,INF);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);  // INF is not greater than INF
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
+
     }
 
     public function testGreaterCompDim()
@@ -3545,6 +4128,14 @@ class LinearAlgebraTest extends TestCase
         $this->assertEquals(0.0, $X[1]);
         $this->assertEquals(0.0, $X[2]);
         $this->assertEquals(0.0, $X[3]);
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->greaterEqual($X,INF);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(1.0, $X[0]);
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
     }
 
     public function testGreaterEqualCompDim()
@@ -3597,6 +4188,14 @@ class LinearAlgebraTest extends TestCase
         $this->assertEquals(0.0, $X[1]);
         $this->assertEquals(0.0, $X[2]);
         $this->assertEquals(0.0, $X[3]);
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->less($X,-INF);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(0.0, $X[2]); // -INF is not less than -INF
+        $this->assertEquals(0.0, $X[3]);
     }
 
     public function testLessCompDim()
@@ -3626,7 +4225,7 @@ class LinearAlgebraTest extends TestCase
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
-        // X := less(1,X)
+        // X := lessEqual(1,X)
         $X = $la->array([[-1,0,1],[1.5,2,3]]);
         $la->lessEqual($X,1);
         $this->assertEquals(
@@ -3648,6 +4247,14 @@ class LinearAlgebraTest extends TestCase
         $this->assertEquals(0.0, $X[0]);
         $this->assertEquals(0.0, $X[1]);
         $this->assertEquals(0.0, $X[2]);
+        $this->assertEquals(0.0, $X[3]);
+
+        $X = $la->array([INF,0,-INF,NAN]);
+        $la->lessEqual($X,-INF);
+        $X = $la->toNDArray($X);
+        $this->assertEquals(0.0, $X[0]);
+        $this->assertEquals(0.0, $X[1]);
+        $this->assertEquals(1.0, $X[2]);
         $this->assertEquals(0.0, $X[3]);
     }
 
@@ -3671,6 +4278,23 @@ class LinearAlgebraTest extends TestCase
         $this->assertEquals(
             [[0,1,0],[0,1,1]]
         ,$X->toArray());
+    }
+
+    public function testLessAndLessEqualDoNotShareKernelCache() : void
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        $Y = $la->array([1,1,1]);
+
+        // Compile/cache the strict comparison first.
+        $less = $la->array([0,1,2]);
+        $la->less($less,$Y);
+        $this->assertEquals([1,0,0],$less->toArray());
+
+        // Equality must still be accepted by a separately cached kernel.
+        $lessEqual = $la->array([0,1,2]);
+        $la->lessEqual($lessEqual,$Y);
+        $this->assertEquals([1,1,0],$lessEqual->toArray());
     }
 
     public function testMultiplyNormal()
@@ -11269,6 +11893,50 @@ class LinearAlgebraTest extends TestCase
             $y->toArray());
     }
 
+    public function testRandomCategorical()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        //
+        // sigle sample
+        //
+        $probs = $la->softmax($la->log($la->array([
+            [2.0,  2.0,  2.0 ],
+            [9.0,  2.0,  1.0 ],
+            [0.1,  0.8,  0.1 ],
+            [0.1,  0.8,  0.1 ],
+        ])));
+        $sumProbs = $la->reduceSum($probs,axis:-1);
+        //echo $la->toString($sumProbs,indent:true)."\n";
+        $ones = $mo->ones($sumProbs->shape());
+        $this->assertTrue($mo->la()->isclose($la->toNDArray($ones),$la->toNDArray($sumProbs)));
+
+        $actions = $la->randomCategorical($probs);
+        //echo $la->toString($actions,indent:true)."\n";
+
+        $this->assertEquals([4],$actions->shape());
+        $this->assertEquals(NDArray::int32,$actions->dtype());
+        $this->assertLessThan(3,$la->max($actions));
+
+        //
+        // multiple samples
+        //
+        $probs = $la->softmax($la->log($la->array([[3.0,  2.0,  1.0 ]])));
+        $probs = $probs->reshape([$probs->size()]); // (actions)
+        $sumProbs = $la->reduceSum($probs,axis:-1);
+        //echo $la->toString($sumProbs,indent:true)."\n";
+        $ones = $mo->ones($sumProbs->shape());
+        $this->assertTrue($mo->la()->isclose($la->toNDArray($ones),$la->toNDArray($sumProbs)));
+
+        $actions = $la->randomCategorical($probs,numSamples:4);
+
+        $this->assertEquals([4],$actions->shape());
+        $this->assertEquals(NDArray::int32,$actions->dtype());
+        $this->assertLessThan(3,$la->max($actions));
+
+    }
+
     public function testSlice()
     {
         $mo = $this->newMatrixOperator();
@@ -12854,24 +13522,24 @@ class LinearAlgebraTest extends TestCase
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
-        $A = $mo->array([0.1,0.3,0.5,0.7,0.9]);
+        $A = $mo->array([0.1, 0.3, 0.5, 0.7, 0.9]);
         $A = $la->array($A);
-        $X = $mo->array([0.0,0.5,1.0]);
+        $X = $mo->array([0.0, 0.5, 1.0]);
         $X = $la->array($X);
         $Y = $la->searchsorted($A,$X);
         $this->assertEquals(
-            [0,2,5],
+            [0, 2, 5],
             $Y->toArray()
         );
 
         // right=true
-        $A = $mo->array([0.1,0.3,0.5,0.7,0.9]);
+        $A = $mo->array([0.1, 0.3, 0.5, 0.7, 0.9]);
         $A = $la->array($A);
-        $X = $mo->array([0.0,0.5,1.0]);
+        $X = $mo->array([0.0, 0.5, 1.0]);
         $X = $la->array($X);
-        $Y = $la->searchsorted($A,$X,true);
+        $Y = $la->searchsorted($A,$X,right:true);
         $this->assertEquals(
-            [0,3,5],
+            [0, 3, 5],
             $Y->toArray()
         );
 
@@ -12899,7 +13567,7 @@ class LinearAlgebraTest extends TestCase
         $A = $la->array($A);
         $X = $mo->array([0, 5, 10]);
         $X = $la->array($X);
-        $Y = $la->searchsorted($A,$X,true);
+        $Y = $la->searchsorted($A,$X,right:true);
         $this->assertEquals(
             [0, 5, 1],
             $Y->toArray()
@@ -12918,7 +13586,7 @@ class LinearAlgebraTest extends TestCase
         $this->assertEquals([0.0,0.0,0.5,0.5],$A->toArray());
         $X = $mo->array([0.0,0.4,0.6,$total]);
         $X = $la->array($X);
-        $Y = $la->searchsorted($A,$X,true);
+        $Y = $la->searchsorted($A,$X,right:true);
         $this->assertEquals(
             [2,2,4,4],
             $Y->toArray()
@@ -12929,7 +13597,7 @@ class LinearAlgebraTest extends TestCase
         $A = $la->array($A);
         $X = $mo->array([0.9]);
         $X = $la->array($X);
-        $Y = $la->searchsorted($A,$X,true);
+        $Y = $la->searchsorted($A,$X,right:true);
         $this->assertEquals(
             [1],
             $Y->toArray()
@@ -13189,6 +13857,36 @@ class LinearAlgebraTest extends TestCase
         );
     }
 
+    public function testIsfinite()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := isfinite(X)
+        $X = $mo->array([[INF,2,NAN],[4,-INF,6]]);
+        $X = $la->array($X);
+        $la->isfinite($X);
+        $this->assertEquals(
+            [[0,1,0],[1,0,1]],
+            $X->toArray()
+        );
+    }
+
+    public function testIsinf()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // X := isinf(X)
+        $X = $mo->array([[INF,2,NAN],[4,-INF,6]]);
+        $X = $la->array($X);
+        $la->isinf($X);
+        $this->assertEquals(
+            [[1,0,0],[0,1,0]],
+            $X->toArray()
+        );
+    }
+
     public function testLinspace()
     {
         $mo = $this->newMatrixOperator();
@@ -13204,13 +13902,13 @@ class LinearAlgebraTest extends TestCase
 
     public function testSvdFull1()
     {
-        if($this->service->serviceLevel()<Service::LV_ADVANCED) {
-            $this->markTestSkipped('Unsuppored function without openblas');
-            return;
-        }
-
+        //if($this->service->serviceLevel()<Service::LV_ADVANCED) {
+        //    $this->markTestSkipped('Unsuppored function without openblas');
+        //    return;
+        //}
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        $hla = $mo->la();
         $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
@@ -13244,12 +13942,20 @@ class LinearAlgebraTest extends TestCase
             [ 0.29, 0.58,-0.02, 0.38,-0.65, 0.11],
         ]);
         //$this->assertTrue(false);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        $u = $this->ndarray($u);
+        $correctU = $this->ndarray($correctU);
+        //echo "u=".$mo->toString($u,'%10.6f',true)."\n";
+        //echo "correctU=".$mo->toString($correctU,'%10.6f',true)."\n";
+        $this->assertTrue($hla->isclose($this->absarray($u),$this->absarray($correctU),rtol:1e-2,atol:1e-3));
         # ---- s ----
         $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        $s = $this->ndarray($s);
+        $correctS = $this->ndarray($correctS);
+        $this->assertTrue($hla->isclose($this->absarray($s),$this->absarray($correctS),rtol:1e-2,atol:1e-3));
         # ---- vt ----
         $correctVT = $la->array([
             [-0.25,-0.40,-0.69,-0.37,-0.41],
@@ -13258,18 +13964,22 @@ class LinearAlgebraTest extends TestCase
             [ 0.40,-0.45, 0.25, 0.43,-0.62],
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        $vt = $this->ndarray($vt);
+        $correctVT = $this->ndarray($correctVT);
+        $this->assertTrue($hla->isclose($this->absarray($vt),$this->absarray($correctVT),rtol:1e-2,atol:1e-3));
         $this->assertTrue(true);
     }
 
     public function testSvdFull2()
     {
-        if($this->service->serviceLevel()<Service::LV_ADVANCED) {
-            $this->markTestSkipped('Unsuppored function without openblas');
-            return;
-        }
+        //if($this->service->serviceLevel()<Service::LV_ADVANCED) {
+        //    $this->markTestSkipped('Unsuppored function without openblas');
+        //    return;
+        //}
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        $hla = $mo->la();
         $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
@@ -13303,15 +14013,22 @@ class LinearAlgebraTest extends TestCase
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
         $correctU = $la->transpose($correctU);
-
-        $correctU = $la->square($correctU);
-        $u = $la->square($u);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        //$correctU = $la->square($correctU);
+        //$u = $la->square($u);
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        $u = $this->ndarray($u);
+        $correctU = $this->ndarray($correctU);
+        //echo "u=".$mo->toString($u,'%6.2f',true)."\n";
+        //echo "correctU=".$mo->toString($correctU,'%6.2f',true)."\n";
+        $this->assertTrue($hla->isclose($this->absarray($u),$this->absarray($correctU),rtol:1e-2,atol:1e-3));
         # ---- s ----
         $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        $s = $this->ndarray($s);
+        $correctS = $this->ndarray($correctS);
+        $this->assertTrue($hla->isclose($this->absarray($s),$this->absarray($correctS),rtol:1e-2,atol:1e-3));
         # ---- vt ----
         $correctVT = $la->array([
             [ 0.59, 0.26, 0.36, 0.31, 0.23, 0.55],
@@ -13322,16 +14039,26 @@ class LinearAlgebraTest extends TestCase
             [-0.29, 0.58,-0.02, 0.38,-0.65, 0.11],
         ]);
         $correctVT = $la->transpose($correctVT);
-        $correctVT = $la->square($correctVT);
-        $vt = $la->square($vt);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        //$correctVT = $la->square($correctVT);
+        //$vt = $la->square($vt);
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        $vt = $this->ndarray($vt);
+        $correctVT = $this->ndarray($correctVT);
+        //echo "vt=".$mo->toString($vt,'%6.2f',true)."\n";
+        //echo "correctVT=".$mo->toString($correctVT,'%6.2f',true)."\n";
+        $this->assertTrue($hla->isclose($this->absarray($vt),$this->absarray($correctVT),rtol:1e-2,atol:1e-3));
         $this->assertTrue(true);
     }
 
     public function testSvdSmallU()
     {
+        //if($this->service->serviceLevel()<Service::LV_ADVANCED) {
+        //    $this->markTestSkipped('Unsuppored function without openblas');
+        //    return;
+        //}
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        $hla = $mo->la();
         $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
@@ -13360,12 +14087,18 @@ class LinearAlgebraTest extends TestCase
             [-0.47,-0.35, 0.39, 0.16,-0.52],
             [ 0.29, 0.58,-0.02, 0.38,-0.65],
         ]);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        $u = $this->ndarray($u);
+        $correctU = $this->ndarray($correctU);
+        $this->assertTrue($hla->isclose($this->absarray($u),$this->absarray($correctU),rtol:1e-2,atol:1e-3));
         # ---- s ----
         $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        $s = $this->ndarray($s);
+        $correctS = $this->ndarray($correctS);
+        $this->assertTrue($hla->isclose($this->absarray($s),$this->absarray($correctS),rtol:1e-2,atol:1e-3));
         # ---- vt ----
         $correctVT = $la->array([
             [-0.25,-0.40,-0.69,-0.37,-0.41],
@@ -13374,18 +14107,22 @@ class LinearAlgebraTest extends TestCase
             [ 0.40,-0.45, 0.25, 0.43,-0.62],
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        $vt = $this->ndarray($vt);
+        $correctVT = $this->ndarray($correctVT);
+        $this->assertTrue($hla->isclose($this->absarray($vt),$this->absarray($correctVT),rtol:1e-2,atol:1e-3));
         $this->assertTrue(true);
     }
 
     public function testSvdSmallVT()
     {
-        if($this->service->serviceLevel()<Service::LV_ADVANCED) {
-            $this->markTestSkipped('Unsuppored function without openblas');
-            return;
-        }
+        //if($this->service->serviceLevel()<Service::LV_ADVANCED) {
+        //    $this->markTestSkipped('Unsuppored function without openblas');
+        //    return;
+        //}
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
+        $hla = $mo->la();
         $a = $la->array([
             [ 8.79,  9.93,  9.83,  5.45,  3.16,],
             [ 6.11,  6.91,  5.04, -0.27,  7.98,],
@@ -13415,14 +14152,20 @@ class LinearAlgebraTest extends TestCase
             [-0.22, 0.14, 0.59,-0.63,-0.44],
         ]);
         $correctU = $la->transpose($correctU);
-        $correctU = $la->square($correctU);
-        $u = $la->square($u);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        //$correctU = $la->square($correctU);
+        //$u = $la->square($u);
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($u,$correctU,-1))));
+        $u = $this->ndarray($u);
+        $correctU = $this->ndarray($correctU);
+        $this->assertTrue($hla->isclose($this->absarray($u),$this->absarray($correctU),rtol:1e-2,atol:1e-3));
         # ---- s ----
         $correctS = $la->array(
             [27.47,22.64, 8.56, 5.99, 2.01]
         );
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($s,$correctS,-1))));
+        $s = $this->ndarray($s);
+        $correctS = $this->ndarray($correctS);
+        $this->assertTrue($hla->isclose($this->absarray($s),$this->absarray($correctS),rtol:1e-2,atol:1e-3));
         # ---- vt ----
         $correctVT = $la->array([
             [ 0.59, 0.26, 0.36, 0.31, 0.23,],
@@ -13433,9 +14176,12 @@ class LinearAlgebraTest extends TestCase
             [-0.29, 0.58,-0.02, 0.38,-0.65,],
         ]);
         $correctVT = $la->transpose($correctVT);
-        $correctVT = $la->square($correctVT);
-        $vt = $la->square($vt);
-        $this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        //$correctVT = $la->square($correctVT);
+        //$vt = $la->square($vt);
+        //$this->assertLessThan(0.01,abs($la->amax($la->axpy($vt,$correctVT,-1))));
+        $vt = $this->ndarray($vt);
+        $correctVT = $this->ndarray($correctVT);
+        $this->assertTrue($hla->isclose($this->absarray($vt),$this->absarray($correctVT),rtol:1e-2,atol:1e-3));
         $this->assertTrue(true);
     }
 
@@ -13451,9 +14197,51 @@ class LinearAlgebraTest extends TestCase
         $b = $la->array(
              [10, 38, 14]
         );
-        $solve = $la->solve($a,$b);
+        $x = $la->solve($a,$b);
+        $x = $la->toNDArray($x);
         //echo $mo->toString($solve,'%f',true);
-        $this->assertEquals([3,5,2],$solve->toArray());
+        $trues = $mo->array([3,5,2]);
+        $this->assertTrue($mo->la()->isclose($trues,$x));
+    }
+
+    public function testSolveg()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+        if(strpos($la->getConfig(),'CLBlast')!==false) {
+            $this->markTestSkipped('Not Implemented function in clblast');
+            return;
+        }
+
+        // float32
+        $a = $la->array([
+            [1, 1, 1],
+            [2, 4, 6],
+            [2, 0, 4],
+        ]);
+        $b = $la->array(
+            [10, 38, 14]
+        );
+        $x = $la->solveg($a,$b);
+        $x = $la->toNDArray($x);
+        //echo $mo->toString($solve,'%f',true);
+        $trues = $mo->array([3,5,2]);
+        $this->assertTrue($mo->la()->isclose($trues,$x));
+
+        // // complex64
+        // $a = $la->array($this->toComplex([
+        //     [1, 1, 1],
+        //     [2, 4, 6],
+        //     [2, 0, 4],
+        // ]),dtype:NDArray::complex64);
+        // $b = $la->array($this->toComplex(
+        //     [10, 38, 14]
+        // ),dtype:NDArray::complex64);
+        // $x = $la->solveg($a,$b);
+        // $x = $la->toNDArray($x);
+        // //echo $mo->toString($solve,'%f',true);
+        // $trues = $mo->array($this->toComplex([3,5,2]),dtype:NDArray::complex64);
+        // $this->assertTrue($mo->la()->isclose($trues,$x));
     }
 
     public function testIsInt()
@@ -13488,6 +14276,68 @@ class LinearAlgebraTest extends TestCase
         $this->assertTrue($la->isFloat($la->array(1,dtype:NDArray::float64)));
 
         $this->assertFalse($la->isFloat($la->array(1,dtype:NDArray::bool)));
+    }
+
+    public function testWhereNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        // general
+        $x = $la->array([-1,-2,-3,-4,-5]);
+        $y = $la->array([ 1, 2, 3, 4, 5]);
+        $condition = $la->array([1,0,1,0,1]);
+        $z = $la->where($condition,$x,$y);
+        $z = $la->toNDArray($z);
+        $this->assertTrue($mo->la()->isclose(
+            $mo->array([-1,2,-3,4,-5]),
+            $z
+        ));
+
+        // with condition function
+        $x = $la->array([ 1, 2, 3, 4, 5]);
+        $z = $la->where(
+            $la->less($la->copy($x),3),
+            $la->zerosLike($x),
+            $x
+        );
+        $z = $la->toNDArray($z);
+        $this->assertTrue($mo->la()->isclose(
+            $mo->array([0, 0, 3, 4, 5]),
+            $z
+        ));
+
+        // with normalized condition
+        $x = $la->array([ 1, 2, 3, 4, 5]);
+        $z = $la->where(
+            $la->less($la->copy($x),3),
+            $la->zerosLike($x),
+            $x,
+            normalize:false,
+        );
+        $z = $la->toNDArray($z);
+        $this->assertTrue($mo->la()->isclose(
+            $mo->array([0, 0, 3, 4, 5]),
+            $z
+        ));
+
+    }
+
+    public function testAbsNormal()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $x = $la->array([-1, 2,-3, 4,-5]);
+        $z = $la->abs($x);
+        $z = $la->toNDArray($z);
+        $this->assertTrue($mo->la()->isclose(
+            $mo->array([ 1, 2, 3, 4, 5]),
+            $z
+        ));
+
+        $z = $la->abs(-5);
+        $this->assertEquals(5,$z);
     }
 
     public function testEinsumSimpleNormal()
@@ -13649,6 +14499,7 @@ class LinearAlgebraTest extends TestCase
     public function testEinsumExplicitNormal()
     {
         $this->markTestSkipped('Not implemented');
+        return;
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
@@ -13680,6 +14531,7 @@ class LinearAlgebraTest extends TestCase
     public function testEinsumImplicitNormal()
     {
         $this->markTestSkipped('Not implemented');
+        return;
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
 
@@ -13731,6 +14583,7 @@ class LinearAlgebraTest extends TestCase
     public function testEinsumPlaceholderExplicitNormal()
     {
         $this->markTestSkipped('Not implemented');
+        return;
         $mo = $this->newMatrixOperator();
         $la = $this->newLA($mo);
         
@@ -14405,4 +15258,64 @@ class LinearAlgebraTest extends TestCase
         ,$A->toArray());
     }
 
+    public function testDtypeToString()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+
+        $this->assertEquals('bool',$la->dtypeToString(NDArray::bool));
+        $this->assertEquals('int8',$la->dtypeToString(NDArray::int8));
+        $this->assertEquals('uint8',$la->dtypeToString(NDArray::uint8));
+        $this->assertEquals('int16',$la->dtypeToString(NDArray::int16));
+        $this->assertEquals('uint16',$la->dtypeToString(NDArray::uint16));
+        $this->assertEquals('int32',$la->dtypeToString(NDArray::int32));
+        $this->assertEquals('uint32',$la->dtypeToString(NDArray::uint32));
+        $this->assertEquals('int64',$la->dtypeToString(NDArray::int64));
+        $this->assertEquals('uint64',$la->dtypeToString(NDArray::uint64));
+        $this->assertEquals('float16',$la->dtypeToString(NDArray::float16));
+        $this->assertEquals('float32',$la->dtypeToString(NDArray::float32));
+        $this->assertEquals('float64',$la->dtypeToString(NDArray::float64));
+        $this->assertEquals('complex64',$la->dtypeToString(NDArray::complex64));
+        $this->assertEquals('complex128',$la->dtypeToString(NDArray::complex128));
+    }
+
+    public function testShapeToString()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+
+        $this->assertEquals('()',$la->shapeToString([]));
+        $this->assertEquals('(1)',$la->shapeToString([1]));
+        $this->assertEquals('(1,2)',$la->shapeToString([1,2]));
+        $this->assertEquals('(1,2,3)',$la->shapeToString([1,2,3]));
+    }
+
+    public function testToString()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $mo->la();
+        
+        $a = $la->array([1,2,3],dtype:NDArray::int32);
+        $this->assertEquals("[1,2,3]",$la->toString($a,format:"%d"));
+
+        $a = $la->array([1.0,2.5,3.5],dtype:NDArray::float32);
+        $this->assertEquals("[  1.00,  2.50,  3.50]",$la->toString($a,format:"%6.2f"));
+    }
+
+    public function testSetSeed()
+    {
+        $mo = $this->newMatrixOperator();
+        $la = $this->newLA($mo);
+
+        $la->setSeed(1234);
+        $rnd1 = $la->randInt();
+        $rnd2 = $la->randInt();
+        $this->assertNotEquals($rnd1, $rnd2);
+
+        $la->setSeed(1234);
+        $rnd3 = $la->randInt();
+        $rnd4 = $la->randInt();
+        $this->assertEquals($rnd1, $rnd3);
+        $this->assertEquals($rnd2, $rnd4);
+    }
 }

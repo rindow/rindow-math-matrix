@@ -9,6 +9,7 @@ use Rindow\Math\Matrix\ComplexUtils;
 
 class PhpMath
 {
+    const RANDOM_MAX = 0x7fffffff;
     use ComplexUtils;
     use Utils;
 
@@ -23,6 +24,7 @@ class PhpMath
     protected $floatTypes= [
         NDArray::float16,NDArray::float32,NDArray::float64,
     ];
+    protected PhpPcg32 $rnd;
 
     public function __construct(?object $math=null, ?bool $forceMath=null)
     {
@@ -30,6 +32,7 @@ class PhpMath
         //$this->forceMath = $forceMath;
         $this->math = null;
         $this->forceMath = null;
+        $this->rnd = new PhpPcg32();
     }
 
     //public function forceMath($forceMath)
@@ -113,7 +116,7 @@ class PhpMath
 
     protected function math_imax(
         int $n,
-        Buffer $X, int $offsetX, int $incX ) : float
+        Buffer $X, int $offsetX, int $incX ) : int
     {
         $idxX = $offsetX;
         $max = $X[$idxX];
@@ -127,6 +130,21 @@ class PhpMath
             }
         }
         return $imax;
+    }
+
+    public function srand(int $seed) : void
+    {
+        $this->rnd->setSeed($seed);
+    }
+
+    public function rand() : int
+    {
+        return $this->rnd->nextInt32();
+    }
+
+    public function randInt(?int $min=null, ?int $max=null) : int
+    {
+        return $this->rnd->nextInt($min ?? ~self::RANDOM_MAX, $max ?? self::RANDOM_MAX);
     }
 
     public function getNumThreads() : int
@@ -2594,7 +2612,7 @@ class PhpMath
         //    );
         //    return;
         //}
-        mt_srand($seed);
+        $this->srand($seed);
         $px = $offsetX;
         if(method_exists($X,'dtype')) {
             $isInt = array_key_exists($X->dtype(),$this->intTypes);
@@ -2602,24 +2620,22 @@ class PhpMath
             $isInt = false;
         }
         if($isInt) {
-            $high += 1;
-            $width = $high-$low;
             for($i=0; $i<$n; $i++,$px+=$incX) {
-                $value = mt_rand()%$width+$low;
+                $value = $this->randInt($low,$high);
                 $X[$px] = $value;
             }
         } else {
             for($i=0; $i<$n; $i++,$px+=$incX) {
-                $X[$px] = ($high-$low)*mt_rand()/mt_getrandmax()+$low;
+                $X[$px] = ($high-$low)*$this->randInt(0,self::RANDOM_MAX)/self::RANDOM_MAX+$low;
             }
         }
     }
 
     protected function genRandNormal(float $mean, float $scale) : float
     {
-        $max=mt_getrandmax();
-        $x=mt_rand(1,$max-1)/$max;
-        $y=mt_rand(1,$max-1)/$max;
+        $max=self::RANDOM_MAX;
+        $x=$this->randInt(1,$max-1)/$max;
+        $y=$this->randInt(1,$max-1)/$max;
         return sqrt(-2*log($x))*cos(2*pi()*$y)*$scale+$mean;
     }
 
@@ -2645,7 +2661,7 @@ class PhpMath
         //    );
         //    return;
         //}
-        mt_srand($seed);
+        $this->srand($seed);
         $px = $offsetX;
         for($i=0; $i<$n; $i++,$px+=$incX) {
             $X[$px] = $this->genRandNormal($mean,$scale);
@@ -2672,14 +2688,14 @@ class PhpMath
         //    );
         //    return;
         //}
-        mt_srand($seed);
+        $this->srand($seed);
         $px = $offsetX;
         for($i=0; $i<$n; $i++,$px+=$incX){
             $X[$px] = $i;
         }
         $px = $offsetX;
         for($i=0; $i<$n; $i++,$px+=$incX) {
-            $idx = mt_rand($i,$n-1)*$incX+$offsetX;
+            $idx = $this->randInt($i,$n-1)*$incX+$offsetX;
             $tmp = $X[$px];
             $X[$px] = $X[$idx];
             $X[$idx] = $tmp;
@@ -2867,6 +2883,54 @@ class PhpMath
          for ($i=0; $i<$n; $i++,$idx+=$incX) {
             $t = $X[$idx];
             if(is_nan($t)) {
+                $X[$idx] = 1.0;
+            } else {
+                $X[$idx] = 0.0;
+            }
+        }
+    }
+
+    public function isfinite(
+        int $n,
+        Buffer $X, int $offsetX, int $incX
+        ) : void
+    {
+        //if($this->useMath($X)) {
+        //    $this->math->isfinite($n,$X,$offsetX,$incX);
+        //    return;
+        //}
+
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
+
+        $idx = $offsetX;
+         for ($i=0; $i<$n; $i++,$idx+=$incX) {
+            $t = $X[$idx];
+            if(is_finite($t)) {
+                $X[$idx] = 1.0;
+            } else {
+                $X[$idx] = 0.0;
+            }
+        }
+    }
+
+    public function isinf(
+        int $n,
+        Buffer $X, int $offsetX, int $incX
+        ) : void
+    {
+        //if($this->useMath($X)) {
+        //    $this->math->isfinite($n,$X,$offsetX,$incX);
+        //    return;
+        //}
+
+        if($offsetX+($n-1)*$incX>=count($X))
+            throw new InvalidArgumentException('Vector specification too large for buffer.');
+
+        $idx = $offsetX;
+         for ($i=0; $i<$n; $i++,$idx+=$incX) {
+            $t = $X[$idx];
+            if(is_infinite($t)) {
                 $X[$idx] = 1.0;
             } else {
                 $X[$idx] = 0.0;
